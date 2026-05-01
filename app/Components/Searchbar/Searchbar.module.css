@@ -1,0 +1,26 @@
+.searchbar {
+    z-index: 10;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background-color: rgb(146, 40, 40);
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+    gap:8px;
+}
+
+
+.searchbar input {
+    background-color: transparent;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 300;
+    line-height: 130%;
+    padding: 2px;
+    margin: 10px 0;
+    border: solid rgba(255, 255, 255, 0.563);
+    border-width: 0px 0px 1px 0px;
+    min-width: 250px;
+    text-align: left;
+}
