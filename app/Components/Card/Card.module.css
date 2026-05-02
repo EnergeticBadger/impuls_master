@@ -1,0 +1,15 @@
+.flipButton {
+  margin-top: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  background-color: #2d3748;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  font-size: 0.75rem;
+}
+
+.flipButton:hover {
+  background-color: #4a5568;
+}

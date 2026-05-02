@@ -1,6 +1,8 @@
-import { HeaderText } from "~/Components/HeaderText/HeaderText";
 import { Searchbar } from "~/Components/Searchbar/Searchbar";
 import styles from './Home.module.css'
+import { CardGrid } from "~/Components/CardGrid/CardGrid";
+import { useState } from "react";
+import type { ImageUris } from "~/types";
 export function meta() {
   return [
     { title: "New React Router App" },
@@ -9,11 +11,14 @@ export function meta() {
 }
 
 export default function Home() {
+
+  const [cards, setCards] = useState<ImageUris[]>([])
+
   return (
     <div>
-      <Searchbar />
+      <Searchbar setCards={setCards} />
       <div className={styles.main_content}>
-        <HeaderText header="New React App" />
+          <CardGrid cards={cards} />
       </div>
     </div>
   )
