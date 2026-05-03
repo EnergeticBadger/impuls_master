@@ -18,7 +18,7 @@ export default function Home() {
     <div>
       <Searchbar setCards={setCards} />
       <div className={styles.main_content}>
-          <CardGrid cards={cards} />
+        <CardGrid cards={cards} />
       </div>
     </div>
   )

@@ -13,11 +13,12 @@ export function hasStatus(item: unknown): item is { status: string, details: str
 }
 
 
-export function hasData<T>(item: unknown): item is { data: T[] } {
+export function hasData(item: unknown): item is ScryfallCardSearchResponse {
     return (
         typeof item === 'object' &&
         item !== null &&
         'data' in item &&
+        'has_more' in item &&
         Array.isArray((item as any).data)
     );
 }
@@ -27,6 +28,13 @@ export function isScryfallCard(item: any): item is ScryfallCard {
     return item?.object === 'card' && typeof item?.id === 'string';
 }
 
+export type ScryfallCardSearchResponse = {
+    object: string
+    total_cards?: number
+    has_more:boolean
+    next_page?: string
+    data: ScryfallCard[]
+}
 
 export type ScryfallCard = {
     object: string;
