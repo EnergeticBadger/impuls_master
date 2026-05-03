@@ -28,4 +28,4 @@ jobs:
 
       # Step 4: Run the build command
       - name: Run build
-        run: npm run bs
+        run: npm run build
