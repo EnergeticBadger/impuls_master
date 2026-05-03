@@ -1,4 +1,21 @@
-html,
-body {
+* {
+    font-family: Tahoma, Geneva, Verdana, sans-serif;
+    padding: 0;
+    margin: 0;
+    background-color: rgb(70, 0, 0);
+    color: #fff;
+}
 
+
+div, form {
+    display: flex;
+    flex: 1 0 0%;
+    box-sizing: border-box;
+    position: relative;
+}
+
+
+
+input , button{
+    all: unset;
 }
