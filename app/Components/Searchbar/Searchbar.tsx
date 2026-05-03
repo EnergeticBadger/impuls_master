@@ -1,6 +1,8 @@
-import { hasData, hasStatus, isScryfallCard, type ImageUris, type ScryfallCard } from '~/types'
+import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
 import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
+import { setCardOverlay } from '../Context/cardoverlay';
+import { setCards } from '../Context/cards';
 
 
 async function searchCard(page: number, query: string) {
@@ -17,7 +19,7 @@ async function searchCard(page: number, query: string) {
 
 
 
-export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStateAction<ImageUris[]>> }) {
+export function Searchbar() {
 
     // check if query changed on submit
     // check current page and if there are more
@@ -89,10 +91,10 @@ export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStat
             }
 
             // Optimization: Use .map and .filter or .flatMap instead of creating a let array
-            const largeImages = validCards
-                .map(c => c.image_uris)
-                .filter((img): img is ImageUris => !!img);
+            const largeImages: CardProps[] = validCards
+                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri } }).filter((card): card is CardProps => !!card?.image_uri);
 
+            setCardOverlay('none')
             setCards(largeImages);
             e.currentTarget.reset();
         } catch (error: unknown) {

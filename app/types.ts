@@ -28,10 +28,16 @@ export function isScryfallCard(item: any): item is ScryfallCard {
     return item?.object === 'card' && typeof item?.id === 'string';
 }
 
+export type CardProps = {
+    name: string
+    image_uri: string
+    card_uri: string
+}
+
 export type ScryfallCardSearchResponse = {
     object: string
     total_cards?: number
-    has_more:boolean
+    has_more: boolean
     next_page?: string
     data: ScryfallCard[]
 }
