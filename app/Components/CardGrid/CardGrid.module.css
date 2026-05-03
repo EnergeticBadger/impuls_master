@@ -1,0 +1,11 @@
+.CardGrid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+}
+
+
+.Card {
+    border: 2px solid #000;
+    border-radius: 4.75% / 3.5%;
+}

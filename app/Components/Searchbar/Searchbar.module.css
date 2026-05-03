@@ -1,0 +1,60 @@
+.Pages {
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+    gap:8px;
+    padding: 5px 0;
+    background-color:rgb(172, 84, 84) ;
+    color:#fff;
+    line-height: 120%;
+}
+
+.Pages span {
+    background-color: transparent;
+}
+
+.Pages button {
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: rgb(70, 0, 0);
+}
+
+
+.Pages button:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+
+.searchbar {
+    background-color: rgb(146, 40, 40);
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: 8px;
+}
+
+
+.searchbar input {
+    background-color: transparent;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 300;
+    line-height: 130%;
+    margin: 5px 0;
+    border: solid rgba(255, 255, 255, 0.563);
+    border-width: 0px 0px 1px 0px;
+    text-align: left;
+    width: calc(100% - 20px);
+}
+
+.main_content {
+    top: 0;
+    left: 0;
+    z-index: 10;
+    position: fixed;
+    flex-direction: column;
+    width: 100%;
+}
