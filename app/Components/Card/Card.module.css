@@ -22,4 +22,26 @@
   width: 100%;
   height: 100%;
   background-color: rgba(36, 36, 36, 0.926);
+  padding: 20px;
+  flex-direction: column;
+}
+
+
+.close {
+  margin: 0 0 0 auto;
+}
+
+.close, .close svg{
+  border-radius: 100%;
+  height: 30px;
+}
+
+.close svg {
+  padding: 4px;
+}
+
+
+.overlay_details {
+  display: grid;
+  grid-template: auto / max(450px) 1fr ;
 }

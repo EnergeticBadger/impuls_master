@@ -32,6 +32,7 @@ export type CardProps = {
     name: string
     image_uri: string
     card_uri: string
+    card: ScryfallCard
 }
 
 export type ScryfallCardSearchResponse = {

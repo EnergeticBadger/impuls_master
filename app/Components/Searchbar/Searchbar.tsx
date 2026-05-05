@@ -92,7 +92,7 @@ export function Searchbar() {
 
             // Optimization: Use .map and .filter or .flatMap instead of creating a let array
             const largeImages: CardProps[] = validCards
-                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri } }).filter((card): card is CardProps => !!card?.image_uri);
+                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
 
             setCardOverlay('none')
             setCards(largeImages);
