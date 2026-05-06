@@ -16,8 +16,9 @@ export function setCurrentAlternate(name: string, uri: string) {
 
 
 
-export const all_alt_art = proxy<{prints:Print[]}>({prints:[]})
+export const all_alt_art = proxy<{ name: string, prints: Print[] }>({ name: '', prints: [] })
 
-export function setAltArtList(prints:Print[]) {
-    all_alt_art.prints = prints 
+export function setAltArtList(name: string, prints: Print[]) {
+    all_alt_art.prints = prints
+    all_alt_art.name = name
 }

@@ -16,11 +16,11 @@
 
 .overlay {
   position: fixed;
-  top: 107px;
+  top: 97px;
   left: 0;
   z-index: 2;
   width: 100%;
-  height: calc(100% - 107px);
+  height: calc(100% - 97px);
   background-color: rgba(36, 36, 36, 0.926);
   padding: 15px;
 }

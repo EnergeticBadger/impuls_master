@@ -29,11 +29,11 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
 
         const prints = res.data.map((c) => ({ name: c.set_name, uri: c.image_uris?.large ?? '' }))
         console.log(card.prints_search_uri)
-        setAltArtList(prints)
+        setAltArtList(name, prints)
     }
 
     function handleOverlay(open: boolean, name: string) {
-        if (allPrints.prints.length === 0) FetchPrints()
+        if (allPrints.prints.length === 0 || allPrints.name !== name) FetchPrints()
 
         setCurrentAlternate(name, card.image_uris?.large ?? '')
         setCardOverlay(name)
@@ -91,9 +91,9 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                                             <svg height="24px" viewBox="0 -1030 960 880" width="24px" fill={copied ? "#46bd48" : "#FFFFFF"}><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg>
                                         </button>
                                     </span>
-                                    <span>{card.oracle_text}</span>
+                                    <p>{`${card.oracle_text}`}</p>
                                 </div>
-                                <AlternateArts />
+                                {allPrints.name === name ? <AlternateArts /> : null}
                             </div>
                         </div>
                     </div>
