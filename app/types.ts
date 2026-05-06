@@ -28,6 +28,11 @@ export function isScryfallCard(item: any): item is ScryfallCard {
     return item?.object === 'card' && typeof item?.id === 'string';
 }
 
+export type Print = {
+    name: string
+    uri: string
+}
+
 export type CardProps = {
     name: string
     image_uri: string
