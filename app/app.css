@@ -7,7 +7,8 @@
 }
 
 
-div, form {
+div,
+form {
     display: flex;
     flex: 1 0 0%;
     box-sizing: border-box;
@@ -15,7 +16,8 @@ div, form {
 }
 
 
-
-input , button{
+input,
+button {
     all: unset;
+
 }

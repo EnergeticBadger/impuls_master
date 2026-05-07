@@ -1,6 +1,8 @@
-import { hasData, hasStatus, isScryfallCard, type ImageUris, type ScryfallCard } from '~/types'
+import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
 import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
+import { setCardOverlay } from '../Context/cardoverlay';
+import { setCards } from '../Context/cards';
 
 
 async function searchCard(page: number, query: string) {
@@ -17,7 +19,7 @@ async function searchCard(page: number, query: string) {
 
 
 
-export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStateAction<ImageUris[]>> }) {
+export function Searchbar() {
 
     // check if query changed on submit
     // check current page and if there are more
@@ -30,7 +32,7 @@ export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStat
 
     async function searchQuery(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault(); // Stop the page from reloading
-        console.log('OnSubmit')
+        // console.log('OnSubmit')
         // Use FormData to get the value of the input named "query"
         const formData = new FormData(e.currentTarget);
         const queryTerm = formData.get('query')?.toString();
@@ -44,7 +46,7 @@ export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStat
 
             // if there is a queryTerm from input and it's not the same rest
             if (queryTerm && query !== queryTerm) {
-                console.log("updated query", queryTerm)
+                // console.log("updated query", queryTerm)
                 setQuery(queryTerm)
                 termChanged = true
                 tempPage = { number: 1, has_more: false }
@@ -62,11 +64,11 @@ export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStat
                 setPage((p) => { return { number: p.number - 1, has_more: p.has_more } })
             }
 
-            console.log('query:', query)
+            // console.log('query:', query)
             // fetch data
             const res = await searchCard(tempPage.number, termChanged ? queryTerm ?? query : query)
 
-            console.log('res:', res)
+            // console.log('res:', res)
 
             // see if there were any errors
             if (hasStatus(res) || !hasData(res)) {
@@ -89,10 +91,10 @@ export function Searchbar({ setCards }: { setCards: React.Dispatch<React.SetStat
             }
 
             // Optimization: Use .map and .filter or .flatMap instead of creating a let array
-            const largeImages = validCards
-                .map(c => c.image_uris)
-                .filter((img): img is ImageUris => !!img);
+            const largeImages: CardProps[] = validCards
+                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
 
+            setCardOverlay('none')
             setCards(largeImages);
             e.currentTarget.reset();
         } catch (error: unknown) {

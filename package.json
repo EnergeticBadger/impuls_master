@@ -7,22 +7,28 @@
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "bs": "react-router build && react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "typecheck": "react-router typegen && tsc",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "npm run build && wrangler dev",
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
     "@react-router/serve": "7.14.0",
-    "isbot": "^5.1.36",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router": "7.14.0"
+    "react-router": "7.14.0",
+    "valtio": "^2.3.2"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.35.0",
     "@react-router/dev": "7.14.0",
     "@types/node": "^22",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "isbot": "^5.1.39",
     "typescript": "^5.9.3",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "wrangler": "^4.87.0"
   }
 }

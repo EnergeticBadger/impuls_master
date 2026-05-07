@@ -1,14 +1,16 @@
 import styles from './CardGrid.module.css'
-import type { ImageUris } from "~/types";
 import { Card } from '../Card/Card';
+import { useSnapshot } from 'valtio';
+import { cardsearch } from '../Context/cards';
 
 
 
-export function CardGrid({ cards }: { cards: ImageUris[] }) {
+export function CardGrid() {
+    const cards = useSnapshot(cardsearch) as typeof cardsearch
     return (
         <div className={styles.CardGrid}>
             {/* {cards.map((card) => <Image src={card.large} alt="MTG Card" w={325} h={600} />)} */}
-            {cards.map((card) => <Card key={card.large} card={card} />)}
+            {cards.list.map((c) => <Card key={c.image_uri} {...c} />)}
         </div>
     )
 }
