@@ -73,6 +73,11 @@
   gap: 10px;
 }
 
+.info_heading p {
+  white-space: pre-line;
+  text-indent: 13px hanging;
+}
+
 .name {
   cursor: pointer;
   font-size: 25px;
@@ -89,4 +94,28 @@
 .alt_art_item {
   text-decoration: underline;
   cursor: pointer;
+}
+
+.play_formats {
+  display: grid;
+  grid-template: 1fr / repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  grid-auto-rows: 1fr;
+  gap:10px;
+  flex:0;
+
+}
+
+.play_format_item span::first-letter {
+  text-transform: uppercase;
+}
+
+.play_format_item {
+  align-items: center;
+  gap: 5px;
+}
+
+.play_format_item > :first-child {
+  width:73px;
+  padding: 5px;
+  border-radius: 4px;
 }
