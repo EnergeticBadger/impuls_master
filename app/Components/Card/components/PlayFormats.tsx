@@ -23,17 +23,20 @@ export function PlayFormats({ formats }: { formats: Legalities }) {
     ]
 
     return (
-        <div className={styles.play_formats}>
-            {Object.entries(formats).filter(([k, val])=> !!format_names.includes(k)).map((keys) => {
-                const [key, value] = keys
+        <div className={styles.play_formats_wrap}>
+            <span>Formats</span>
+            <div className={styles.play_formats}>
+                {Object.entries(formats).filter(([k, val]) => !!format_names.includes(k)).map((keys) => {
+                    const [key, value] = keys
 
-                return (
-                    <div key={key} className={styles.play_format_item}>
-                        <span style={{backgroundColor: value === "legal" ? 'green' : 'gray'}}>{value.replace('_', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase())}</span>
-                        <span>{key}</span>
-                    </div>
-                )
-            })}
+                    return (
+                        <div key={key} className={styles.play_format_item}>
+                            <span style={{ backgroundColor: value === "legal" ? 'green' : 'gray' }}>{value.replace('_', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase())}</span>
+                            <span>{key}</span>
+                        </div>
+                    )
+                })}
+            </div>
         </div>
     )
 }
