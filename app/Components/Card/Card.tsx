@@ -76,7 +76,11 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 </button>
 
                 {/* Overlay */}
-                <div className={styles.overlay} style={{ display: quickView ? 'flex' : 'none' }}>
+                <div className={quickView? styles.overlay : styles.not_active}>
+                    {/* close */}
+                    <button className={styles.close} onClick={() => handleOverlay(false, 'none')}>
+                        <svg height="20px" width="20px" viewBox="0 -24 24 24" fill="#FFFFFF"><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
+                    </button>
                     <div className={styles.overlay_details}>
 
                         <img src={version.uri} alt={name} width="100%" height="100%" />
@@ -95,10 +99,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                             </div>
                             {allPrints.name === name ? <AlternateArts /> : null}
                         </div>
-                        {/* close */}
-                        <button className={styles.close} onClick={() => handleOverlay(false, 'none')}>
-                            <svg height="30px" viewBox="0 -960 960 960" width="30px" fill="#FFFFFF"><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
-                        </button>
+
                     </div>
                 </div>
             </div>
