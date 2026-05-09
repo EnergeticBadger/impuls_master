@@ -25,8 +25,7 @@
   display: grid;
   grid-template:
     "close close" 32px
-    ". overlay" auto 
-    ". ." 32px
+    ". overlay" auto ". ." 32px
     / 32px auto 32px;
 }
 
@@ -49,12 +48,21 @@
 }
 
 
+.play_formats_wrap,
+.alt_art_block,
+.alt_art_list,
+.info_heading {
+  flex-direction: column;
+  gap: 4px;
+}
+
 .overlay_details {
   grid-area: overlay;
   gap: 20px;
   padding: 20px;
   border-radius: 8px;
   flex-wrap: wrap;
+  overflow: scroll;
 }
 
 
@@ -63,19 +71,33 @@
   border-radius: 4.75% / 3.5%;
   width: auto;
   height: auto;
-  max-height: min(600px, 100%);
-  max-width: min(400px, 100%);
+  max-height: min(550px, 100%);
+  /* pick a hight and do max hight * ratio (550 * 0.714) */
+  max-width: min(393px, 100%);
+  flex: 0 1 0;
 }
 
 
 .overlay_details_info {
   gap: 10px;
+  display: grid;
+  grid-template:
+    "heading heading" min-content "formats ." min-content "arts ." max(150px) / max(400px) auto;
 }
 
 .info_heading {
-  flex-direction: column;
-  gap: 10px;
+  grid-area: heading;
 }
+
+.play_formats_wrap {
+  grid-area: formats;
+}
+
+.alt_art_block {
+  grid-area: arts;
+  overflow: scroll;
+}
+
 
 .info_heading p {
   white-space: pre-line;
@@ -89,15 +111,7 @@
   flex: 1 0 0;
 }
 
-.alt_art_block {
-  flex-direction: column;
-  gap: 4px;
-}
 
-.alt_art_list {
-  flex-direction: column;
-  gap: 4px;
-}
 
 .alt_art_item {
   text-decoration: underline;
@@ -130,9 +144,17 @@
 }
 
 
-@media screen and (max-width:350px) {
-  .overlay {
-    grid-template: 32px auto / auto;
-    grid-template-areas: "close" "overlay";
+
+@media screen and (max-width:640px) {
+
+  .overlay_details>img {
+    aspect-ratio: 0.714/1;
+    max-height: min(360px, 100%);
+    max-width: min(321px, 100%);
+  }
+
+
+  .overlay_details_info {
+    grid-template: "heading" min-content "formats" max(150px) "arts" max(150px);
   }
 }

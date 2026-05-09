@@ -36,6 +36,11 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     function handleOverlay(open: boolean, name: string) {
         if (allPrints.prints.length === 0 || allPrints.name !== name) FetchPrints()
 
+        if (window && window.document.getElementsByName("body")) {
+            const elm = window.document.getElementById("app")
+            if (elm) open ? elm.style.overflow = "hidden" : elm.style.overflow = "scroll"
+        }
+
         setCurrentAlternate(name, card.image_uris?.large ?? '')
         setCardOverlay(name)
         setQuickView(open)
@@ -76,14 +81,15 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 </button>
 
                 {/* Overlay */}
-                <div className={quickView? styles.overlay : styles.not_active}>
+                <div className={quickView ? styles.overlay : styles.not_active}>
                     {/* close */}
                     <button className={styles.close} onClick={() => handleOverlay(false, 'none')}>
-                        <svg height="20px" width="20px" viewBox="0 -24 24 24" fill="#FFFFFF"><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
+                        <svg height="20px" width="20px" viewBox="0 -960 960 960" fill="#FFFFFF"><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
                     </button>
                     <div className={styles.overlay_details}>
 
                         <img src={version.uri} alt={name} width="100%" height="100%" />
+
                         <div className={styles.overlay_details_info}>
                             <div className={styles.info_heading}>
                                 <span className={styles.name} onClick={handleCopy} style={{ color: copied ? "#46bd48" : "#FFFFFF" }}>{name} |
@@ -91,12 +97,8 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                                         <svg height="24px" viewBox="0 -1030 960 880" width="24px" fill={copied ? "#46bd48" : "#FFFFFF"}><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg>
                                     </button>
                                 </span>
-                                <span>Formats</span>
-                                <PlayFormats formats={card.legalities} />
-
-                                {/* <p>{card.type_line}</p>
-                                    <p>{`${card.oracle_text}`}</p> */}
                             </div>
+                            <PlayFormats formats={card.legalities} />
                             {allPrints.name === name ? <AlternateArts /> : null}
                         </div>
 
