@@ -9,7 +9,7 @@ export const alternate = proxy<Print>({
 })
 
 
-export function setCurrentAlternate(name: string, uri: string) {
+ export async function setCurrentAlternate(name: string, uri: string) {
     alternate.name = name
     alternate.uri = uri
 }

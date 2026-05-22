@@ -1,12 +1,12 @@
 import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
 import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
-import { setCardOverlay } from '../Context/cardoverlay';
 import { setCards } from '../Context/cards';
+import { setCurrentAlternate } from '../Card/components/alternate_arts';
 
 
 async function searchCard(page: number, query: string) {
-    const blob = await fetch(`https://api.scryfall.com/cards/search?page=${page}&q=${encodeURIComponent(query)}&format=json&include_extras=false&include_multilingual=false&include_variations=false&order=name&&unique=cards`, {
+    const blob = await fetch(`https://api.scryfall.com/cards/search?page=${page}&q=${encodeURIComponent(query)}&format=json&include_extras=false&include_multilingual=false&include_variations=false&order=name&unique=cards`, {
         method: "GET",
         headers: {
             "Accept": "application/json",
@@ -68,7 +68,7 @@ export function Searchbar() {
             // fetch data
             const res = await searchCard(tempPage.number, termChanged ? queryTerm ?? query : query)
 
-            // console.log('res:', res)
+            console.log('res:', res)
 
             // see if there were any errors
             if (hasStatus(res) || !hasData(res)) {
@@ -83,7 +83,8 @@ export function Searchbar() {
             }
 
             const validCards = res.data.filter(isScryfallCard);
-
+             
+            console.log('validCards:', validCards)
 
             if (validCards.length === 0) {
                 setPage({ number: 1, has_more: false })
@@ -94,9 +95,9 @@ export function Searchbar() {
             const largeImages: CardProps[] = validCards
                 .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
 
-            setCardOverlay('none')
+            setCurrentAlternate('none', '')
             setCards(largeImages);
-            e.currentTarget.reset();
+            e.currentTarget?.reset();
         } catch (error: unknown) {
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);
