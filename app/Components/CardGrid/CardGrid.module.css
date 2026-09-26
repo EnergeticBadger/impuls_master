@@ -1,6 +1,6 @@
 .CardGrid {
     /* display: grid; */
-    gap: 12px;
+    gap: var(--space-3);
     /* grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); */
     flex-wrap: wrap;
     align-items: flex-start;
@@ -8,6 +8,6 @@
 
 
 .Card {
-    border: 2px solid #000;
-    border-radius: 4.75% / 3.5%;
+    border: 2px solid var(--border-card);
+    border-radius: var(--radius-card);
 }

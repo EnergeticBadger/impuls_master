@@ -1,9 +1,14 @@
+@import "./theme.css";
+
 * {
-    font-family: Tahoma, Geneva, Verdana, sans-serif;
     padding: 0;
     margin: 0;
-    background-color: rgb(70, 0, 0);
-    color: #fff;
+}
+
+body {
+    font-family: var(--font-body);
+    background-color: var(--surface-0);
+    color: var(--text);
 }
 
 
@@ -19,5 +24,4 @@ form {
 input,
 button {
     all: unset;
-
 }

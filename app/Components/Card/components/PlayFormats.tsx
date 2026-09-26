@@ -31,7 +31,7 @@ export function PlayFormats({ formats }: { formats: Legalities }) {
 
                     return (
                         <div key={key} className={styles.play_format_item}>
-                            <span style={{ backgroundColor: value === "legal" ? 'green' : 'gray' }}>{value.replace('_', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase())}</span>
+                            <span className={`pill pill--${value}`}>{value.replace('_', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase())}</span>
                             <span>{key}</span>
                         </div>
                     )

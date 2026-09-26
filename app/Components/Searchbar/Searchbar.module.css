@@ -2,11 +2,11 @@
     width: 100%;
     justify-content: center;
     align-items: center;
-    gap:8px;
-    padding: 5px 0;
-    background-color:rgb(172, 84, 84) ;
-    color:#fff;
-    line-height: 120%;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    background-color: var(--surface-2);
+    color: var(--text);
+    line-height: var(--leading);
 }
 
 .Pages span {
@@ -14,10 +14,15 @@
 }
 
 .Pages button {
-    padding: 8px;
-    border-radius: 4px;
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    background-color: rgb(70, 0, 0);
+    background-color: var(--surface-0);
+    transition: background-color var(--ease);
+}
+
+.Pages button:hover:not(:disabled) {
+    background-color: var(--surface-hover-0);
 }
 
 
@@ -28,23 +33,23 @@
 
 
 .searchbar {
-    background-color: rgb(146, 40, 40);
+    background-color: var(--surface-1);
     width: 100%;
     justify-content: center;
     align-items: center;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 
 .searchbar input {
     background-color: transparent;
-    color: #fff;
-    font-size: 24px;
+    color: var(--text);
+    font-size: var(--text-xl);
     font-weight: 300;
     line-height: 130%;
     margin: 5px 0;
-    border: solid rgba(255, 255, 255, 0.563);
+    border: solid var(--border-subtle);
     border-width: 0px 0px 1px 0px;
     text-align: left;
     width: calc(100% - 20px);
@@ -53,7 +58,7 @@
 .main_content {
     top: 0;
     left: 0;
-    z-index: 10;
+    z-index: var(--z-header);
     position: fixed;
     flex-direction: column;
     width: 100%;

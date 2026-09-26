@@ -2,19 +2,21 @@ import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, typ
 import styles from './Searchbar.module.css'
 import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { setCards } from '../Context/cards';
+import { scryfallGet } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
 
 
 async function searchCard(page: number, query: string) {
-    const blob = await fetch(`https://api.scryfall.com/cards/search?page=${page}&q=${encodeURIComponent(query)}&format=json&include_extras=false&include_multilingual=false&include_variations=false&order=name&unique=cards`, {
-        method: "GET",
-        headers: {
-            "Accept": "application/json",
-            "User-Agent": "impuls_master/1.0"
-        }
-    });
-    const res = await blob.json();
-    return res
+    const params = new URLSearchParams({
+        page: String(page),
+        q: query,
+        include_extras: "false",
+        include_multilingual: "false",
+        include_variations: "false",
+        order: "name",
+        unique: "cards",
+    })
+    return scryfallGet(`cards/search?${params}`)
 }
 
 
@@ -93,7 +95,7 @@ export function Searchbar() {
 
             // Optimization: Use .map and .filter or .flatMap instead of creating a let array
             const largeImages: CardProps[] = validCards
-                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
+                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
 
             setCurrentAlternate('none', '')
             setCards(largeImages);
