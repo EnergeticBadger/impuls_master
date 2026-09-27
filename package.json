@@ -5,8 +5,8 @@
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
-    "start": "react-router-serve ./build/server/index.js",
-    "bs": "react-router build && react-router-serve ./build/server/index.js",
+    "start": "wrangler dev",
+    "bs": "react-router build && wrangler dev",
     "typecheck": "react-router typegen && tsc",
     "deploy": "npm run build && wrangler deploy",
     "preview": "npm run build && wrangler dev",
