@@ -19,6 +19,70 @@ async function searchCard(page: number, query: string) {
     return scryfallGet(`cards/search?${params}`)
 }
 
+type PageData = { cards: CardProps[], has_more: boolean }
+
+// page data by query+page, shared by real searches and prefetches so Next reuses an in-flight prefetch
+const pageData = new Map<string, Promise<PageData>>()
+const MAX_PAGE_DATA = 20
+
+function loadPage(query: string, page: number): Promise<PageData> {
+    const key = pageKey(query, page)
+    let data = pageData.get(key)
+    if (!data) {
+        data = searchCard(page, query).then((res) => {
+            // see if there were any errors
+            if (hasStatus(res) || !hasData(res)) throw new Error(`${res.status}`, { cause: res.details });
+
+            const validCards = res.data.filter(isScryfallCard);
+            if (validCards.length === 0) throw new Error('200', { cause: 'No Cards Found' });
+
+            const cards: CardProps[] = validCards
+                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
+            return { cards, has_more: !!res.has_more }
+        })
+        // don't keep failures around, so the next try fetches again
+        data.catch(() => pageData.delete(key))
+        pageData.set(key, data)
+        if (pageData.size > MAX_PAGE_DATA) pageData.delete(pageData.keys().next().value!)
+    }
+    return data
+}
+
+// wait for the images on screen to finish (or 5s) so preloading never slows the page being viewed
+function afterVisibleImages() {
+    const pending = [...document.images].filter((img) => !img.complete)
+    return Promise.race([
+        Promise.all(pending.map((img) => new Promise((r) => { img.addEventListener('load', r, { once: true }); img.addEventListener('error', r, { once: true }) }))),
+        new Promise((r) => setTimeout(r, 5000)),
+    ])
+}
+
+// images being preloaded for the next page; dropped when a newer preload starts
+let warming: HTMLImageElement[] = []
+let preloadRun = 0
+
+// fetch the next page's data and pull its images into the browser cache, so Next shows it instantly
+async function preloadNext(query: string, page: number, has_more: boolean) {
+    const run = ++preloadRun
+    for (const img of warming) img.removeAttribute('src')
+    warming = []
+    if (!has_more || getPage(pageKey(query, page + 1))) return
+
+    try {
+        const next = await loadPage(query, page + 1)
+        await afterVisibleImages()
+        if (run !== preloadRun) return
+        warming = next.cards.map((c) => {
+            const img = new Image()
+            img.decoding = 'async'
+            img.src = c.image_uri
+            return img
+        })
+    } catch {
+        // just a preload; the real click reports any error
+    }
+}
+
 
 
 export function Searchbar() {
@@ -73,39 +137,22 @@ export function Searchbar() {
                 setPage({ number: tempPage.number, has_more: kept.has_more })
                 setCurrentAlternate('none', '')
                 showPage(key)
+                preloadNext(q, tempPage.number, kept.has_more)
                 return
             }
 
-            // fetch data
-            const res = await searchCard(tempPage.number, q)
-
-
-            // see if there were any errors
-            if (hasStatus(res) || !hasData(res)) {
+            let data: PageData
+            try {
+                data = await loadPage(q, tempPage.number)
+            } catch (error) {
                 setPage({ number: 1, has_more: false })
-                throw new Error(`${res.status}`, { cause: res.details });
+                throw error
             }
 
-            if (res.has_more) {
-                setPage((p) => { return { number: p.number, has_more: true } })
-            } else {
-                setPage((p) => { return { number: p.number, has_more: false } })
-            }
-
-            const validCards = res.data.filter(isScryfallCard);
-             
-
-            if (validCards.length === 0) {
-                setPage({ number: 1, has_more: false })
-                throw new Error('200', { cause: 'No Cards Found' });
-            }
-
-            // Optimization: Use .map and .filter or .flatMap instead of creating a let array
-            const largeImages: CardProps[] = validCards
-                .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
-
+            setPage((p) => { return { number: p.number, has_more: data.has_more } })
             setCurrentAlternate('none', '')
-            showPage(key, largeImages, !!res.has_more);
+            showPage(key, data.cards, data.has_more);
+            preloadNext(q, tempPage.number, data.has_more)
         } catch (error: unknown) {
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);
