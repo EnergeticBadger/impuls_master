@@ -51,7 +51,10 @@ export async function loadPrints(name: string, printsUri: string) {
             return
         }
 
-        const prints = res.data.map((c) => ({ name: c.set_name, uri: c.image_uris?.large ?? '' }))
+        // double-faced printings keep their images on the faces; show the front
+        const prints = res.data
+            .map((c) => ({ name: c.set_name, uri: c.image_uris?.large ?? c.card_faces?.[0]?.image_uris?.large ?? '' }))
+            .filter((p) => p.uri)
         printsCache.set(name, prints)
 
         // a newer card was opened while this one was loading

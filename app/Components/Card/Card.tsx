@@ -22,10 +22,9 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
 
         if (open && allPrints.name !== name) loadPrints(name, card.prints_search_uri)
 
-        if (window && window.document.getElementById("app")) {
-            const elm = window.document.getElementById("app")
-            if (elm) open ? elm.style.overflow = "hidden" : elm.style.overflow = "scroll"
-        }
+        // lock page scroll while the overlay is open, then hand it back to the stylesheet
+        const elm = document.getElementById("app")
+        if (elm) elm.style.overflow = open ? "hidden" : ""
 
         await setCurrentAlternate(name, currentFace.large_uri)
     }
