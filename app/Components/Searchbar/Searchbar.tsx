@@ -127,7 +127,7 @@ export function Searchbar() {
                             <button disabled={!page.has_more} name="next">{" Next 175 >"}</button>
                             {/* <button name="last">{">>"}</button> */}
                         </>
-                    ) : (<div style={{ height: "45px", backgroundColor: "transparent" }}></div>)}
+                    ) : null}
                 </div>
             </form>
         </div>

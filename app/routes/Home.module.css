@@ -1,4 +1,5 @@
 .main_content {
-    margin: var(--header-height) 0 0 0;
-    padding: var(--space-5);
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: var(--space-6) var(--gutter) var(--space-7);
 }

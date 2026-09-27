@@ -61,20 +61,25 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 32px;
+  --space-7: 48px;
 
   /* ---- Radius ---- */
   --radius-sm: 4px;
   --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 100%;
   --radius-card: 4.75% / 3.5%;    /* matches a real MTG card corner */
 
   /* ---- Layout ---- */
-  --header-height: 97px;
-  --card-width: 250px;
+  --content-width: 1200px;        /* max width of header + results */
+  --gutter: var(--space-5);       /* side padding on every screen size */
+  --card-min: 200px;              /* smallest a grid card gets before a column drops */
+  --overlay-width: 1000px;        /* card detail panel */
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 
   /* ---- Layers ---- */
-  --z-overlay: 2;
   --z-header: 10;
+  --z-overlay: 20;                /* above the header */
 
   /* ---- Motion ---- */
   --ease: 0.2s ease;

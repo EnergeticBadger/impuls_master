@@ -1,13 +1,19 @@
 .CardGrid {
-    /* display: grid; */
-    gap: var(--space-3);
-    /* grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); */
-    flex-wrap: wrap;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+    gap: var(--space-6) var(--space-5);
+    align-items: start;
 }
 
+@media screen and (max-width: 640px) {
+    .CardGrid {
+        gap: var(--space-5) var(--space-3);
+    }
+}
 
+/* skeleton placeholder, same footprint as a card */
 .Card {
-    border: 2px solid var(--border-card);
+    aspect-ratio: 5 / 7;
     border-radius: var(--radius-card);
+    background-color: var(--surface-1);
 }
