@@ -5,8 +5,8 @@
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
-    "start": "react-router-serve ./build/server/index.js",
-    "bs": "react-router build && react-router-serve ./build/server/index.js",
+    "start": "wrangler dev",
+    "bs": "react-router build && wrangler dev",
     "typecheck": "react-router typegen && tsc",
     "deploy": "npm run build && wrangler deploy",
     "preview": "npm run build && wrangler dev",
@@ -15,6 +15,7 @@
   "dependencies": {
     "@react-router/node": "7.14.0",
     "@react-router/serve": "7.14.0",
+    "@unpic/react": "^1.0.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "7.14.0",

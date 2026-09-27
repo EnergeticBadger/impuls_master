@@ -63,6 +63,7 @@ export type ScryfallCard = {
     uri: string;
     scryfall_uri: string;
     layout: string;
+    card_faces?: CardFace[]
     highres_image: boolean;
     image_status: string;
     image_uris?: ImageUris;
@@ -112,6 +113,14 @@ export type ScryfallCard = {
     prices: Prices;
     related_uris: RelatedUris;
     purchase_uris: PurchaseUris;
+}
+
+export type CardFace = {
+    name: string;
+    image_uris?: ImageUris;
+    mana_cost?: string;
+    type_line?: string;
+    oracle_text?: string;
 }
 
 export type ImageUris = {

@@ -1,23 +1,29 @@
-* {
-    font-family: Tahoma, Geneva, Verdana, sans-serif;
+@import "./theme.css";
+
+*,
+*::before,
+*::after {
     padding: 0;
     margin: 0;
-    background-color: rgb(70, 0, 0);
-    color: #fff;
-}
-
-
-div,
-form {
-    display: flex;
-    flex: 1 0 0%;
     box-sizing: border-box;
-    position: relative;
 }
 
+body {
+    font-family: var(--font-body);
+    background-color: var(--surface-0);
+    color: var(--text);
+    line-height: var(--leading);
+    min-height: 100vh;
+}
 
 input,
 button {
     all: unset;
+}
 
+@media screen and (max-width: 640px) {
+    :root {
+        --gutter: var(--space-4);
+        --card-min: 150px;
+    }
 }
