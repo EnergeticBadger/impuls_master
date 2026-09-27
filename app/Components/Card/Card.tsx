@@ -19,7 +19,8 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     async function handleOverlay(e: SyntheticEvent, open: boolean, name: string) {
         e.preventDefault()
 
-        if (open && allPrints.name !== name) loadPrints(name, card.prints_search_uri)
+        // always load on open: cached cards return instantly, and this supersedes any in-flight request
+        if (open) loadPrints(name, card.prints_search_uri)
 
         // lock page scroll while the overlay is open, then hand it back to the stylesheet
         const elm = document.getElementById("app")

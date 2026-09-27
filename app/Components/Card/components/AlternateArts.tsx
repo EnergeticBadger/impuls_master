@@ -9,7 +9,7 @@ export function AlternateArts() {
     const allPrints = useSnapshot(all_alt_art)
 
 
-    if (allPrints.prints.length === 0) null
+    if (allPrints.prints.length === 0) return null
 
     return (
         <div className={styles.alt_art_block}>

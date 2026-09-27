@@ -42,6 +42,8 @@ export async function loadPrints(name: string, printsUri: string) {
     pending?.abort()
     const controller = new AbortController()
     pending = controller
+    // clear the old card's prints so they never show under this card while loading or on error
+    setAltArtList(name, [])
 
     try {
         const res = await scryfallGet(printsUri, { signal: controller.signal });
