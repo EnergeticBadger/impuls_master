@@ -15,12 +15,12 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const allPrints = useSnapshot(all_alt_art)
     const { currentFace, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
 
-    console.log(name)
 
     async function handleOverlay(e: SyntheticEvent, open: boolean, name: string) {
         e.preventDefault()
 
-        if (open && allPrints.name !== name) loadPrints(name, card.prints_search_uri)
+        // always load on open: cached cards return instantly, and this supersedes any in-flight request
+        if (open) loadPrints(name, card.prints_search_uri)
 
         // lock page scroll while the overlay is open, then hand it back to the stylesheet
         const elm = document.getElementById("app")
@@ -66,7 +66,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 </button>) : null }
 
                 {/* Overlay */}
-                <div className={version.name === name || allPrints.prints.find((p) => p.name === name) ? styles.overlay : styles.not_active}>
+                <div className={version.name === name ? styles.overlay : styles.not_active}>
                     {/* close */}
                     <button className={styles.close} onClick={(e) => handleOverlay(e, false, 'none')}>
                         <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
