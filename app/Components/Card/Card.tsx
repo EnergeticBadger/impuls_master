@@ -60,6 +60,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 width={250}
                 height={350}
                 className={rotationClass}
+                onClick={(e) => handleOverlay(e, true, name)}
             />
             <div className={styles.button_box}>
                 {/* copy */}
@@ -77,34 +78,35 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                     <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
                 </button>) : null }
 
-                {/* Overlay */}
-                <div className={version.name === name ? styles.overlay : styles.not_active}>
+                {/* Overlay: clicking the dimmed area around the panel closes it */}
+                <div className={version.name === name ? styles.overlay : styles.not_active} onClick={(e) => { if (e.target === e.currentTarget) handleOverlay(e, false, 'none') }}>
                     <div className={styles.overlay_details}>
-                        {/* close */}
-                        <button className={styles.close} onClick={(e) => handleOverlay(e, false, 'none')}>
-                            <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
-                        </button>
+                        {canFlip || canRotate ? (
+                            <button className={styles.turn} onClick={handleOverlayTurn} title={canFlip ? 'Flip' : 'Rotate'}>
+                                <svg viewBox="0 -960 960 960"><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
+                                {canFlip ? 'Flip' : 'Rotate'}
+                            </button>
+                        ) : null}
+
+                        <div className={styles.info_heading}>
+                            <span className={styles.name} onClick={handleCopy} style={{ color: copied ? 'var(--success)' : 'var(--text)' }}>{name}
+                                <button onClick={handleCopy} title="Copy name">
+                                    <svg viewBox="0 -960 960 960" style={{ fill: copied ? 'var(--success)' : 'var(--text)' }}><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg>
+                                </button>
+                            </span>
+                            {/* close */}
+                            <button className={styles.close} onClick={(e) => handleOverlay(e, false, 'none')} title="Close">
+                                <svg viewBox="0 -960 960 960"><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
+                            </button>
+                        </div>
 
                         <div className={styles.overlay_media}>
-                            {canFlip || canRotate ? (
-                                <button className={styles.turn} onClick={handleOverlayTurn} title={canFlip ? 'Flip' : 'Rotate'}>
-                                    <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
-                                    {canFlip ? 'Flip' : 'Rotate'}
-                                </button>
-                            ) : null}
                             {version.name === 'none' ? null : (
                                 <Image src={version.uri} alt={name} width={393} height={550} className={rotationClass} />
                             )}
                         </div>
 
                         <div className={styles.overlay_details_info}>
-                            <div className={styles.info_heading}>
-                                <span className={styles.name} onClick={handleCopy} style={{ color: copied ? 'var(--success)' : 'var(--text)' }}>{name}
-                                    <button onClick={handleCopy} style={{ height: '24px' }}>
-                                        <svg height="24px" viewBox="0 -1030 960 880" width="24px" style={{ fill: copied ? 'var(--success)' : 'var(--text)' }}><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z" /></svg>
-                                    </button>
-                                </span>
-                            </div>
                             <PlayFormats formats={card.legalities} />
                             {allPrints.name === name ? <AlternateArts /> : null}
                         </div>

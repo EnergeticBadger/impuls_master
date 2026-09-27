@@ -71,7 +71,6 @@
   --radius-card: 4.75% / 3.5%;    /* matches a real MTG card corner */
 
   /* ---- Layout ---- */
-  --content-width: 1200px;        /* max width of header + results */
   --gutter: var(--space-5);       /* side padding on every screen size */
   --card-min: 200px;              /* smallest a grid card gets before a column drops */
   --overlay-width: 1000px;        /* card detail panel */

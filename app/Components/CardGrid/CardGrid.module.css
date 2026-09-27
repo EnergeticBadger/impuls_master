@@ -3,6 +3,13 @@
     grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
     gap: var(--space-6) var(--space-5);
     align-items: start;
+    transition: opacity var(--ease);
+}
+
+/* the current page stays up, dimmed, while the next one is still on its way */
+.CardGrid[aria-busy="true"] {
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 /* pages kept for back/forward stay mounted but out of the layout */

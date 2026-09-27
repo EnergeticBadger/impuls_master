@@ -7,9 +7,9 @@ import type { CardProps } from '~/types';
 
 
 // recent pages stay mounted and are just hidden, so their images never reload or re-decode
-const PageGrid = memo(function PageGrid({ cards, hidden }: { cards: readonly CardProps[], hidden: boolean }) {
+const PageGrid = memo(function PageGrid({ cards, hidden, pending }: { cards: readonly CardProps[], hidden: boolean, pending: boolean }) {
     return (
-        <div className={styles.CardGrid} hidden={hidden}>
+        <div className={styles.CardGrid} hidden={hidden} data-page-grid aria-busy={pending || undefined}>
             {cards.map((c) => <Card key={c.image_uri} {...c} />)}
         </div>
     )
@@ -19,7 +19,7 @@ export function CardGrid() {
     const snap = useSnapshot(cardsearch)
     return (
         <>
-            {snap.pages.map((p) => <PageGrid key={p.key} cards={p.cards as CardProps[]} hidden={p.key !== snap.active} />)}
+            {snap.pages.map((p) => <PageGrid key={p.key} cards={p.cards as CardProps[]} hidden={p.key !== snap.active} pending={snap.pending && p.key === snap.active} />)}
         </>
     )
 }

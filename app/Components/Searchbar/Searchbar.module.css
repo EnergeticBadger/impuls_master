@@ -12,8 +12,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3) var(--space-5);
-    max-width: var(--content-width);
-    margin: 0 auto;
     padding: var(--space-4) var(--gutter);
 }
 
@@ -67,6 +65,46 @@
 .Pages button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+}
+
+/* the spinner sits inside the clicked button, in place of its label, once a page change has been waiting a moment */
+.Pages button {
+    position: relative;
+}
+
+.spinner {
+    position: absolute;
+    inset: 0;
+    width: 1em;
+    height: 1em;
+    margin: auto;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    visibility: hidden;
+}
+
+.Pages button[aria-busy="true"] {
+    opacity: 1;
+}
+
+.Pages button[aria-busy="true"] .label {
+    visibility: hidden;
+}
+
+.Pages button[aria-busy="true"] .spinner {
+    visibility: visible;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation-duration: 2.4s;
+    }
 }
 
 @media screen and (max-width: 640px) {

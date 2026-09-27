@@ -9,6 +9,7 @@
 
 .Card>img {
   display: block;
+  cursor: pointer;
   width: 100%;
   max-width: 100% !important; /* let the grid column decide the size, not unpic's 250px */
   height: auto;
@@ -70,33 +71,16 @@
   display: none;
 }
 
-.close {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background-color: var(--surface-1);
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition: background-color var(--ease);
-}
-
-.close:hover {
-  background-color: var(--surface-hover-1);
-}
-
 .overlay_details {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-6);
+  /* height of the top row (flip, name, close), set by the name's font size so they all line up */
+  --row: calc(var(--text-xl) * 1.6);
+  display: grid;
+  grid-template-columns: min(360px, 100%) minmax(0, 1fr);
+  grid-template-areas:
+    "turn head"
+    "media info";
+  align-items: start;
+  gap: var(--space-4) var(--space-6);
   width: 100%;
   max-width: var(--overlay-width);
   padding: var(--space-6);
@@ -105,16 +89,91 @@
   box-shadow: var(--shadow);
 }
 
-.overlay_media {
+.turn {
+  grid-area: turn;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--row);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-1);
+  color: var(--text);
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.turn svg {
+  width: 1.25em;
+  height: 1.25em;
+  fill: var(--text);
+}
+
+.turn:hover {
+  background-color: var(--surface-hover-1);
+}
+
+.info_heading {
+  grid-area: head;
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  cursor: pointer;
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+
+.name>button {
+  display: inline-flex;
   flex: 0 0 auto;
-  width: min(360px, 100%);
+  cursor: pointer;
+}
+
+.name svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--row);
+  height: var(--row);
+  border-radius: var(--radius-full);
+  background-color: var(--surface-1);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.close svg {
+  width: 55%;
+  height: 55%;
+  fill: var(--text);
+}
+
+.close:hover {
+  background-color: var(--surface-hover-1);
+}
+
+.overlay_media {
+  grid-area: media;
 }
 
 .overlay_media>img {
+  display: block;
   width: 100%;
   height: auto;
   border-radius: var(--radius-card);
@@ -130,47 +189,13 @@
   transform: rotate(-90deg) scale(0.716);
 }
 
-.turn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background-color: var(--surface-1);
-  color: var(--text);
-  cursor: pointer;
-  transition: background-color var(--ease);
-}
-
-.turn:hover {
-  background-color: var(--surface-hover-1);
-}
-
 .overlay_details_info {
+  grid-area: info;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  flex: 1 1 320px;
   min-width: 0;
-}
-
-.info_heading {
-  display: flex;
-  padding-right: 48px; /* keep the name clear of the close button */
-}
-
-.name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  font-size: var(--text-xl);
-  line-height: var(--leading);
-}
-
-.name>button {
-  display: inline-flex;
-  cursor: pointer;
 }
 
 /* section labels: "Formats", "Alternate Arts" */
@@ -186,14 +211,23 @@
 
 .play_formats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: var(--space-2) var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-2) var(--space-6);
 }
 
 .play_format_item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* long format names cut off instead of running into the next column */
+.play_format_item> :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .play_format_item span::first-letter {
@@ -201,15 +235,27 @@
 }
 
 .play_format_item> :first-child {
-  flex: 0 0 84px;
+  flex: 0 0 auto;
+  width: 6.5em; /* wide enough for "Restricted", so every status is the same size */
   font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* the list takes whatever height is left beside the image and only scrolls when the prints don't fit */
+.alt_art_block {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .alt_art_list {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: 220px;
+  flex: 1 1 0;
+  min-height: 160px;
+  padding-bottom: var(--space-1); /* room for the last underline, so it never triggers a scrollbar */
   overflow-y: auto;
 }
 
@@ -229,7 +275,13 @@
   }
 
   .overlay_details {
-    gap: var(--space-5);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "turn"
+      "media"
+      "info";
+    gap: var(--space-4);
     padding: var(--space-5);
   }
 
@@ -237,6 +289,13 @@
     width: 100%;
     max-width: 320px;
     margin: 0 auto;
+  }
+
+  /* nothing beside the list to line up with on a phone, so cap it instead */
+  .alt_art_list {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 220px;
   }
 
   .overlay_media>img {
@@ -257,8 +316,12 @@
     font-size: var(--text-sm);
   }
 
+  .play_format_item {
+    gap: var(--space-2);
+  }
+
   .play_format_item> :first-child {
-    flex-basis: 68px;
+    width: 6em;
     padding-inline: var(--space-1);
   }
 }
