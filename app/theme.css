@@ -1,0 +1,144 @@
+/*
+ * Theme tokens. Use these instead of raw values:
+ *   background-color: var(--surface-1);
+ *   padding: var(--space-3);
+ * All colors come from the palette the app already used (maroon / red / white).
+ */
+:root {
+  color-scheme: dark;
+  /* ---- Palette (raw colors, don't use directly in components) ---- */
+  --red-950: rgb(70, 0, 0);       /* page background */
+  --red-900: rgb(105, 18, 18);    /* hover on page bg */
+  --red-800: rgb(146, 40, 40);    /* header, button bar */
+  --red-700: rgb(160, 62, 62);    /* hover on red-800 */
+  --red-600: rgb(172, 84, 84);    /* pagination bar */
+
+  --gray-900: rgb(36, 36, 36);
+  --gray-500: rgb(128, 128, 128);
+  --black: #000;
+  --white: #fff;
+
+  --green-600: rgb(0, 128, 0);
+  --green-400: #46bd48;
+  --amber-600: rgb(184, 134, 11);
+  --crimson-700: rgb(170, 20, 40);
+
+  /* ---- Surfaces (backgrounds, darkest to lightest) ---- */
+  --surface-0: var(--red-950);    /* page */
+  --surface-1: var(--red-800);    /* header, card button bar, panels */
+  --surface-2: var(--red-600);    /* bars sitting on surface-1 */
+  --surface-hover-0: var(--red-900);
+  --surface-hover-1: var(--red-700);
+  --scrim: rgba(36, 36, 36, 0.926); /* full-screen overlay backdrop */
+
+  /* ---- Text ---- */
+  --text: var(--white);
+  --text-muted: rgba(255, 255, 255, 0.7);
+
+  /* ---- Lines ---- */
+  --border-subtle: rgba(255, 255, 255, 0.563);
+  --border-card: var(--black);
+
+  /* ---- Status ---- */
+  --success: var(--green-400);    /* "copied!" feedback */
+  --legal: var(--green-600);
+  --not-legal: var(--gray-500);
+  --restricted: var(--amber-600);
+  --banned: var(--crimson-700);
+
+  /* ---- Type ---- */
+  --font-body: Tahoma, Geneva, Verdana, sans-serif;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.4rem;
+  --text-xl: 1.5rem;              /* search input */
+  --leading: 1.2;
+
+  /* ---- Spacing (4px steps) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- Radius ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 100%;
+  --radius-card: 4.75% / 3.5%;    /* matches a real MTG card corner */
+
+  /* ---- Layout ---- */
+  --gutter: var(--space-5);       /* side padding on every screen size */
+  --card-min: 200px;              /* smallest a grid card gets before a column drops */
+  --overlay-width: 1000px;        /* card detail panel */
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+
+  /* ---- Layers ---- */
+  --z-header: 10;
+  --z-overlay: 20;                /* above the header */
+
+  /* ---- Motion ---- */
+  --ease: 0.2s ease;
+  --ease-slow: 0.3s ease;
+}
+
+/* ---- Reusable building blocks ---- */
+
+/* Standard button: <button class="btn"> */
+.btn {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-0);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background-color: var(--surface-hover-0);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Icon-only button (the small svg buttons on cards) */
+.icon-btn {
+  display: inline-flex;
+  cursor: pointer;
+  color: var(--text);
+  fill: currentColor;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--ease);
+}
+
+.icon-btn:hover {
+  background-color: var(--surface-hover-1);
+}
+
+.icon-btn svg {
+  fill: currentColor;
+}
+
+/* Small colored label, e.g. format legality */
+.pill {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--text);
+}
+
+.pill--legal { background-color: var(--legal); }
+.pill--not_legal { background-color: var(--not-legal); }
+.pill--restricted { background-color: var(--restricted); }
+.pill--banned { background-color: var(--banned); }
+
+/* Visible keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}

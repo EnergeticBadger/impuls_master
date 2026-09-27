@@ -1,60 +1,124 @@
-.Pages {
-    width: 100%;
-    justify-content: center;
-    align-items: center;
-    gap:8px;
-    padding: 5px 0;
-    background-color:rgb(172, 84, 84) ;
-    color:#fff;
-    line-height: 120%;
+/* sticky header bar */
+.main_content {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-header);
+    background-color: var(--surface-1);
+    box-shadow: var(--shadow);
 }
 
-.Pages span {
-    background-color: transparent;
+.searchbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-4) var(--gutter);
+}
+
+.searchbar input {
+    flex: 1 1 320px;
+    min-width: 0;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--surface-0);
+    color: var(--text);
+    font-size: var(--text-lg);
+    font-weight: 300;
+    line-height: var(--leading);
+    transition: border-color var(--ease);
+}
+
+.searchbar input:focus {
+    border-color: var(--text);
+}
+
+.searchbar input::placeholder {
+    color: var(--text-muted);
+}
+
+.Pages {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.Pages:empty {
+    display: none;
 }
 
 .Pages button {
-    padding: 8px;
-    border-radius: 4px;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    background-color: rgb(70, 0, 0);
+    background-color: var(--surface-0);
+    transition: background-color var(--ease);
 }
 
+.Pages button:hover:not(:disabled) {
+    background-color: var(--surface-hover-0);
+}
 
 .Pages button:disabled {
     cursor: not-allowed;
-    opacity: 0.7;
+    opacity: 0.5;
 }
 
-
-.searchbar {
-    background-color: rgb(146, 40, 40);
-    width: 100%;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
-    gap: 8px;
+/* the spinner sits inside the clicked button, in place of its label, once a page change has been waiting a moment */
+.Pages button {
+    position: relative;
 }
 
-
-.searchbar input {
-    background-color: transparent;
-    color: #fff;
-    font-size: 24px;
-    font-weight: 300;
-    line-height: 130%;
-    margin: 5px 0;
-    border: solid rgba(255, 255, 255, 0.563);
-    border-width: 0px 0px 1px 0px;
-    text-align: left;
-    width: calc(100% - 20px);
+.spinner {
+    position: absolute;
+    inset: 0;
+    width: 1em;
+    height: 1em;
+    margin: auto;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    visibility: hidden;
 }
 
-.main_content {
-    top: 0;
-    left: 0;
-    z-index: 10;
-    position: fixed;
-    flex-direction: column;
-    width: 100%;
+.Pages button[aria-busy="true"] {
+    opacity: 1;
+}
+
+.Pages button[aria-busy="true"] .label {
+    visibility: hidden;
+}
+
+.Pages button[aria-busy="true"] .spinner {
+    visibility: visible;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation-duration: 2.4s;
+    }
+}
+
+@media screen and (max-width: 640px) {
+    .searchbar {
+        padding-block: var(--space-3);
+    }
+
+    .searchbar input {
+        font-size: var(--text-md);
+        padding: var(--space-3);
+    }
+
+    .Pages {
+        flex: 1 1 100%;
+        justify-content: space-between;
+    }
 }

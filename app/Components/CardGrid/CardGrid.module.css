@@ -1,11 +1,31 @@
 .CardGrid {
     display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+    gap: var(--space-6) var(--space-5);
+    align-items: start;
+    transition: opacity var(--ease);
 }
 
+/* the current page stays up, dimmed, while the next one is still on its way */
+.CardGrid[aria-busy="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+}
 
+/* pages kept for back/forward stay mounted but out of the layout */
+.CardGrid[hidden] {
+    display: none;
+}
+
+@media screen and (max-width: 640px) {
+    .CardGrid {
+        gap: var(--space-5) var(--space-3);
+    }
+}
+
+/* skeleton placeholder, same footprint as a card */
 .Card {
-    border: 2px solid #000;
-    border-radius: 4.75% / 3.5%;
+    aspect-ratio: 5 / 7;
+    border-radius: var(--radius-card);
+    background-color: var(--surface-1);
 }

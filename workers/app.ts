@@ -1,4 +1,5 @@
 import { createRequestHandler } from "react-router";
+import { SCRYFALL_PREFIX, handleScryfall } from "./scryfall";
 
 declare module "react-router" {
 	export interface AppLoadContext {
@@ -16,6 +17,9 @@ const requestHandler = createRequestHandler(
 
 export default {
 	async fetch(request, env, ctx) {
+		if (new URL(request.url).pathname.startsWith(SCRYFALL_PREFIX)) {
+			return handleScryfall(request, ctx);
+		}
 		return requestHandler(request, {
 			cloudflare: { env, ctx },
 		});

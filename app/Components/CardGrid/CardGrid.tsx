@@ -1,16 +1,25 @@
+import { memo } from 'react';
 import styles from './CardGrid.module.css'
 import { Card } from '../Card/Card';
 import { useSnapshot } from 'valtio';
 import { cardsearch } from '../Context/cards';
+import type { CardProps } from '~/types';
 
 
+// recent pages stay mounted and are just hidden, so their images never reload or re-decode
+const PageGrid = memo(function PageGrid({ cards, hidden, pending }: { cards: readonly CardProps[], hidden: boolean, pending: boolean }) {
+    return (
+        <div className={styles.CardGrid} hidden={hidden} data-page-grid aria-busy={pending || undefined}>
+            {cards.map((c) => <Card key={c.image_uri} {...c} />)}
+        </div>
+    )
+})
 
 export function CardGrid() {
-    const cards = useSnapshot(cardsearch) as typeof cardsearch
+    const snap = useSnapshot(cardsearch)
     return (
-        <div className={styles.CardGrid}>
-            {/* {cards.map((card) => <Image src={card.large} alt="MTG Card" w={325} h={600} />)} */}
-            {cards.list.map((c) => <Card key={c.image_uri} {...c} />)}
-        </div>
+        <>
+            {snap.pages.map((p) => <PageGrid key={p.key} cards={p.cards as CardProps[]} hidden={p.key !== snap.active} pending={snap.pending && p.key === snap.active} />)}
+        </>
     )
 }
