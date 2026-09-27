@@ -13,7 +13,19 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const version = useSnapshot(alternate)
     const [copied, setCopied] = useState<boolean>(false);
     const allPrints = useSnapshot(all_alt_art)
-    const { currentFace, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
+    const { currentFace, faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
+    const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
+
+    // flip/rotate from inside the quick view; flipping also swaps the big image to the other face
+    function handleOverlayTurn() {
+        if (canFlip) {
+            const next = faces[(faceIndex + 1) % faces.length]
+            flip()
+            setCurrentAlternate(name, next.large_uri)
+        } else {
+            rotate()
+        }
+    }
 
 
     async function handleOverlay(e: SyntheticEvent, open: boolean, name: string) {
@@ -47,7 +59,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 alt={currentFace.name}
                 width={250}
                 height={350}
-                className={rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined}
+                className={rotationClass}
             />
             <div className={styles.button_box}>
                 {/* copy */}
@@ -67,15 +79,23 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
 
                 {/* Overlay */}
                 <div className={version.name === name ? styles.overlay : styles.not_active}>
-                    {/* close */}
-                    <button className={styles.close} onClick={(e) => handleOverlay(e, false, 'none')}>
-                        <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
-                    </button>
                     <div className={styles.overlay_details}>
+                        {/* close */}
+                        <button className={styles.close} onClick={(e) => handleOverlay(e, false, 'none')}>
+                            <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M440-440v240h-80v-160H200v-80h240Zm160-320v160h160v80H520v-240h80Z" /></svg>
+                        </button>
 
-                        {version.name === 'none' ? null : (
-                            <Image src={version.uri} alt={name} width={393} height={550} />
-                        )}
+                        <div className={styles.overlay_media}>
+                            {canFlip || canRotate ? (
+                                <button className={styles.turn} onClick={handleOverlayTurn} title={canFlip ? 'Flip' : 'Rotate'}>
+                                    <svg height="20px" width="20px" viewBox="0 -960 960 960" style={{ fill: 'var(--text)' }}><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
+                                    {canFlip ? 'Flip' : 'Rotate'}
+                                </button>
+                            ) : null}
+                            {version.name === 'none' ? null : (
+                                <Image src={version.uri} alt={name} width={393} height={550} className={rotationClass} />
+                            )}
+                        </div>
 
                         <div className={styles.overlay_details_info}>
                             <div className={styles.info_heading}>

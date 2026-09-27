@@ -71,9 +71,9 @@
 }
 
 .close {
-  position: fixed;
-  top: var(--space-4);
-  right: var(--space-4);
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -92,6 +92,7 @@
 }
 
 .overlay_details {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -104,11 +105,45 @@
   box-shadow: var(--shadow);
 }
 
-.overlay_details>img {
+.overlay_media {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
   flex: 0 0 auto;
   width: min(360px, 100%);
+}
+
+.overlay_media>img {
+  width: 100%;
   height: auto;
   border-radius: var(--radius-card);
+  transition: transform var(--ease-slow);
+}
+
+/* a sideways card is ~1.4x wider than its column, so shrink it to fit */
+.overlay_media>img.rotate_90 {
+  transform: rotate(90deg) scale(0.716);
+}
+
+.overlay_media>img.rotate_neg_90 {
+  transform: rotate(-90deg) scale(0.716);
+}
+
+.turn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-1);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.turn:hover {
+  background-color: var(--surface-hover-1);
 }
 
 .overlay_details_info {
@@ -121,6 +156,7 @@
 
 .info_heading {
   display: flex;
+  padding-right: 48px; /* keep the name clear of the close button */
 }
 
 .name {
@@ -189,7 +225,7 @@
 
 @media screen and (max-width: 640px) {
   .overlay {
-    padding: 72px var(--space-3) var(--space-5);
+    padding: var(--space-5) var(--space-3);
   }
 
   .overlay_details {
@@ -197,10 +233,14 @@
     padding: var(--space-5);
   }
 
-  .overlay_details>img {
+  .overlay_media {
     width: 100%;
-    max-width: 320px !important;
+    max-width: 320px;
     margin: 0 auto;
+  }
+
+  .overlay_media>img {
+    max-width: 100% !important;
   }
 
   .overlay_details_info {
