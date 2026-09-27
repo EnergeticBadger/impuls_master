@@ -1,11 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "impulscaster",
+  "name": "impulsecaster",
   "compatibility_date": "2026-05-03",
   "observability": {
     "enabled": true
   },
   "main": "./workers/app.ts",
+  "routes": [
+    { "pattern": "impulsecaster.cards", "custom_domain": true }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]
