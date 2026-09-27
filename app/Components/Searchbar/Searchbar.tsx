@@ -34,7 +34,6 @@ export function Searchbar() {
 
     async function searchQuery(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault(); // Stop the page from reloading
-        // console.log('OnSubmit')
         // Use FormData to get the value of the input named "query"
         const formData = new FormData(e.currentTarget);
         const queryTerm = formData.get('query')?.toString();
@@ -48,7 +47,6 @@ export function Searchbar() {
 
             // if there is a queryTerm from input and it's not the same rest
             if (queryTerm && query !== queryTerm) {
-                // console.log("updated query", queryTerm)
                 setQuery(queryTerm)
                 termChanged = true
                 tempPage = { number: 1, has_more: false }
@@ -66,11 +64,9 @@ export function Searchbar() {
                 setPage((p) => { return { number: p.number - 1, has_more: p.has_more } })
             }
 
-            // console.log('query:', query)
             // fetch data
             const res = await searchCard(tempPage.number, termChanged ? queryTerm ?? query : query)
 
-            console.log('res:', res)
 
             // see if there were any errors
             if (hasStatus(res) || !hasData(res)) {
@@ -86,7 +82,6 @@ export function Searchbar() {
 
             const validCards = res.data.filter(isScryfallCard);
              
-            console.log('validCards:', validCards)
 
             if (validCards.length === 0) {
                 setPage({ number: 1, has_more: false })
@@ -99,7 +94,6 @@ export function Searchbar() {
 
             setCurrentAlternate('none', '')
             setCards(largeImages);
-            e.currentTarget?.reset();
         } catch (error: unknown) {
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);
