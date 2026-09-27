@@ -1,7 +1,7 @@
 import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
 import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
-import { setCards } from '../Context/cards';
+import { getPage, pageKey, showPage } from '../Context/cards';
 import { scryfallGet } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
 
@@ -64,8 +64,20 @@ export function Searchbar() {
                 setPage((p) => { return { number: p.number - 1, has_more: p.has_more } })
             }
 
+            const q = termChanged ? queryTerm ?? query : query
+            const key = pageKey(q, tempPage.number)
+
+            // already seen this page: show the kept copy, no fetch and no image reload
+            const kept = getPage(key)
+            if (kept) {
+                setPage({ number: tempPage.number, has_more: kept.has_more })
+                setCurrentAlternate('none', '')
+                showPage(key)
+                return
+            }
+
             // fetch data
-            const res = await searchCard(tempPage.number, termChanged ? queryTerm ?? query : query)
+            const res = await searchCard(tempPage.number, q)
 
 
             // see if there were any errors
@@ -93,7 +105,7 @@ export function Searchbar() {
                 .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
 
             setCurrentAlternate('none', '')
-            setCards(largeImages);
+            showPage(key, largeImages, !!res.has_more);
         } catch (error: unknown) {
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);

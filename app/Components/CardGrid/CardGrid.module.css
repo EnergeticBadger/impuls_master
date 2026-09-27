@@ -5,6 +5,11 @@
     align-items: start;
 }
 
+/* pages kept for back/forward stay mounted but out of the layout */
+.CardGrid[hidden] {
+    display: none;
+}
+
 @media screen and (max-width: 640px) {
     .CardGrid {
         gap: var(--space-5) var(--space-3);
