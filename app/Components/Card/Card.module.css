@@ -34,7 +34,8 @@
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
-  background-color: var(--surface-1);
+  background-color: var(--raised-0);
+  border: 1px solid var(--border-faint);
   border-radius: var(--radius-md);
 }
 
@@ -49,7 +50,13 @@
 }
 
 .button_box>button:hover {
-  background-color: var(--surface-hover-1);
+  background-color: var(--raised-hover);
+}
+
+/* in the compare drawer: the one "selected" state on the card, so it gets the accent */
+.button_box>button[aria-pressed="true"] {
+  background-color: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
 /* ---- Detail overlay ---- */
@@ -89,16 +96,23 @@
   box-shadow: var(--shadow);
 }
 
-.turn {
+.tools {
   grid-area: turn;
-  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.turn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   height: var(--row);
   padding-inline: var(--space-3);
+  border: 1px solid var(--border-faint);
   border-radius: var(--radius-sm);
-  background-color: var(--surface-1);
+  background-color: var(--raised-1);
   color: var(--text);
   font-size: var(--text-md);
   cursor: pointer;
@@ -112,7 +126,12 @@
 }
 
 .turn:hover {
-  background-color: var(--surface-hover-1);
+  background-color: var(--raised-hover);
+}
+
+.turn[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background-color: var(--accent-tint);
 }
 
 .info_heading {
@@ -146,14 +165,16 @@
 }
 
 .close {
+  box-sizing: border-box;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: var(--row);
   height: var(--row);
+  border: 1px solid var(--border-faint);
   border-radius: var(--radius-full);
-  background-color: var(--surface-1);
+  background-color: var(--raised-1);
   cursor: pointer;
   transition: background-color var(--ease);
 }
@@ -165,7 +186,7 @@
 }
 
 .close:hover {
-  background-color: var(--surface-hover-1);
+  background-color: var(--raised-hover);
 }
 
 .overlay_media {

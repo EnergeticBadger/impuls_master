@@ -7,12 +7,23 @@ import { AlternateArts } from './components/AlternateArts';
 import { PlayFormats } from './components/PlayFormats';
 import { Image } from '@unpic/react';
 import { useCardLayout } from '../Hooks/useCardLayout';
+import { view } from '../Context/view';
+import { compare, inCompare, toggleCompare } from '../Context/compare';
+
+const COMPARE_ICON = "M320-160 160-320l160-160 56 57-63 63h287v80H313l63 63-56 57Zm320-320-56-57 63-63H360v-80h287l-63-63 56-57 160 160-160 160Z"
+
+// at this many per row or fewer, cards are wide enough that the normal image would look soft
+const LARGE_IMAGE_PER_ROW = 3
 
 export function Card({ name, image_uri, card_uri, card }: CardProps) {
 
     const version = useSnapshot(alternate)
     const [copied, setCopied] = useState<boolean>(false);
     const allPrints = useSnapshot(all_alt_art)
+    const { perRow } = useSnapshot(view)
+    const { cards: comparing } = useSnapshot(compare)
+    const compared = inCompare(comparing, card.id)
+    const handleCompare = () => toggleCompare({ name, image_uri, card_uri, card })
     const { currentFace, faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
 
@@ -55,7 +66,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
         <div className={styles.Card}>
 
             <Image
-                src={currentFace.image_uri || image_uri}
+                src={(perRow && perRow <= LARGE_IMAGE_PER_ROW && currentFace.large_uri) || currentFace.image_uri || image_uri}
                 alt={currentFace.name}
                 width={250}
                 height={350}
@@ -73,6 +84,11 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                     <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d="M200-200v-240h80v160h160v80H200Zm480-320v-160H520v-80h240v240h-80Z" /></svg>
                 </button>
 
+                {/* compare */}
+                <button onClick={handleCompare} aria-pressed={compared} title={compared ? 'Remove from compare' : 'Compare'} style={{ height: '24px' }}>
+                    <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={COMPARE_ICON} /></svg>
+                </button>
+
                 {/* rotate */}
                 {canFlip || canRotate ? (<button onClick={canFlip ? flip : rotate} title={canFlip ? 'Flip' : 'Rotate'} style={{ height: '24px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
@@ -81,12 +97,18 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 {/* Overlay: clicking the dimmed area around the panel closes it */}
                 <div className={version.name === name ? styles.overlay : styles.not_active} onClick={(e) => { if (e.target === e.currentTarget) handleOverlay(e, false, 'none') }}>
                     <div className={styles.overlay_details}>
-                        {canFlip || canRotate ? (
-                            <button className={styles.turn} onClick={handleOverlayTurn} title={canFlip ? 'Flip' : 'Rotate'}>
-                                <svg viewBox="0 -960 960 960"><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
-                                {canFlip ? 'Flip' : 'Rotate'}
+                        <div className={styles.tools}>
+                            {canFlip || canRotate ? (
+                                <button className={styles.turn} onClick={handleOverlayTurn} title={canFlip ? 'Flip' : 'Rotate'}>
+                                    <svg viewBox="0 -960 960 960"><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
+                                    {canFlip ? 'Flip' : 'Rotate'}
+                                </button>
+                            ) : null}
+                            <button className={styles.turn} onClick={handleCompare} aria-pressed={compared}>
+                                <svg viewBox="0 -960 960 960"><path d={COMPARE_ICON} /></svg>
+                                {compared ? 'Comparing ✓' : 'Compare'}
                             </button>
-                        ) : null}
+                        </div>
 
                         <div className={styles.info_heading}>
                             <span className={styles.name} onClick={handleCopy} style={{ color: copied ? 'var(--success)' : 'var(--text)' }}>{name}
