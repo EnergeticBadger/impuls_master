@@ -1,3 +1,8 @@
 .main_content {
     padding: var(--space-6) var(--gutter) var(--space-7);
 }
+
+/* room under the last row so the collapsed compare bar never covers cards (open, the drawer covers the page) */
+.main_content[data-compare="collapsed"] {
+    padding-bottom: calc(var(--drawer-bar) + var(--space-6));
+}

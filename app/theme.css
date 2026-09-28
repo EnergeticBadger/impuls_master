@@ -23,6 +23,11 @@
   --amber-600: rgb(184, 134, 11);
   --crimson-700: rgb(170, 20, 40);
 
+  /* warm near-blacks: a calm base so the reds read as accents instead of everywhere */
+  --ink-900: rgb(26, 21, 21);
+  --ink-800: rgb(38, 31, 31);
+  --ink-700: rgb(54, 44, 44);
+
   /* ---- Surfaces (backgrounds, darkest to lightest) ---- */
   --surface-0: var(--red-950);    /* page */
   --surface-1: var(--red-800);    /* header, card button bar, panels */
@@ -30,6 +35,9 @@
   --surface-hover-0: var(--red-900);
   --surface-hover-1: var(--red-700);
   --scrim: rgba(36, 36, 36, 0.926); /* full-screen overlay backdrop */
+  --raised-0: var(--ink-900);     /* dropdowns and popovers */
+  --raised-1: var(--ink-800);     /* fields and controls inside them */
+  --raised-hover: var(--ink-700);
 
   /* ---- Text ---- */
   --text: var(--white);
@@ -38,6 +46,13 @@
   /* ---- Lines ---- */
   --border-subtle: rgba(255, 255, 255, 0.563);
   --border-card: var(--black);
+  --border-faint: rgba(255, 255, 255, 0.12);
+
+  /* ---- Accent (selected / primary action; use sparingly) ---- */
+  --accent: var(--red-800);
+  --accent-hover: var(--red-700);
+  --accent-tint: rgba(172, 84, 84, 0.22);
+  --accent-line: var(--red-600);
 
   /* ---- Status ---- */
   --success: var(--green-400);    /* "copied!" feedback */
@@ -45,6 +60,14 @@
   --not-legal: var(--gray-500);
   --restricted: var(--amber-600);
   --banned: var(--crimson-700);
+
+  /* ---- Mana colors (search filter pips) ---- */
+  --mana-w: #f8f0d8;
+  --mana-u: #4a8fd6;
+  --mana-b: #3b3434;
+  --mana-r: #e0503a;
+  --mana-g: #3f9a5a;
+  --mana-c: #b9b3ad;
 
   /* ---- Type ---- */
   --font-body: Tahoma, Geneva, Verdana, sans-serif;
@@ -73,7 +96,11 @@
   /* ---- Layout ---- */
   --gutter: var(--space-5);       /* side padding on every screen size */
   --card-min: 200px;              /* smallest a grid card gets before a column drops */
+  --card-floor: 100px;            /* smallest a card gets when the user picks cards per row */
   --overlay-width: 1000px;        /* card detail panel */
+  --header-height: 0px;           /* set from the sticky header's real height (Searchbar.tsx) */
+  --drawer-height: calc(100dvh - var(--header-height)); /* open compare drawer: reaches up flush with the header */
+  --drawer-bar: 44px;             /* compare drawer when collapsed to its title bar */
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 
   /* ---- Layers ---- */

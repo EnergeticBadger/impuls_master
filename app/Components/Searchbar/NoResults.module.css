@@ -1,0 +1,111 @@
+/* same calm base as the search dropdown; red only on the fix buttons */
+.dialog {
+    box-sizing: border-box;
+    width: min(560px, calc(100vw - 2 * var(--gutter)));
+    max-height: min(80vh, 640px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-lg);
+    background-color: var(--raised-0);
+    color: var(--text);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    overscroll-behavior: contain;
+}
+
+.dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.55);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+}
+
+.body h2 {
+    font-size: var(--text-xl);
+    font-weight: normal;
+}
+
+.body h3 {
+    font-size: var(--text-md);
+}
+
+.query {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+}
+
+.item > span:first-child {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.part {
+    font-weight: bold;
+}
+
+.muted {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+.foot {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.primary,
+.secondary {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--ease);
+}
+
+.primary {
+    background-color: var(--accent);
+}
+
+.primary:hover {
+    background-color: var(--accent-hover);
+}
+
+.secondary {
+    border: 1px solid var(--border-faint);
+}
+
+.secondary:hover {
+    background-color: var(--raised-hover);
+}
