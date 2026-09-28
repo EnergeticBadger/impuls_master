@@ -267,6 +267,11 @@ export function Searchbar() {
     return (
         // Wrap in a form to catch the "Enter" key and "Submit" events
         <div className={styles.main_content} ref={headerRef}>
+            <div className={styles.headerRow}>
+            <a className={styles.brand} href="/" aria-label="Impulse Caster home">
+                <img src="/logo.svg" alt="" width={40} height={40} />
+                <span className={styles.brandName}>Impulse Caster</span>
+            </a>
             <form className={styles.searchbar} onSubmit={searchQuery} ref={formRef}>
                 <QueryInput />
                 <div className={styles.Pages}>
@@ -295,6 +300,7 @@ export function Searchbar() {
                     <RowSize />
                 </div>
             </form>
+            </div>
             <NoResults count={countCards} research={() => requestAnimationFrame(() => formRef.current?.requestSubmit())} />
         </div>
     );

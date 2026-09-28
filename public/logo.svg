@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Impulse Caster</title>
+  <defs>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff4dc"/>
+      <stop offset="1" stop-color="#f2b441"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b23a3a"/>
+      <stop offset="1" stop-color="#7a1c1c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#1a1515"/>
+  <g transform="translate(-14 12)">
+  <!-- the library: a card left behind -->
+  <rect x="136" y="126" width="200" height="280" rx="24" fill="#461010" stroke="#6b2424" stroke-width="6" transform="rotate(-10 236 266)"/>
+  <!-- the impulse: top card lifted off and cast -->
+  <g transform="rotate(9 280 238)">
+    <rect x="180" y="98" width="200" height="280" rx="24" fill="url(#card)" stroke="#e7a0a0" stroke-opacity=".55" stroke-width="6"/>
+    <path d="M300 128 L218 262 L268 262 L242 350 L338 208 L286 208 L316 128 Z" fill="url(#bolt)"/>
+  </g>
+  </g>
+</svg>
