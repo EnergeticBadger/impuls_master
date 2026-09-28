@@ -1,0 +1,481 @@
+/* takes the search input's old place in the header row; the dropdown hangs below it */
+.wrap {
+    position: relative;
+    flex: 1 1 440px;
+    min-width: 0;
+}
+
+/* with a few chips in it, the search gets the whole header row and the page controls go below */
+.wrap:has(.chipGroup + .chipGroup) {
+    flex-basis: 100%;
+}
+
+.bar {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-2);
+}
+
+/* when chips wrap onto more lines, the buttons stay one line tall at the top */
+.bar > button {
+    max-height: 3.4rem;
+}
+
+/* looks like one text box: the chips sit in it, before the cursor */
+.box {
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--surface-0);
+    cursor: text;
+    transition: border-color var(--ease);
+}
+
+.box:focus-within {
+    border-color: var(--text);
+}
+
+.input {
+    flex: 1 1 8em;
+    min-width: 6em;
+    padding-block: var(--space-1);
+    color: var(--text);
+    font-size: var(--text-lg);
+    font-weight: 300;
+    line-height: var(--leading);
+}
+
+.input::placeholder {
+    color: var(--text-muted);
+}
+
+.box .input:focus-visible {
+    outline: none;
+}
+
+.chipGroup {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* AND / OR between chips; click to switch */
+.join {
+    padding: 2px var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.join:hover {
+    color: var(--text);
+    background-color: var(--surface-hover-0);
+}
+
+/* one filter in the box, or one picked creature type */
+.token {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+    font-size: var(--text-sm);
+}
+
+.token[data-editing],
+.token[data-armed] {
+    border-color: var(--accent-line);
+    background-color: var(--accent-tint);
+}
+
+.tokenLabel {
+    min-width: 0;
+    padding: var(--space-1) var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+button.tokenLabel {
+    cursor: pointer;
+}
+
+.tokenRemove {
+    padding: var(--space-1) var(--space-2);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+button.tokenLabel:hover,
+.tokenRemove:hover {
+    color: var(--text);
+    background-color: var(--raised-hover);
+}
+
+.toggle,
+.search {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.toggle {
+    border: 1px solid var(--border-faint);
+    background-color: var(--raised-0);
+}
+
+.toggle:hover {
+    background-color: var(--raised-hover);
+}
+
+.chevron {
+    transition: transform var(--ease);
+}
+
+.toggle[aria-expanded="true"] .chevron {
+    transform: rotate(180deg);
+}
+
+/* the main action in the header; the header is already --accent, so it takes the lighter red to stand out */
+.search {
+    background-color: var(--accent-line);
+    border: 1px solid var(--border-faint);
+}
+
+.search:hover {
+    background-color: var(--accent-hover);
+}
+
+.search svg {
+    fill: currentColor;
+}
+
+.panel {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    right: 0;
+    z-index: var(--z-header);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-4);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-md);
+    /* a neutral base; red is kept for what's selected and the main button */
+    background-color: var(--raised-0);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    color: var(--text);
+}
+
+.head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+}
+
+.muted {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+.back {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+.back:hover {
+    color: var(--text);
+}
+
+/* filter picker */
+.list {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+    gap: var(--space-1);
+}
+
+.option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.option[aria-selected="true"] {
+    background-color: var(--raised-hover);
+    box-shadow: inset 3px 0 0 var(--accent-line);
+}
+
+/* filter editor */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+}
+
+.label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.chip,
+.segmented button,
+.secondary,
+.primary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.chip {
+    border: 1px solid var(--border-faint);
+    background-color: var(--raised-1);
+}
+
+.chip:hover,
+.segmented button:hover {
+    background-color: var(--raised-hover);
+}
+
+.chip[aria-pressed="true"] {
+    background-color: var(--accent-tint);
+    border-color: var(--accent-line);
+}
+
+/* one of these is always picked, so the pick is solid accent and can't be mistaken for hover */
+.segmented button[aria-checked="true"] {
+    background-color: var(--accent);
+}
+
+.pip {
+    width: 0.8em;
+    height: 0.8em;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-faint);
+}
+
+.pip[data-color="w"] { background-color: var(--mana-w); }
+.pip[data-color="u"] { background-color: var(--mana-u); }
+.pip[data-color="b"] { background-color: var(--mana-b); }
+.pip[data-color="r"] { background-color: var(--mana-r); }
+.pip[data-color="g"] { background-color: var(--mana-g); }
+.pip[data-color="c"] { background-color: var(--mana-c); }
+
+.segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--border-faint);
+    background-color: var(--raised-1);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.segmented button {
+    border-radius: 0;
+    font-size: var(--text-sm);
+}
+
+.field {
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+    color: var(--text);
+}
+
+.field:focus {
+    border-color: var(--accent-line);
+}
+
+.field::placeholder {
+    color: var(--text-muted);
+}
+
+.number {
+    width: 6em;
+}
+
+.foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-faint);
+}
+
+/* plain-English meaning above the syntax it writes */
+.preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.preview code {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.secondary {
+    border: 1px solid var(--border-faint);
+}
+
+.secondary:hover:not(:disabled) {
+    background-color: var(--raised-hover);
+}
+
+.primary {
+    background-color: var(--accent);
+}
+
+.primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.secondary:disabled,
+.primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* creature type picker: picked types sit in the field like @-mentions */
+.mention {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+}
+
+.mention:focus-within {
+    border-color: var(--accent-line);
+}
+
+.mentionInput {
+    flex: 1 1 12em;
+    min-width: 0;
+    padding: var(--space-1);
+    color: var(--text);
+}
+
+.mentionInput::placeholder {
+    color: var(--text-muted);
+}
+
+.mention .mentionInput:focus-visible {
+    outline: none;
+}
+
+.mention .token {
+    border-color: var(--accent-line);
+    background-color: var(--accent-tint);
+}
+
+.suggest {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1);
+}
+
+.browse {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-height: 260px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+}
+
+.letter {
+    display: flex;
+    gap: var(--space-3);
+    align-items: baseline;
+}
+
+.letterMark {
+    flex: 0 0 1.2em;
+    color: var(--text-muted);
+    font-weight: bold;
+}
+
+.browse .chip {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+}
+
+@media screen and (max-width: 640px) {
+    .list {
+        grid-template-columns: 1fr;
+    }
+
+    .input {
+        font-size: var(--text-md);
+    }
+
+    /* icon-only buttons so the box keeps its room */
+    .wide {
+        display: none;
+    }
+
+    .toggle,
+    .search {
+        min-width: 40px;
+        padding: 0 var(--space-2);
+    }
+}

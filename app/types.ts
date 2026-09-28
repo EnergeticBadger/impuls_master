@@ -73,6 +73,8 @@ export type ScryfallCard = {
     oracle_text: string;
     power?: string;
     toughness?: string;
+    loyalty?: string;
+    defense?: string;
     colors: string[];
     color_identity: string[];
     keywords: string[];
@@ -121,6 +123,10 @@ export type CardFace = {
     mana_cost?: string;
     type_line?: string;
     oracle_text?: string;
+    power?: string;
+    toughness?: string;
+    loyalty?: string;
+    defense?: string;
 }
 
 export type ImageUris = {

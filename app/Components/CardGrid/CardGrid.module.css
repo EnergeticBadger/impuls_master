@@ -1,9 +1,17 @@
 .CardGrid {
+    --col-gap: var(--space-5);
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
-    gap: var(--space-6) var(--space-5);
+    gap: var(--space-6) var(--col-gap);
     align-items: start;
     transition: opacity var(--ease);
+}
+
+/* a chosen number per row: each column is 1/n of the width, but never narrower than
+   --card-floor, so a small screen drops columns instead of shrinking cards to nothing
+   (the 1px keeps rounding from dropping a column that exactly fits) */
+.CardGrid[data-per-row] {
+    grid-template-columns: repeat(auto-fill, minmax(max(var(--card-floor), (100% - (var(--per-row) - 1) * var(--col-gap)) / var(--per-row) - 1px), 1fr));
 }
 
 /* the current page stays up, dimmed, while the next one is still on its way */
@@ -19,7 +27,8 @@
 
 @media screen and (max-width: 640px) {
     .CardGrid {
-        gap: var(--space-5) var(--space-3);
+        --col-gap: var(--space-3);
+        gap: var(--space-5) var(--col-gap);
     }
 }
 
@@ -28,4 +37,53 @@
     aspect-ratio: 5 / 7;
     border-radius: var(--radius-card);
     background-color: var(--surface-1);
+}
+
+/* cards-per-row stepper in the header */
+.RowSize {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.RowSize button {
+    box-sizing: border-box;
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    text-align: center;
+    transition: background-color var(--ease);
+}
+
+.RowSize button:hover:not(:disabled) {
+    background-color: var(--raised-hover);
+}
+
+.RowSize button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+/* the label doubles as "back to auto", but it's text first, so it doesn't fade when auto is already on */
+.RowSize .RowSizeLabel {
+    min-width: 7em;
+    border-inline: 1px solid var(--border-faint);
+}
+
+.RowSize .RowSizeLabel:disabled {
+    opacity: 1;
+}
+
+@media screen and (max-width: 640px) {
+    .RowSize button {
+        padding-inline: var(--space-2);
+    }
+
+    .RowSize .RowSizeLabel {
+        min-width: 5.5em;
+    }
 }

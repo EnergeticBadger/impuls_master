@@ -1,26 +1,42 @@
 import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
-import { useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
+import { useEffect, useRef, useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { useSnapshot } from 'valtio';
 import { cardsearch, getPage, pageKey, showPage } from '../Context/cards';
 import { scryfallGet } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
+import { QueryInput } from './QueryInput';
+import { RowSize } from '../CardGrid/RowSize';
+import { NoResults } from './NoResults';
+import { querybox } from '../Context/query';
+import { sort, sortKey } from '../Context/sort';
+import { SortControl } from './SortControl';
+
+type Sort = { order: string, dir: string }
 
 
-async function searchCard(page: number, query: string) {
+async function searchCard(page: number, query: string, by: Sort) {
     const params = new URLSearchParams({
         page: String(page),
         q: query,
         include_extras: "false",
         include_multilingual: "false",
         include_variations: "false",
-        order: "name",
+        order: by.order,
+        dir: by.dir,
         unique: "cards",
     })
     return scryfallGet(`cards/search?${params}`)
 }
 
-type PageData = { cards: CardProps[], has_more: boolean, total_pages: number }
+type PageData = { cards: CardProps[], has_more: boolean, total_pages: number, total_cards: number }
+
+// a search Scryfall answered with an error or no cards, with its explanation
+class SearchError extends Error {
+    constructor(readonly status: number, readonly details: string, readonly warnings: string[] = []) {
+        super(`${status}`, { cause: details })
+    }
+}
 
 // Scryfall returns up to 175 cards per search page
 const PAGE_SIZE = 175
@@ -29,21 +45,25 @@ const PAGE_SIZE = 175
 const pageData = new Map<string, Promise<PageData>>()
 const MAX_PAGE_DATA = 20
 
-function loadPage(query: string, page: number): Promise<PageData> {
-    const key = pageKey(query, page)
+// the same search sorted another way is a different set of pages
+const resultKey = (query: string, by: Sort, page: number) => pageKey(`${query}\u0001${sortKey(by)}`, page)
+
+function loadPage(query: string, page: number, by: Sort): Promise<PageData> {
+    const key = resultKey(query, by, page)
     let data = pageData.get(key)
     if (!data) {
-        data = searchCard(page, query).then((res) => {
+        data = searchCard(page, query, by).then((res) => {
             // see if there were any errors
-            if (hasStatus(res) || !hasData(res)) throw new Error(`${res.status}`, { cause: res.details });
+            if (hasStatus(res) || !hasData(res)) throw new SearchError(Number(res?.status) || 0, res?.details ?? '', Array.isArray(res?.warnings) ? res.warnings : []);
 
             const validCards = res.data.filter(isScryfallCard);
-            if (validCards.length === 0) throw new Error('200', { cause: 'No Cards Found' });
+            if (validCards.length === 0) throw new SearchError(404, 'No Cards Found');
 
             const cards: CardProps[] = validCards
                 .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
-            const total_pages = Math.max(1, Math.ceil((res.total_cards ?? 0) / PAGE_SIZE))
-            return { cards, has_more: !!res.has_more, total_pages }
+            const total_cards = res.total_cards ?? cards.length
+            const total_pages = Math.max(1, Math.ceil(total_cards / PAGE_SIZE))
+            return { cards, has_more: !!res.has_more, total_pages, total_cards }
         })
         // don't keep failures around, so the next try fetches again
         data.catch(() => pageData.delete(key))
@@ -52,6 +72,12 @@ function loadPage(query: string, page: number): Promise<PageData> {
     }
     return data
 }
+
+// how many cards a search finds; the page it loads is kept, so searching it for real afterwards is instant
+const countCards = (query: string) => loadPage(query, 1, { ...sort }).then((d) => d.total_cards, (e) => {
+    if (e instanceof SearchError && e.status === 404) return 0
+    throw e
+})
 
 // wait for the images on screen to finish (or 5s) so preloading never slows the page being viewed
 function afterVisibleImages() {
@@ -67,14 +93,14 @@ let warming: HTMLImageElement[] = []
 let preloadRun = 0
 
 // fetch the next page's data and pull its images into the browser cache, so Next shows it instantly
-async function preloadNext(query: string, page: number, has_more: boolean) {
+async function preloadNext(query: string, page: number, has_more: boolean, by: Sort) {
     const run = ++preloadRun
     for (const img of warming) img.removeAttribute('src')
     warming = []
-    if (!has_more || getPage(pageKey(query, page + 1))) return
+    if (!has_more || getPage(resultKey(query, by, page + 1))) return
 
     try {
-        const next = await loadPage(query, page + 1)
+        const next = await loadPage(query, page + 1, by)
         await afterVisibleImages()
         if (run !== preloadRun) return
         warming = next.cards.map((c) => {
@@ -121,7 +147,7 @@ export function Searchbar() {
     // check current page and if there are more
 
 
-    const [page, setPage] = useState<{ number: number, has_more: boolean, total: number }>({ number: 1, has_more: false, total: 1 })
+    const [page, setPage] = useState<{ number: number, has_more: boolean, total: number, cards: number }>({ number: 1, has_more: false, total: 1, cards: 0 })
 
 
     const [query, setQuery] = useState<string>('')
@@ -131,6 +157,20 @@ export function Searchbar() {
     // which button shows the spinner while a load is slow; a new search uses Next
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
+    const formRef = useRef<HTMLFormElement>(null)
+    const headerRef = useRef<HTMLDivElement>(null)
+
+    // publish the header's height so the open compare drawer can sit flush under it (the header grows with chips and wraps on phones)
+    useEffect(() => {
+        const header = headerRef.current
+        if (!header) return
+        const root = document.documentElement
+        const observer = new ResizeObserver(() => root.style.setProperty('--header-height', `${header.getBoundingClientRect().height}px`))
+        observer.observe(header)
+        return () => { observer.disconnect(); root.style.removeProperty('--header-height') }
+    }, [])
+    // the sort of the results on screen; Previous/Next page through those, a new search picks up the current sort
+    const shownSort = useRef<Sort>({ ...sort })
 
     async function searchQuery(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault(); // Stop the page from reloading
@@ -144,6 +184,8 @@ export function Searchbar() {
         let tempPage = { number: page.number, has_more: page.has_more }
         const run = ++navRun
         let pendingTimer: ReturnType<typeof setTimeout> | undefined
+        let q = query
+        const by: Sort = action === 'search' ? { ...sort } : shownSort.current
 
 
         try {
@@ -151,6 +193,12 @@ export function Searchbar() {
             // if there is a queryTerm from input and it's not the same rest
             if (queryTerm && query !== queryTerm) {
                 setQuery(queryTerm)
+                termChanged = true
+                tempPage = { number: 1, has_more: false }
+            }
+
+            // a new sort starts over at the first page
+            if (sortKey(by) !== sortKey(shownSort.current)) {
                 termChanged = true
                 tempPage = { number: 1, has_more: false }
             }
@@ -164,16 +212,18 @@ export function Searchbar() {
                 tempPage = { number: page.number - 1, has_more: page.has_more }
             }
 
-            const q = termChanged ? queryTerm ?? query : query
-            const key = pageKey(q, tempPage.number)
+            q = queryTerm && query !== queryTerm ? queryTerm : query
+            if (!q) return
+            const key = resultKey(q, by, tempPage.number)
 
             // already seen this page: show the kept copy, no fetch and no image reload
             const kept = getPage(key)
             if (kept) {
-                setPage({ number: tempPage.number, has_more: kept.has_more, total: kept.total_pages })
+                setPage({ number: tempPage.number, has_more: kept.has_more, total: kept.total_pages, cards: kept.total_cards })
                 setCurrentAlternate('none', '')
+                shownSort.current = by
                 showPage(key)
-                preloadNext(q, tempPage.number, kept.has_more)
+                preloadNext(q, tempPage.number, kept.has_more, by)
                 return
             }
 
@@ -184,19 +234,24 @@ export function Searchbar() {
 
             let data: PageData
             try {
-                data = await loadPage(q, tempPage.number)
+                data = await loadPage(q, tempPage.number, by)
                 await firstRowReady(data.cards)
             } catch (error) {
-                if (run === navRun && termChanged) setPage({ number: 1, has_more: false, total: 1 })
+                if (run === navRun && termChanged) setPage({ number: 1, has_more: false, total: 1, cards: 0 })
                 throw error
             }
             if (run !== navRun) return
 
-            setPage({ number: tempPage.number, has_more: data.has_more, total: data.total_pages })
+            setPage({ number: tempPage.number, has_more: data.has_more, total: data.total_pages, cards: data.total_cards })
             setCurrentAlternate('none', '')
-            showPage(key, data.cards, data.has_more, data.total_pages);
-            preloadNext(q, tempPage.number, data.has_more)
+            shownSort.current = by
+            showPage(key, data.cards, data.has_more, data.total_pages, data.total_cards);
+            preloadNext(q, tempPage.number, data.has_more, by)
         } catch (error: unknown) {
+            // a search that found nothing gets the pop-up explaining why; paging errors just log
+            if (run === navRun && action === 'search' && error instanceof SearchError && (error.status === 404 || error.status === 400)) {
+                querybox.noResults = { query: q, status: error.status, details: error.details, warnings: error.warnings }
+            }
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);
             }
@@ -211,17 +266,15 @@ export function Searchbar() {
 
     return (
         // Wrap in a form to catch the "Enter" key and "Submit" events
-        <div className={styles.main_content}>
-            <form className={styles.searchbar} onSubmit={searchQuery}>
-                <input
-                    name="query" // Added name so FormData can find it
-                    type="text"
-                    placeholder='Search for Magic cards...'
-                />
-                <button type="submit" style={{ display: 'none' }}>Search</button>
+        <div className={styles.main_content} ref={headerRef}>
+            <form className={styles.searchbar} onSubmit={searchQuery} ref={formRef}>
+                <QueryInput />
                 <div className={styles.Pages}>
                     {query ? (
                         <>
+                            {page.cards > 0 && (
+                                <span className={styles.count}>{page.cards.toLocaleString()} {page.cards === 1 ? 'card' : 'cards'} found</span>
+                            )}
                             {/* implament last and first page buttons */}
                             {/* <button name="first">{"<<"}</button> */}
                             <button disabled={busy || !(page.number > 1)} name="back" aria-busy={pending && loadingDir === 'back' || undefined}>
@@ -230,14 +283,19 @@ export function Searchbar() {
                             </button>
                             <span>{page.number} of {page.total}</span>
                             <button disabled={busy || !page.has_more} name="next" aria-busy={pending && loadingDir === 'next' || undefined}>
-                                <span className={styles.label}>{"Next 175 >"}</span>
+                                <span className={styles.label}>{"Next >"}</span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             {/* <button name="last">{">>"}</button> */}
                         </>
                     ) : null}
                 </div>
+                <div className={styles.viewOptions}>
+                    <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
+                    <RowSize />
+                </div>
             </form>
+            <NoResults count={countCards} research={() => requestAnimationFrame(() => formRef.current?.requestSubmit())} />
         </div>
     );
 }
