@@ -7,7 +7,53 @@
     box-shadow: var(--shadow);
 }
 
+/* logo on the left, the search form (which wraps onto more lines) beside it */
+.headerRow {
+    display: flex;
+    align-items: flex-start;
+    padding-left: var(--gutter);
+}
+
+/* lines the logo up with the search box on the first line of the form */
+.brand {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: calc(var(--space-4) + 6px); /* the search box is ~12px taller than the logo */
+    color: var(--text);
+    font-weight: 700;
+    font-size: 1.15rem;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.brand img {
+    display: block;
+    width: 40px;
+    height: 40px;
+}
+
+.brand:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* the name only shows when there's room to spare */
+.brandName {
+    display: none;
+}
+
+@media screen and (min-width: 1100px) {
+    .brandName {
+        display: inline;
+    }
+}
+
 .searchbar {
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -139,6 +185,16 @@
 @media screen and (max-width: 640px) {
     .searchbar {
         padding-block: var(--space-3);
+        padding-left: var(--space-3);
+    }
+
+    .brand {
+        margin-top: calc(var(--space-3) + 6px);
+    }
+
+    .brand img {
+        width: 32px;
+        height: 32px;
     }
 
     /* the count takes its own line so Previous / page / Next always fit */
