@@ -231,6 +231,11 @@ button.tokenLabel:hover,
     cursor: pointer;
 }
 
+/* a creature type suggestion carries a sentence about it, so it gets the whole row */
+.option[data-type] {
+    grid-column: 1 / -1;
+}
+
 .option[aria-selected="true"] {
     background-color: var(--raised-hover);
     box-shadow: inset 3px 0 0 var(--accent-line);
@@ -477,5 +482,161 @@ button.tokenLabel:hover,
     .search {
         min-width: 40px;
         padding: 0 var(--space-2);
+    }
+}
+
+/* ---- "What it does" builder ---- */
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.section + .section {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-faint);
+}
+
+/* one ability, snapped together from trigger / effect / details */
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-md);
+    background-color: var(--raised-1);
+}
+
+.blockParts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--space-2);
+}
+
+/* each part is a labelled piece; the colored edge says which part it is */
+.blockPart {
+    position: relative;
+    display: flex;
+    flex: 1 1 200px;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.blockPart select,
+.blockPart .field {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    color: var(--text);
+    font: inherit;
+    color-scheme: dark;
+}
+
+.blockPart select {
+    cursor: pointer;
+}
+
+.blockTag {
+    padding-left: var(--space-2);
+    border-left: 3px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+.blockTag[data-part="when"] { border-left-color: var(--amber-600); }
+.blockTag[data-part="does"] { border-left-color: var(--accent-line); }
+.blockTag[data-part="with"] { border-left-color: var(--mana-u); }
+
+.blockParts > .tokenRemove {
+    align-self: flex-end;
+    padding: var(--space-2);
+}
+
+.blockSentence {
+    font-size: var(--text-sm);
+}
+
+/* the tag search's matches sit right under its box */
+.pieceWrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+/* a part's list floats over what's below it, grouped under small headings; the panel scrolls to reach its end */
+.pieceList {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 2;
+    width: max(100%, min(340px, 80vw));
+    max-height: 300px;
+    margin-top: var(--space-1);
+    padding: var(--space-1);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    box-shadow: var(--shadow);
+}
+
+.pieceList ul {
+    list-style: none;
+}
+
+.pieceGroup {
+    display: block;
+    padding: var(--space-2) var(--space-3) var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+.pieceList > .muted {
+    padding: var(--space-2) var(--space-3);
+}
+
+/* ---- notes about what was typed ---- */
+.notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-left: 3px solid var(--amber-600);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    font-size: var(--text-sm);
+}
+
+.notice > span {
+    flex: 1 1 auto;
+}
+
+.noteLine {
+    padding-left: var(--space-2);
+    border-left: 3px solid var(--amber-600);
+    font-size: var(--text-sm);
+}
+
+/* the last part's list opens leftward so it stays inside the panel */
+.blockPart:nth-last-child(2) .pieceList {
+    left: auto;
+    right: 0;
+}
+
+/* on phones each part is already the full width, so its list matches it */
+@media screen and (max-width: 640px) {
+    .pieceList {
+        width: 100%;
     }
 }

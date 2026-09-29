@@ -3,15 +3,23 @@
  *   background-color: var(--surface-1);
  *   padding: var(--space-3);
  * All colors come from the palette the app already used (maroon / red / white).
+ * The page and header are "felt": a muted, warm burgundy with a soft fibre texture,
+ * like a pool table. The brighter reds are kept for accents only.
  */
 :root {
   color-scheme: dark;
   /* ---- Palette (raw colors, don't use directly in components) ---- */
-  --red-950: rgb(70, 0, 0);       /* page background */
-  --red-900: rgb(105, 18, 18);    /* hover on page bg */
-  --red-800: rgb(146, 40, 40);    /* header, button bar */
+  --red-800: rgb(146, 40, 40);    /* accent */
   --red-700: rgb(160, 62, 62);    /* hover on red-800 */
-  --red-600: rgb(172, 84, 84);    /* pagination bar */
+  --red-600: rgb(172, 84, 84);    /* brighter accent (Search button, selected outlines) */
+
+  /* felt: a muted maroon (a touch of blue, a little grey), so it reads warm instead of blood red */
+  --felt-900: rgb(48, 12, 20);    /* shadowed edges of the page */
+  --felt-800: rgb(92, 22, 34);    /* page */
+  --felt-700: rgb(110, 32, 44);   /* hover on page */
+  --felt-600: rgb(128, 32, 46);   /* header */
+  --felt-500: rgb(146, 48, 60);   /* hover on header */
+  --felt-400: rgb(164, 74, 82);   /* bars sitting on the header */
 
   --gray-900: rgb(36, 36, 36);
   --gray-500: rgb(128, 128, 128);
@@ -29,11 +37,18 @@
   --ink-700: rgb(54, 44, 44);
 
   /* ---- Surfaces (backgrounds, darkest to lightest) ---- */
-  --surface-0: var(--red-950);    /* page */
-  --surface-1: var(--red-800);    /* header, card button bar, panels */
-  --surface-2: var(--red-600);    /* bars sitting on surface-1 */
-  --surface-hover-0: var(--red-900);
-  --surface-hover-1: var(--red-700);
+  --surface-0: var(--felt-800);   /* page */
+  --surface-1: var(--felt-600);   /* header, panels */
+  --surface-2: var(--felt-400);   /* bars sitting on surface-1 */
+  --surface-hover-0: var(--felt-700);
+  --surface-hover-1: var(--felt-500);
+
+  /* felt texture: fine grey noise laid over a surface color (background-image: var(--felt-grain)) */
+  --felt-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.14'/%3E%3C/svg%3E");
+  /* table lighting: a soft warm glow from above, falling off into the corners */
+  --felt-light:
+    radial-gradient(ellipse 90% 70% at 50% 20%, rgba(255, 196, 170, 0.07), transparent 70%),
+    radial-gradient(ellipse 120% 100% at 50% 40%, transparent 55%, var(--felt-900));
   --scrim: rgba(36, 36, 36, 0.926); /* full-screen overlay backdrop */
   --raised-0: var(--ink-900);     /* dropdowns and popovers */
   --raised-1: var(--ink-800);     /* fields and controls inside them */

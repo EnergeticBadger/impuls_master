@@ -14,9 +14,10 @@ export function toggleCompare(props: CardProps) {
     if (at >= 0) {
         compare.cards.splice(at, 1)
     } else {
+        // adding never opens the drawer over the page; the first card brings up just the bar, and an open drawer stays open
+        if (!compare.cards.length) compare.collapsed = true
         // the props come from a render snapshot (a tracking proxy structuredClone can't copy), so copy through JSON
         compare.cards.push(ref(JSON.parse(JSON.stringify(props))))
-        compare.collapsed = false
     }
 }
 

@@ -1,6 +1,6 @@
 // Works out why a search found nothing. Only reports what's certainly wrong; "too specific" is left to the pop-up's counts.
 
-import { allTypes, creatureTypes, isKnownType, singular } from './catalog'
+import { allTypes, creatureTypes, isKnownType, mergedNote, mergedType, singular } from './catalog'
 import { buildToken, chipLabel, emptyDraft, filterById, type Chip, type Compare, type Draft } from './filters'
 import { chipId, querybox } from '../Context/query'
 
@@ -67,11 +67,12 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
         for (const v of [...d.values, ...(d.custom.trim() ? [d.custom.trim()] : [])]) {
             const opt = filter.kind === 'choice' ? filter.options.find((o) => o.value === v) : undefined
             if (opt?.token || isKnownType(v)) continue
-            const fixed = singular(v, allTypes())
+            const merged = mergedType(v)
+            const fixed = singular(v, allTypes()) ?? merged?.type
             const swap = (x: string) => x === v ? fixed!.toLowerCase() : x
             found.push(fixed
                 ? {
-                    text: `“${v}” isn't a type. Types are always singular, so you probably meant ${fixed}.`,
+                    text: merged && merged.type === fixed ? mergedNote(merged) : `“${v}” isn't a type. Types are always singular, so you probably meant ${fixed}.`,
                     fix: { label: `Use ${fixed}`, apply: () => redraft(chip.id, { values: d.values.map(swap), custom: d.custom.trim() === v ? fixed.toLowerCase() : d.custom }) },
                 }
                 : { text: `“${v}” isn't a card type or subtype, so no card can match it.`, fix: { label: `Remove “${chipLabel(chip)}”`, apply: () => removeChip(chip.id) } })
@@ -82,10 +83,11 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
     if (!/[:<>=()"]/.test(text)) {
         const creature = creatureTypes()
         for (const word of text.trim().split(/\s+/).filter(Boolean)) {
-            const type = singular(word, creature)
+            const merged = creature && !singular(word, creature) ? mergedType(word) : undefined
+            const type = singular(word, creature) ?? merged?.type
             if (!type) continue
             found.push({
-                text: `Words typed on their own only search card names, and no card name has “${word}”. Looking for ${type} cards?`,
+                text: `Words typed on their own only search card names, and no card name has “${word}”. Looking for ${type} cards?${merged ? ` ${mergedNote(merged)}` : ''}`,
                 fix: {
                     label: `Search ${type} cards instead`,
                     apply: () => {

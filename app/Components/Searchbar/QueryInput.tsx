@@ -6,8 +6,10 @@ import {
     isComplete, lastFragment, matchFilters, parseToken, splitTerms,
     type Draft, type Filter, type Join, type Match,
 } from './filters'
-import { findTypes, loadTypeCatalogs, singular, useCatalog } from './catalog'
+import { findTypes, isKnownType, loadTypeCatalogs, mergedNote, mergedType, singular, useCatalog } from './catalog'
 import { chipId, querybox } from '../Context/query'
+import { RulesBuilder } from './RulesBuilder'
+import { blockToken } from './rules'
 
 // what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
 type Item = { type: string } | { filter: Filter }
@@ -94,7 +96,7 @@ export function QueryInput() {
             return
         }
         setEditing({ filter, fragment: '', chipId: id })
-        setDraft({ ...chip.draft, values: [...chip.draft.values] })
+        setDraft({ ...chip.draft, values: [...chip.draft.values], blocks: chip.draft.blocks.map((b) => ({ ...b })) })
         setJoin(chip.join)
         setOpen(true)
     }
@@ -119,7 +121,7 @@ export function QueryInput() {
 
     function add(search: boolean) {
         if (!token || !editing || !draft) return
-        const chip = { token, join, filterId: editing.filter.id, draft: { ...draft, values: [...draft.values] } }
+        const chip = { token, join, filterId: editing.filter.id, draft: { ...draft, values: [...draft.values], blocks: draft.blocks.map((b) => ({ ...b })) } }
         const i = editing.chipId ? querybox.chips.findIndex((c) => c.id === editing.chipId) : -1
         if (i >= 0) Object.assign(querybox.chips[i], chip)
         else {
@@ -146,6 +148,7 @@ export function QueryInput() {
         setActive(-1)
         setArmed(null)
         querybox.text = value
+        querybox.notice = null
         if (!value.endsWith(' ')) return
         const terms = splitTerms(value)
         const last = terms.at(-1)
@@ -163,6 +166,10 @@ export function QueryInput() {
         } else if (before.some((t) => /^or$/i.test(t.term))) return
         querybox.chips.push({ id: chipId(), token: buildToken(parsed.filter, parsed.draft), join: joinWith, filterId: parsed.filter.id, draft: parsed.draft })
         querybox.text = keep
+        // an old creature type was swapped for the one it became; say so, since the chip shows the new name
+        const typed = last.term.match(/^-?(?:t|type)[:=]"?([^"]+)"?$/i)?.[1]
+        const merged = typed ? mergedType(typed) : undefined
+        if (merged && parsed.filter.id === 'creature') querybox.notice = `${mergedNote(merged)} Searching ${merged.type} instead.`
     }
 
     function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -242,6 +249,13 @@ export function QueryInput() {
                 </button>
             </div>
 
+            {snap.notice ? (
+                <div className={styles.notice} role="status">
+                    <span>{snap.notice}</span>
+                    <button type="button" className={styles.tokenRemove} aria-label="Dismiss" onClick={() => { querybox.notice = null }}>×</button>
+                </div>
+            ) : null}
+
             {open && editing && draft ? (
                 <div className={styles.panel}>
                     <div className={styles.head}>
@@ -297,6 +311,8 @@ export function QueryInput() {
                     <ul className={styles.list} id={listId} role="listbox">
                         {items.map((item, i) => {
                             const plural = 'type' in item && singular(fragment, creatures) === item.type && item.type.toLowerCase() !== fragment.toLowerCase()
+                            const merged = 'type' in item && !singular(fragment, creatures) ? mergedType(fragment) : undefined
+                            const mergedHere = merged && 'type' in item && merged.type === item.type ? merged : undefined
                             return (
                                 <li
                                     key={'type' in item ? `type-${item.type}` : item.filter.id}
@@ -304,6 +320,7 @@ export function QueryInput() {
                                     role="option"
                                     aria-selected={i === active}
                                     className={styles.option}
+                                    data-type={'type' in item || undefined}
                                     onPointerDown={(e) => e.preventDefault()}
                                     onClick={() => pick(item)}
                                     onPointerEnter={() => setActive(i)}
@@ -312,7 +329,8 @@ export function QueryInput() {
                                         <>
                                             <span>Creature type: <strong>{item.type}</strong></span>
                                             <span className={styles.muted}>
-                                                {plural ? `Types are singular, so “${fragment}” means ${item.type}` : `Add ${item.type} cards to your search`}
+                                                {mergedHere ? mergedNote(mergedHere)
+                                                    : plural ? `Types are singular, so “${fragment}” means ${item.type}` : `Add ${item.type} cards to your search`}
                                             </span>
                                         </>
                                     ) : (
@@ -354,7 +372,19 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                         <input className={styles.field} placeholder={filter.customPlaceholder} value={draft.custom}
                             onChange={(e) => update({ custom: e.target.value })} onKeyDown={onEnter} />
                     ) : null}
+                    {(() => {
+                        const merged = draft.custom.trim() && !isKnownType(draft.custom.trim()) ? mergedType(draft.custom) : undefined
+                        return merged ? <span className={styles.noteLine}>{mergedNote(merged)} This will search {merged.type}.</span> : null
+                    })()}
                     <MatchPicker count={draft.values.length + (draft.custom.trim() ? 1 : 0)} value={draft.match} onChange={(match) => update({ match })} />
+                </>
+            )
+        case 'rules':
+            return (
+                <>
+                    <RulesBuilder draft={draft} update={update} onDone={onDone} />
+                    <MatchPicker count={draft.values.length + draft.blocks.filter((b) => blockToken(b)).length + (draft.text.trim() ? 1 : 0)}
+                        value={draft.match} onChange={(match) => update({ match })} />
                 </>
             )
         case 'creature':
@@ -456,6 +486,7 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
     const listId = useId()
     const hits = findTypes(q, types).filter((t) => !draft.values.includes(t))
     const plural = singular(q, types)
+    const merged = q.trim() && !plural ? mergedType(q) : undefined
 
     function choose(t: string) {
         toggle(t)
@@ -477,7 +508,7 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
     }
 
     // A–Z groups for browsing, narrowed by what's typed
-    const shown = (types ?? []).filter((t) => t.toLowerCase().includes(q.trim().toLowerCase()) || t === plural)
+    const shown = (types ?? []).filter((t) => t.toLowerCase().includes(q.trim().toLowerCase()) || t === plural || t === merged?.type)
     const groups = new Map<string, string[]>()
     for (const t of shown) groups.set(t[0], [...(groups.get(t[0]) ?? []), t])
 
@@ -504,7 +535,7 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
                                 <span>{t}</span>
                                 {t === plural && t.toLowerCase() !== q.trim().toLowerCase()
                                     ? <span className={styles.muted}>Types are singular, so “{q.trim()}” means {t}</span>
-                                    : null}
+                                    : merged && t === merged.type ? <span className={styles.muted}>{mergedNote(merged)}</span> : null}
                             </li>
                         ))}
                     </ul>
