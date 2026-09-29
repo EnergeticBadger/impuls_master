@@ -1,7 +1,7 @@
 // Works out why a search found nothing. Only reports what's certainly wrong; "too specific" is left to the pop-up's counts.
 
 import { allTypes, creatureTypes, isKnownType, mergedNote, mergedType, singular } from './catalog'
-import { buildToken, chipLabel, emptyDraft, filterById, type Chip, type Compare, type Draft } from './filters'
+import { buildToken, chipLabel, emptyDraft, filterById, splitTerms, type Chip, type Compare, type Draft } from './filters'
 import { chipId, querybox } from '../Context/query'
 
 export type Problem = { text: string, fix?: { label: string, apply: () => void } }
@@ -125,4 +125,103 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
         }
     }
     return found
+}
+
+// every value `inner` allows, `outer` allows too
+function within(inner: [number, boolean, number, boolean], outer: [number, boolean, number, boolean]) {
+    const lowOk = inner[0] > outer[0] || (inner[0] === outer[0] && (outer[1] || !inner[1]))
+    const highOk = inner[2] < outer[2] || (inner[2] === outer[2] && (outer[3] || !inner[3]))
+    return lowOk && highOk
+}
+
+// a chip that only pins down a number, so dropping it loses nothing another chip doesn't already say
+function onlyNumber(chip: Chip) {
+    const filter = filterById(chip.filterId)
+    return filter?.kind === 'number' || (filter?.kind === 'color' && chip.draft?.colorBy === 'count')
+}
+
+const termsOf = (s: string) => splitTerms(s).map((t) => t.term.toLowerCase())
+
+// the choices of an "any of" chip, e.g. (t:creature or t:elf) gives [[t:creature], [t:elf]]; null for anything else
+function optionsOf(token: string): string[][] | null {
+    const group = /^\((.*)\)$/s.exec(token.trim())
+    if (!group) return null
+    const parts = splitTerms(group[1])
+    if (!parts.some((p) => p.term.toLowerCase() === 'or')) return null
+    const options: string[][] = [[]]
+    for (const { term } of parts) {
+        if (term.toLowerCase() === 'or') options.push([])
+        else options[options.length - 1].push(...termsOf(term.replace(/^\((.*)\)$/s, '$1')))
+    }
+    return options.every((o) => o.length) ? options : null
+}
+
+// A simpler search that finds the same cards: repeated filters, ones another filter already covers,
+// and typed words a chip already searches. Only when everything is joined with AND, where that's certain.
+export type Tidy = { reasons: string[], removeIds: number[], text: string }
+
+export function findRedundant(chips: readonly Chip[], text: string): Tidy | null {
+    if (chips.some((c, i) => i > 0 && c.join === 'or')) return null
+    const reasons: string[] = []
+    const removed = new Set<number>()
+    const kept = () => chips.filter((c) => !removed.has(c.id))
+
+    // from the last chip back, so of two copies the first one stays
+    for (const chip of [...chips].reverse()) {
+        const mine = termsOf(chip.token)
+        const same = kept().find((c) => c.id !== chip.id && c.token.toLowerCase() === chip.token.toLowerCase())
+        const wider = same ? undefined : kept().find((c) => {
+            if (c.id === chip.id) return false
+            const theirs = termsOf(c.token)
+            return mine.every((t) => theirs.includes(t))
+        })
+        if (same) reasons.push(`“${chipLabel(chip)}” is in your search twice.`)
+        else if (wider) reasons.push(`“${chipLabel(chip)}” is already part of “${chipLabel(wider)}”.`)
+        else continue
+        removed.add(chip.id)
+    }
+
+    // an "any of" chip another chip already settles, e.g. "Creature or Elf" next to "Elf": every Elf matches it anyway
+    for (const chip of chips) {
+        if (removed.has(chip.id)) continue
+        const options = optionsOf(chip.token)
+        if (!options) continue
+        const settles = kept().find((c) => {
+            if (c.id === chip.id) return false
+            const theirs = termsOf(c.token)
+            return options.some((o) => o.every((t) => theirs.includes(t)))
+        })
+        if (!settles) continue
+        reasons.push(`Every card with “${chipLabel(settles)}” already matches “${chipLabel(chip)}”, so that one can go.`)
+        removed.add(chip.id)
+    }
+
+    // a looser number than another chip on the same thing, e.g. mana value 2+ next to mana value 4+
+    for (const chip of chips) {
+        if (removed.has(chip.id) || !onlyNumber(chip)) continue
+        const n = numeric(chip)
+        if (!n) continue
+        const tighter = kept().find((c) => {
+            if (c.id === chip.id) return false
+            const m = numeric(c)
+            return m?.key === n.key && within(m.span, n.span)
+        })
+        if (!tighter) continue
+        reasons.push(`“${chipLabel(tighter)}” already covers “${chipLabel(chip)}”, so that one can go.`)
+        removed.add(chip.id)
+    }
+
+    // words typed in the box that a chip already searches
+    let rest = text
+    if (!/\bor\b/i.test(text)) {
+        const chipTerms = new Map(kept().flatMap((c) => termsOf(c.token).map((t) => [t, c] as const)))
+        const words = splitTerms(text)
+        // the last word isn't finished until a space follows it
+        const done = /\s$/.test(text) ? words : words.slice(0, -1)
+        const extra = done.filter((w) => chipTerms.has(w.term.toLowerCase()))
+        for (const w of extra) reasons.push(`“${w.term}” is typed in the box but “${chipLabel(chipTerms.get(w.term.toLowerCase())!)}” already searches it.`)
+        if (extra.length) rest = words.filter((w) => !extra.includes(w)).map((w) => w.term).join(' ')
+    }
+
+    return reasons.length ? { reasons, removeIds: [...removed], text: rest } : null
 }

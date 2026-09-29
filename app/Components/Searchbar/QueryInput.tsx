@@ -10,6 +10,7 @@ import { findTypes, isKnownType, loadTypeCatalogs, mergedNote, mergedType, singu
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { blockToken } from './rules'
+import { findRedundant } from './problems'
 
 // what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
 type Item = { type: string } | { filter: Filter }
@@ -34,6 +35,8 @@ export function QueryInput() {
     // set while focus goes back to the box after adding a filter, so the dropdown doesn't pop straight back open
     const refocusing = useRef(false)
     const listId = useId()
+    // the search a suggestion was waved away for, so it stays gone until the search changes
+    const [dismissed, setDismissed] = useState<string | null>(null)
 
     const fragment = lastFragment(text)
     // a typed word that names a creature type (plurals too) can be added straight away, like an @-mention
@@ -141,6 +144,21 @@ export function QueryInput() {
         }
     }
 
+    // a simpler search that finds the same cards, offered under the box
+    const query = buildQuery(snap.chips, text)
+    const tidy = findRedundant(snap.chips, text)
+
+    function applyTidy(search: boolean) {
+        if (!tidy) return
+        querybox.chips = querybox.chips.filter((c) => !tidy.removeIds.includes(c.id))
+        querybox.text = tidy.text
+        if (editing?.chipId && tidy.removeIds.includes(editing.chipId)) setEditing(null)
+        if (search) {
+            close()
+            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
+        } else refocus()
+    }
+
     // typed syntax like `t:elf` becomes a chip as soon as it's finished with a space
     function onType(value: string) {
         setOpen(true)
@@ -237,7 +255,7 @@ export function QueryInput() {
                     />
                 </div>
                 {/* the search Searchbar reads: every chip plus what's typed */}
-                <input type="hidden" name="query" value={buildQuery(snap.chips, text)} />
+                <input type="hidden" name="query" value={query} />
                 <button type="button" className={styles.toggle} aria-expanded={open} aria-label={open ? 'Hide filters' : 'Show filters'}
                     onClick={() => open ? close() : (setOpen(true), refocus())}>
                     <span className={styles.wide}>{open ? 'Collapse' : 'Filters'}</span>
@@ -248,6 +266,24 @@ export function QueryInput() {
                     <span className={styles.wide}>Search</span>
                 </button>
             </div>
+
+            {tidy && dismissed !== query ? (
+                <div className={styles.suggest} role="status">
+                    <div className={styles.suggestHead}>
+                        <strong>Your search can be simpler</strong>
+                        <button type="button" className={styles.tokenRemove} aria-label="Dismiss" onClick={() => { setDismissed(query); refocus() }}>×</button>
+                    </div>
+                    <ul>{tidy.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                    <div className={styles.suggestFoot}>
+                        <span className={styles.muted}>Same cards with</span>
+                        <code>{buildQuery(snap.chips.filter((c) => !tidy.removeIds.includes(c.id)), tidy.text) || 'nothing'}</code>
+                        <span className={styles.suggestButtons}>
+                            <button type="button" className={styles.secondary} onClick={() => applyTidy(false)}>Update</button>
+                            <button type="button" className={styles.primary} onClick={() => applyTidy(true)}>Update &amp; search</button>
+                        </span>
+                    </div>
+                </div>
+            ) : null}
 
             {snap.notice ? (
                 <div className={styles.notice} role="status">
