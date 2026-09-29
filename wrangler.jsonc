@@ -6,6 +6,14 @@
     "enabled": true
   },
   "main": "./workers/app.ts",
+  // the Worker reads the card data files (build/client/data, made by scripts/card-data.ts) through this
+  "assets": {
+    "binding": "ASSETS"
+  },
+  // the deploy's version, so saved card pages are only served by the deploy that made them (workers/app.ts)
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
   "routes": [
     { "pattern": "impulsecaster.cards", "custom_domain": true }
   ],

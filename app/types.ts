@@ -71,6 +71,7 @@ export type ScryfallCard = {
     cmc: number;
     type_line: string;
     oracle_text: string;
+    flavor_text?: string;
     power?: string;
     toughness?: string;
     loyalty?: string;
@@ -123,10 +124,18 @@ export type CardFace = {
     mana_cost?: string;
     type_line?: string;
     oracle_text?: string;
+    flavor_text?: string;
+    artist?: string;
     power?: string;
     toughness?: string;
     loyalty?: string;
     defense?: string;
+}
+
+export type Ruling = {
+    source: string;
+    published_at: string;
+    comment: string;
 }
 
 export type ImageUris = {

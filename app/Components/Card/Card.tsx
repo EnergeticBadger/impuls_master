@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './Card.module.css'
 import { type CardProps } from "~/types";
@@ -10,6 +10,11 @@ import { Image } from '@unpic/react';
 import { useCardLayout } from '../Hooks/useCardLayout';
 import { view } from '../Context/view';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
+import { Link } from 'react-router';
+import { cardPath, useRulings } from '~/lib/card';
+import { CardText } from '../CardDetails/CardText';
+import { Rulings } from '../CardDetails/Rulings';
+import { ShareButton } from '../CardDetails/ShareButton';
 
 const COMPARE_ICON = "M320-160 160-320l160-160 56 57-63 63h287v80H313l63 63-56 57Zm320-320-56-57 63-63H360v-80h287l-63-63 56-57 160 160-160 160Z"
 
@@ -26,6 +31,9 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const compared = inCompare(comparing, card.id)
     const handleCompare = () => toggleCompare({ name, image_uri, card_uri, card })
     const { currentFace, faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
+    const open = version.name === name
+    // rulings are only fetched once the quick view opens
+    const rulings = useRulings(card, open)
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
 
     // flip/rotate from inside the quick view; flipping also swaps the big image to the other face
@@ -44,13 +52,22 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
         e.preventDefault()
 
         // always load on open: cached cards return instantly, and this supersedes any in-flight request
-        if (open) loadPrints(name, card.prints_search_uri)
+        if (open) loadPrints(card)
 
         // lock page scroll while the overlay is open, then hand it back to the stylesheet
         const elm = document.getElementById("app")
         if (elm) elm.style.overflow = open ? "hidden" : ""
 
         await setCurrentAlternate(name, currentFace.large_uri)
+    }
+
+    // leaving for the card's page: close the quick view so it isn't open when coming back.
+    // A ctrl/cmd/shift/middle click opens it in another tab, so this one stays as it is.
+    function handleFullPage(e: MouseEvent<HTMLAnchorElement>) {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        const elm = document.getElementById("app")
+        if (elm) elm.style.overflow = ""
+        setCurrentAlternate('none', 'none')
     }
 
     async function handleCopy() {
@@ -97,7 +114,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
 
                 {/* Overlay: clicking the dimmed area around the panel closes it. It's portalled to <body> so the grid's
                     loading fade (opacity) can't make the backdrop see-through or push it under the header. */}
-                {version.name === name ? createPortal(
+                {open ? createPortal(
                 <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) handleOverlay(e, false, 'none') }}>
                     <div className={styles.overlay_details}>
                         <div className={styles.tools}>
@@ -111,6 +128,11 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                                 <svg viewBox="0 -960 960 960"><path d={COMPARE_ICON} /></svg>
                                 {compared ? 'Comparing ✓' : 'Compare'}
                             </button>
+                            <ShareButton path={cardPath(card)} name={card.name} className={styles.turn} />
+                            <Link className={styles.turn} to={cardPath(card)} onClick={handleFullPage} title="Open the card's own page">
+                                <svg viewBox="0 -960 960 960"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z" /></svg>
+                                Full page
+                            </Link>
                         </div>
 
                         <div className={styles.info_heading}>
@@ -132,7 +154,9 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                         </div>
 
                         <div className={styles.overlay_details_info}>
+                            <CardText card={card} showName={false} />
                             <PlayFormats formats={card.legalities} />
+                            <Rulings rulings={rulings} compact />
                             {allPrints.name === name ? <AlternateArts /> : null}
                         </div>
 

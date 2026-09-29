@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+# the Scryfall proxy and the card data files are for the app, not for crawling
+Disallow: /api/
+Disallow: /data/
+
+Sitemap: https://impulsecaster.cards/sitemap.xml

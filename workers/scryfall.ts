@@ -2,14 +2,21 @@
 // The browser calls /api/scryfall/<path>?<query>; the Worker answers from cache
 // when it can, and otherwise asks Scryfall politely (identifying headers, one
 // request at a time with a gap between them) and caches the answer.
+// Scryfall's limits: https://scryfall.com/docs/api/rate-limits
 
 export const SCRYFALL_PREFIX = "/api/scryfall/";
 
 const UPSTREAM = "https://api.scryfall.com/";
 const USER_AGENT = "impuls_master/1.0 (+https://github.com/EnergeticBadger/impuls_master)";
 
-// Scryfall asks for 50-100ms between requests
+// Scryfall's hard limits: searches and name lookups 2 a second, everything else 10 a second
 const MIN_GAP_MS = 100;
+const SEARCH_GAP_MS = 500;
+const SEARCH_LIKE = /^cards\/(search|named|random|collection)$/;
+// a request that would have to queue longer than this is turned away instead of left hanging
+const MAX_WAIT_MS = 10_000;
+// a 429 locks us out for 30 seconds; Scryfall says to stop sending until then
+const LOCKOUT_MS = 30_000;
 
 // card data changes about once a day
 const TTL_OK = 60 * 60 * 24;
@@ -24,6 +31,7 @@ const ALLOWED = [
 	/^cards\/named$/,
 	/^cards\/autocomplete$/,
 	/^cards\/[0-9a-f-]{36}$/,
+	/^cards\/[0-9a-f-]{36}\/rulings$/,
 	/^cards\/[a-z0-9]+\/[^/]+$/,
 	/^sets(\/[a-z0-9]+)?$/,
 	/^catalog\/[a-z-]+$/,
@@ -38,6 +46,7 @@ const inFlight = new Map<string, Promise<Stored>>();
 
 // Small in-memory cache per Worker instance. The Cache API above is the main cache,
 // but it does nothing on *.workers.dev domains, so this keeps hot queries cheap there too.
+// Expired entries stay until they're pushed out, to answer with while Scryfall is unavailable.
 const MEMORY_MAX_BYTES = 32 * 1024 * 1024;
 const memory = new Map<string, { stored: Stored; expires: number }>();
 let memoryBytes = 0;
@@ -46,12 +55,8 @@ function memoryGet(key: string) {
 	const hit = memory.get(key);
 	if (!hit) return undefined;
 	memory.delete(key);
-	if (hit.expires < Date.now()) {
-		memoryBytes -= hit.stored.body.byteLength;
-		return undefined;
-	}
 	memory.set(key, hit); // move to newest
-	return hit.stored;
+	return { stored: hit.stored, fresh: hit.expires >= Date.now() };
 }
 
 function memorySet(key: string, stored: Stored, ttl: number) {
@@ -72,22 +77,41 @@ function memorySet(key: string, stored: Stored, ttl: number) {
 	}
 }
 
-// time the next upstream call may start, so this isolate never sends them closer than MIN_GAP_MS
-let nextSlot = 0;
-
-async function throttle() {
-	const now = Date.now();
-	const slot = Math.max(now, nextSlot);
-	nextSlot = slot + MIN_GAP_MS;
-	if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
+// Scryfall can't take the request right now (we're over its limit, or waiting out a 429)
+class Busy extends Error {
+	constructor(readonly retryAfter: number) {
+		super("Scryfall is busy");
+	}
 }
 
-function json(status: number, details: string) {
+// times the next upstream call may start, so this isolate keeps to Scryfall's limits.
+// Other isolates keep their own; a shared limiter is on the TODO list.
+let nextAny = 0;
+let nextSearch = 0;
+// no calls to Scryfall before this time, after it answered 429
+let lockedUntil = 0;
+
+async function throttle(searchLike: boolean) {
+	const now = Date.now();
+	if (lockedUntil > now) throw new Busy(Math.ceil((lockedUntil - now) / 1000));
+	const slot = Math.max(now, nextAny, searchLike ? nextSearch : 0);
+	if (slot - now > MAX_WAIT_MS) throw new Busy(Math.ceil((slot - now) / 1000));
+	nextAny = slot + MIN_GAP_MS;
+	if (searchLike) nextSearch = slot + SEARCH_GAP_MS;
+	if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
+	// a 429 may have come back while this one waited its turn
+	if (lockedUntil > Date.now()) throw new Busy(Math.ceil((lockedUntil - Date.now()) / 1000));
+}
+
+function json(status: number, details: string, headers: Record<string, string> = {}) {
 	return new Response(JSON.stringify({ object: "error", status, details }), {
 		status,
-		headers: { "Content-Type": "application/json" },
+		headers: { "Content-Type": "application/json", ...headers },
 	});
 }
+
+const busy = (retryAfter: number) =>
+	json(503, "Scryfall is busy, try again in a moment", { "Retry-After": String(Math.max(1, retryAfter)), "Cache-Control": "no-store" });
 
 // same request, same cache entry: sort params and drop ones that don't change the answer
 function upstreamUrl(url: URL, path: string) {
@@ -99,11 +123,18 @@ function upstreamUrl(url: URL, path: string) {
 	return target;
 }
 
-async function fetchUpstream(target: URL): Promise<Stored> {
-	await throttle();
+async function fetchUpstream(target: URL, path: string): Promise<Stored> {
+	await throttle(SEARCH_LIKE.test(path));
 	const res = await fetch(target.toString(), {
 		headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
 	});
+	if (res.status === 429) {
+		const wait = Number(res.headers.get("Retry-After")) * 1000 || LOCKOUT_MS;
+		lockedUntil = Math.max(lockedUntil, Date.now() + wait);
+		console.warn(`Scryfall answered 429 for ${path}; pausing ${wait}ms`);
+		await res.body?.cancel();
+		throw new Busy(Math.ceil(wait / 1000));
+	}
 	const ttl = res.ok ? TTL_OK : res.status === 404 ? TTL_NOT_FOUND : 0;
 	const stored: Stored = {
 		status: res.status,
@@ -132,26 +163,37 @@ export async function handleScryfall(request: Request, ctx: ExecutionContext): P
 	let source = "HIT";
 
 	const remembered = res ? undefined : memoryGet(key.url);
-	if (remembered) {
+	if (remembered?.fresh) {
 		source = "HIT-MEMORY";
-		res = new Response(remembered.body, { status: remembered.status, headers: remembered.headers });
+		res = new Response(remembered.stored.body, { status: remembered.stored.status, headers: remembered.stored.headers });
 	}
 
 	if (!res) {
 		source = "MISS";
+		// an expired copy is better than nothing when Scryfall can't answer
+		const stale = () => {
+			if (!remembered) return undefined;
+			source = "STALE";
+			return new Response(remembered.stored.body, { status: remembered.stored.status, headers: remembered.stored.headers });
+		};
 		let pending = inFlight.get(key.url);
 		if (!pending) {
-			pending = fetchUpstream(target).finally(() => inFlight.delete(key.url));
+			pending = fetchUpstream(target, path).finally(() => inFlight.delete(key.url));
 			inFlight.set(key.url, pending);
 		}
 		try {
 			const stored = await pending;
-			res = new Response(stored.body, { status: stored.status, headers: stored.headers });
+			res = stored.status >= 500 ? stale() : undefined;
+			res ??= new Response(stored.body, { status: stored.status, headers: stored.headers });
 		} catch (err) {
-			console.error("Scryfall request failed", err);
-			return json(502, "Could not reach Scryfall");
+			res = stale();
+			if (!res && err instanceof Busy) return busy(err.retryAfter);
+			if (!res) {
+				console.error("Scryfall request failed", err);
+				return json(502, "Could not reach Scryfall");
+			}
 		}
-		if (res.headers.get("Cache-Control")?.startsWith("public")) {
+		if (source === "MISS" && res.headers.get("Cache-Control")?.startsWith("public")) {
 			ctx.waitUntil(cache.put(key, res.clone()));
 		}
 	}
@@ -160,7 +202,9 @@ export async function handleScryfall(request: Request, ctx: ExecutionContext): P
 	out.headers.set("X-Cache", source);
 	out.headers.set(
 		"Cache-Control",
-		res.ok || res.status === 404 ? `public, max-age=${BROWSER_TTL}` : "no-store",
+		// a stale answer is only kept briefly, so the browser asks again once Scryfall is back
+		source === "STALE" ? "public, max-age=60"
+			: res.ok || res.status === 404 ? `public, max-age=${BROWSER_TTL}` : "no-store",
 	);
 	return out;
 }

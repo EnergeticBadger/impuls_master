@@ -111,6 +111,7 @@
   background-color: var(--raised-1);
   color: var(--text);
   font-size: var(--text-md);
+  text-decoration: none;
   cursor: pointer;
   transition: background-color var(--ease);
 }
@@ -258,12 +259,13 @@
   white-space: nowrap;
 }
 
-/* the list takes whatever height is left beside the image and only scrolls when the prints don't fit */
+/* the list takes whatever height is left beside the image and only scrolls when the prints don't fit;
+   its minimum is on the block, so the panel grows to fit it when the text and rulings fill the column */
 .alt_art_block {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
-  min-height: 0;
+  min-height: 12rem;
 }
 
 .alt_art_list {
@@ -271,7 +273,7 @@
   flex-direction: column;
   gap: var(--space-2);
   flex: 1 1 0;
-  min-height: 160px;
+  min-height: 0;
   padding-bottom: var(--space-1); /* room for the last underline, so it never triggers a scrollbar */
   overflow-y: auto;
 }
@@ -309,6 +311,10 @@
   }
 
   /* nothing beside the list to line up with on a phone, so cap it instead */
+  .alt_art_block {
+    min-height: 0;
+  }
+
   .alt_art_list {
     flex: 0 1 auto;
     min-height: 0;

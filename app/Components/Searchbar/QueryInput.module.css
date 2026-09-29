@@ -630,6 +630,50 @@ button.tokenLabel:hover,
     flex: 1 1 auto;
 }
 
+/* "your search can be simpler": what's repeated, the tidier search, and buttons to use it */
+.suggest {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-left: 3px solid var(--amber-600);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    font-size: var(--text-sm);
+}
+
+.suggestHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.suggest ul {
+    margin: 0;
+    padding-left: var(--space-5);
+}
+
+.suggestFoot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.suggestFoot code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.suggestButtons {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
 .noteLine {
     padding-left: var(--space-2);
     border-left: 3px solid var(--amber-600);
