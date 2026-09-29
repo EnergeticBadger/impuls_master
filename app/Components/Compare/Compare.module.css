@@ -113,9 +113,66 @@
 }
 
 .table td {
-    width: 240px;
-    min-width: 200px;
-    max-width: 280px;
+    width: 260px;
+    min-width: 220px;
+    max-width: 300px;
+}
+
+/* ---- The card's image, quick view and share: desktop and tablet ---- */
+
+.picture {
+    border-bottom: 0;
+}
+
+.art {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border-radius: var(--radius-card);
+    cursor: zoom-in;
+}
+
+.art img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow);
+}
+
+.actions {
+    --row: 2.2rem; /* button height, used by the shared .turn style */
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.actions > * {
+    font-size: var(--text-sm);
+}
+
+/* a double-faced card's rules text, face by face */
+.faceName {
+    font-weight: bold;
+}
+
+.faceName:not(:first-child) {
+    margin-top: var(--space-3);
+}
+
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* rows that only one layout shows: phones keep the fuller list they had */
+.phoneOnly {
+    display: none;
 }
 
 .head {
@@ -129,14 +186,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-}
-
-.headInner img {
-    flex: 0 0 auto;
-    width: 46px;
-    height: 64px;
-    border-radius: 3px;
-    object-fit: cover;
 }
 
 .name {
@@ -225,7 +274,11 @@
         min-width: 160px;
     }
 
-    .headInner img {
+    .wideOnly {
         display: none;
+    }
+
+    .phoneOnly {
+        display: table-row;
     }
 }

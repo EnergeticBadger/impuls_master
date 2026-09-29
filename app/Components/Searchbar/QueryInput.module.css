@@ -1,13 +1,7 @@
-/* takes the search input's old place in the header row; the dropdown hangs below it */
+/* the search box and its buttons; the filter panel hangs below it */
 .wrap {
     position: relative;
-    flex: 1 1 440px;
     min-width: 0;
-}
-
-/* with a few chips in it, the search gets the whole header row and the page controls go below */
-.wrap:has(.chipGroup + .chipGroup) {
-    flex-basis: 100%;
 }
 
 .bar {
@@ -18,7 +12,7 @@
 
 /* when chips wrap onto more lines, the buttons stay one line tall at the top */
 .bar > button {
-    max-height: 3.4rem;
+    max-height: var(--search-height);
 }
 
 /* looks like one text box: the chips sit in it, before the cursor */
@@ -30,6 +24,7 @@
     gap: var(--space-2);
     flex: 1 1 auto;
     min-width: 0;
+    min-height: var(--search-height);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-subtle);
@@ -171,16 +166,22 @@ button.tokenLabel:hover,
     fill: currentColor;
 }
 
+/*
+ * The filter panel takes the width of the whole search row (up to a comfortable reading width) and may reach
+ * the bottom of the screen, sizing itself to what's in it. Its heading and its Add buttons stay pinned while
+ * the middle scrolls, so the way out is always in view. --wrap-bottom is where the search box ends (QueryInput).
+ */
 .panel {
     position: absolute;
     top: calc(100% + var(--space-2));
     left: 0;
-    right: 0;
     z-index: var(--z-header);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    max-height: min(70vh, 560px);
+    width: min(100%, 1120px);
+    max-height: max(16rem, calc(100dvh - var(--wrap-bottom, 8rem) - var(--space-2) - var(--space-4)));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--space-4);
@@ -192,11 +193,26 @@ button.tokenLabel:hover,
     color: var(--text);
 }
 
+/* the panel scrolls instead of squeezing what's in it */
+.panel > * {
+    flex-shrink: 0;
+}
+
 .head {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
+}
+
+/* pinned to the top of the scrolling panel, edge to edge */
+.panel > .head {
+    position: sticky;
+    top: calc(-1 * var(--space-4));
+    z-index: 3;
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+    padding: var(--space-4) var(--space-4) var(--space-2);
+    background-color: var(--raised-0);
 }
 
 .muted {
@@ -214,12 +230,34 @@ button.tokenLabel:hover,
     color: var(--text);
 }
 
-/* filter picker */
-.list {
+/* filter picker: the groups (Card, Rules text, Stats, Printing) flow down as many columns as fit, like a
+   newspaper, so the columns come out even instead of leaving a gap under the short groups */
+.groups {
+    columns: 220px;
+    column-gap: var(--space-4);
+}
+
+.group {
     list-style: none;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-    gap: var(--space-1);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    margin-bottom: var(--space-4);
+    break-inside: avoid;
+}
+
+/* creature types matching what's typed carry a sentence each, so they get the whole width */
+.group[data-types] {
+    column-span: all;
+}
+
+.groupLabel {
+    padding: 0 var(--space-3) var(--space-1);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
 }
 
 .option {
@@ -229,11 +267,6 @@ button.tokenLabel:hover,
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-sm);
     cursor: pointer;
-}
-
-/* a creature type suggestion carries a sentence about it, so it gets the whole row */
-.option[data-type] {
-    grid-column: 1 / -1;
 }
 
 .option[aria-selected="true"] {
@@ -343,13 +376,19 @@ button.tokenLabel:hover,
     width: 7em;
 }
 
+/* pinned to the bottom of the scrolling panel, so Add is always in reach */
 .foot {
+    position: sticky;
+    bottom: calc(-1 * var(--space-4));
+    z-index: 3;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    padding-top: var(--space-3);
+    margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+    padding: var(--space-3) var(--space-4) var(--space-4);
     border-top: 1px solid var(--border-faint);
+    background-color: var(--raised-0);
 }
 
 /* plain-English meaning above the syntax it writes */
@@ -473,8 +512,14 @@ button.tokenLabel:hover,
 }
 
 @media screen and (max-width: 640px) {
-    .list {
-        grid-template-columns: 1fr;
+    /* on a phone the panel spans the screen, not just the search box beside the logo */
+    .panel {
+        position: fixed;
+        top: calc(var(--wrap-bottom, 8rem) + var(--space-2));
+        left: var(--space-2);
+        right: var(--space-2);
+        width: auto;
+        max-height: calc(100dvh - var(--wrap-bottom, 8rem) - 2 * var(--space-2));
     }
 
     .input {
@@ -484,6 +529,30 @@ button.tokenLabel:hover,
     /* icon-only buttons so the box keeps its room */
     .wide {
         display: none;
+    }
+
+    /* a label above its choices, and the choices across the whole width, so long ones wrap evenly */
+    .row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .segmented {
+        display: flex;
+    }
+
+    .segmented button {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    /* what gets added on its own line, the buttons together under it */
+    .preview {
+        flex-basis: 100%;
+    }
+
+    .foot > button:first-of-type {
+        margin-left: auto;
     }
 
     .toggle,

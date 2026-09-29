@@ -1,13 +1,17 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
-import { allTypes, creatureTypes, isKnownType, mergedType, singular, typeLabel } from './catalog'
+import { allTypes, creatureTypes, isKnownType, keywordLabel, mergedType, singular, typeLabel } from './catalog'
 import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
 export type Option = { label: string, value: string, token?: string }
 
+// the headings the filter list is grouped under, in the order they're shown
+export const FILTER_GROUPS = ['Card', 'Rules text', 'Stats', 'Printing'] as const
+
 type Base = {
     id: string
+    group: typeof FILTER_GROUPS[number]
     label: string
     hint: string
     // words someone might start typing to find this filter
@@ -21,6 +25,8 @@ export type Filter =
     | Base & { kind: 'choice', key: string, options: Option[], customPlaceholder?: string }
     // search Scryfall's full list of creature types and pick them like @-mentions
     | Base & { kind: 'creature', key: 't' }
+    // search every keyword ability, keyword action and ability word, and pick several
+    | Base & { kind: 'keyword', key: 'kw', common: string[] }
     | Base & { kind: 'color', key: 'c' | 'id' }
     | Base & { kind: 'number', key: string, placeholder: string }
     | Base & { kind: 'text', key: string, placeholder: string, suggestions?: string[] }
@@ -82,7 +88,7 @@ export const COLOR_MODES: Record<'c' | 'id', { value: Compare, label: string }[]
         { value: '<=', label: 'only these (or fewer)' },
     ],
     id: [
-        { value: '<=', label: 'fits in a deck of these colors' },
+        { value: '<=', label: 'fits a deck of these colors' },
         { value: '=', label: 'exactly these' },
         { value: '>=', label: 'includes these' },
     ],
@@ -95,18 +101,18 @@ const opts = (...values: string[]): Option[] =>
 
 export const FILTERS: Filter[] = [
     {
-        id: 'type', kind: 'choice', key: 't', keys: ['t', 'type'],
+        id: 'type', group: 'Card', kind: 'choice', key: 't', keys: ['t', 'type'],
         label: 'Card type', hint: 'Creature, instant, land, saga, equipment… search or browse all of them',
         keywords: ['type', 'creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'tribe', 'subtype'],
         options: opts('creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'legendary', 'equipment', 'aura', 'vehicle'),
     },
     {
-        id: 'creature', kind: 'creature', key: 't', keys: ['t', 'type'],
+        id: 'creature', group: 'Card', kind: 'creature', key: 't', keys: ['t', 'type'],
         label: 'Creature type', hint: 'Dragon, Elf, Zombie… search or browse all of them',
         keywords: ['creature type', 'tribe', 'tribal', 'subtype', 'race', 'dragon', 'elf', 'goblin', 'zombie', 'human', 'wizard', 'angel', 'vampire'],
     },
     {
-        id: 'legendary', kind: 'choice', key: 't', keys: ['is'],
+        id: 'legendary', group: 'Card', kind: 'choice', key: 't', keys: ['is'],
         label: 'Legendary', hint: 'Legendary cards, or ones that can be your commander',
         keywords: ['legendary', 'legend', 'commander', 'general', 'unique'],
         options: [
@@ -116,90 +122,91 @@ export const FILTERS: Filter[] = [
             { label: 'Can be your commander', value: 'commander', token: 'is:commander' },
         ],
     },
+    // Color and color identity side by side, each hint saying where its colors come from, so the difference
+    // (a card's text can add to its identity) is learned from the list itself
     {
-        id: 'color', kind: 'color', key: 'c', keys: ['c', 'color', 'colors'],
-        label: 'Color', hint: 'The colors of the card itself',
+        id: 'color', group: 'Card', kind: 'color', key: 'c', keys: ['c', 'color', 'colors'],
+        label: 'Color', hint: 'Colors in its mana cost',
         keywords: ['color', 'colour', 'white', 'blue', 'black', 'red', 'green', 'colorless', 'multicolor', 'mono', 'how many'],
     },
     {
-        id: 'identity', kind: 'color', key: 'id', keys: ['id', 'identity', 'ci'],
-        label: 'Commander colors', hint: 'Color identity: what fits in a Commander deck',
-        keywords: ['commander', 'identity', 'edh', 'deck colors'],
+        id: 'identity', group: 'Card', kind: 'color', key: 'id', keys: ['id', 'identity', 'ci'],
+        label: 'Color identity', hint: 'Cost and text symbols, as Commander counts',
+        keywords: ['commander', 'identity', 'color identity', 'colour identity', 'ci', 'edh', 'deck colors'],
     },
     {
-        id: 'mv', kind: 'number', key: 'mv', keys: ['mv', 'cmc', 'manavalue'],
-        label: 'Mana value', hint: 'Total mana cost, e.g. at most 3',
-        keywords: ['mana', 'cost', 'cmc', 'mana value', 'cheap'],
-        placeholder: 'e.g. 3',
-    },
-    {
-        id: 'oracle', kind: 'rules', key: 'o', keys: ['o', 'oracle', 'otag', 'function'],
+        id: 'oracle', group: 'Rules text', kind: 'rules', key: 'o', keys: ['o', 'oracle', 'otag', 'function'],
         label: 'What it does', hint: 'Removal, card draw… or build an ability like "when this enters, draw"',
         keywords: ['text', 'rules', 'oracle', 'ability', 'does', 'says', 'effect', 'trigger', 'when', 'whenever', 'removal', 'draw', 'ramp', 'role', 'function'],
     },
     {
-        id: 'keyword', kind: 'text', key: 'kw', keys: ['kw', 'keyword'],
-        label: 'Keyword ability', hint: 'Flying, trample, lifelink…',
-        keywords: ['keyword', 'ability', 'flying', 'trample', 'haste'],
-        placeholder: 'e.g. flying',
-        suggestions: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'cycling', 'flashback', 'kicker', 'convoke'],
+        id: 'keyword', group: 'Rules text', kind: 'keyword', key: 'kw', keys: ['kw', 'keyword'],
+        label: 'Keyword', hint: 'Flying, trample, scry, landfall… pick one or several',
+        keywords: ['keyword', 'ability', 'ability word', 'flying', 'trample', 'haste', 'scry', 'landfall'],
+        common: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'scry', 'cycling', 'flashback', 'landfall'],
     },
     {
-        id: 'name', kind: 'text', key: 'name', keys: ['name', 'n'],
+        id: 'name', group: 'Rules text', kind: 'text', key: 'name', keys: ['name', 'n'],
         label: 'Name contains', hint: 'Part of the card name',
         keywords: ['name', 'called', 'title'],
         placeholder: 'e.g. dragon',
     },
     {
-        id: 'power', kind: 'number', key: 'pow', keys: ['pow', 'power'],
+        id: 'mv', group: 'Stats', kind: 'number', key: 'mv', keys: ['mv', 'cmc', 'manavalue'],
+        label: 'Mana value', hint: 'Total mana cost, e.g. at most 3',
+        keywords: ['mana', 'cost', 'cmc', 'mana value', 'cheap'],
+        placeholder: 'e.g. 3',
+    },
+    {
+        id: 'power', group: 'Stats', kind: 'number', key: 'pow', keys: ['pow', 'power'],
         label: 'Power', hint: 'Creature attack strength',
         keywords: ['power', 'attack', 'strength', 'pow'],
         placeholder: 'e.g. 4',
     },
     {
-        id: 'toughness', kind: 'number', key: 'tou', keys: ['tou', 'toughness'],
+        id: 'toughness', group: 'Stats', kind: 'number', key: 'tou', keys: ['tou', 'toughness'],
         label: 'Toughness', hint: 'Creature defense',
         keywords: ['toughness', 'defense', 'tou'],
         placeholder: 'e.g. 4',
     },
     {
-        id: 'loyalty', kind: 'number', key: 'loy', keys: ['loy', 'loyalty'],
+        id: 'loyalty', group: 'Stats', kind: 'number', key: 'loy', keys: ['loy', 'loyalty'],
         label: 'Loyalty', hint: 'Planeswalker starting loyalty',
         keywords: ['loyalty', 'planeswalker'],
         placeholder: 'e.g. 3',
     },
     {
-        id: 'rarity', kind: 'choice', key: 'r', keys: ['r', 'rarity'],
+        id: 'rarity', group: 'Printing', kind: 'choice', key: 'r', keys: ['r', 'rarity'],
         label: 'Rarity', hint: 'Common, uncommon, rare, mythic',
         keywords: ['rarity', 'common', 'uncommon', 'rare', 'mythic'],
         options: opts('common', 'uncommon', 'rare', 'mythic'),
     },
     {
-        id: 'format', kind: 'choice', key: 'f', keys: ['f', 'format', 'legal'],
+        id: 'format', group: 'Printing', kind: 'choice', key: 'f', keys: ['f', 'format', 'legal'],
         label: 'Legal in format', hint: 'Commander, Standard, Modern…',
         keywords: ['format', 'legal', 'standard', 'modern', 'pioneer', 'legacy', 'vintage', 'pauper', 'commander', 'edh'],
         options: opts('commander', 'standard', 'pioneer', 'modern', 'legacy', 'vintage', 'pauper', 'brawl', 'historic', 'timeless'),
     },
     {
-        id: 'price', kind: 'number', key: 'usd', keys: ['usd', 'price'],
+        id: 'price', group: 'Printing', kind: 'number', key: 'usd', keys: ['usd', 'price'],
         label: 'Price (USD)', hint: 'Cheapest printing, e.g. less than 1',
         keywords: ['price', 'cost', 'usd', 'dollar', 'budget', 'cheap'],
         placeholder: 'e.g. 1',
     },
     {
-        id: 'year', kind: 'number', key: 'year', keys: ['year'],
+        id: 'year', group: 'Printing', kind: 'number', key: 'year', keys: ['year'],
         label: 'Year printed', hint: 'e.g. at least 2020',
         keywords: ['year', 'date', 'new', 'old', 'released'],
         placeholder: 'e.g. 2020',
     },
     {
-        id: 'set', kind: 'text', key: 's', keys: ['s', 'set', 'e', 'edition'],
+        id: 'set', group: 'Printing', kind: 'text', key: 's', keys: ['s', 'set', 'e', 'edition'],
         label: 'Set code', hint: 'Three- to five-letter set code, e.g. neo',
         keywords: ['set', 'edition', 'expansion'],
         placeholder: 'e.g. neo',
     },
     {
-        id: 'artist', kind: 'text', key: 'a', keys: ['a', 'artist'],
+        id: 'artist', group: 'Printing', kind: 'text', key: 'a', keys: ['a', 'artist'],
         label: 'Artist', hint: 'Who painted it',
         keywords: ['artist', 'art', 'illustrator', 'painter'],
         placeholder: 'e.g. Rebecca Guay',
@@ -238,12 +245,27 @@ function picked(filter: Filter, d: Draft) {
     return filter.kind === 'choice' && custom && !d.values.includes(custom) ? [...d.values, custom] : d.values
 }
 
+// how many separate things a filter has picked; with two or more a card can match any, all or none of them
+export function pickCount(filter: Filter, d: Draft) {
+    switch (filter.kind) {
+        case 'choice':
+        case 'creature':
+        case 'keyword':
+            return picked(filter, d).length
+        case 'rules':
+            return d.values.length + d.blocks.filter((b) => blockToken(b)).length + (d.text.trim() ? 1 : 0)
+        default:
+            return 1
+    }
+}
+
 // the Scryfall syntax for one filter, or '' while it's still incomplete
 export function buildToken(filter: Filter, d: Draft): string {
     let token = ''
     switch (filter.kind) {
         case 'choice':
-        case 'creature': {
+        case 'creature':
+        case 'keyword': {
             const options = filter.kind === 'choice' ? filter.options : []
             const parts = picked(filter, d).map((v) =>
                 options.find((o) => o.value === v)?.token ?? `${filter.key}:${quote(v.toLowerCase())}`)
@@ -291,9 +313,13 @@ export function describe(filter: Filter, d: Draft): string {
         values.length > 1 ? values.slice(0, -1).join(', ') + ` ${word} ` + values.at(-1) : values[0]
     switch (filter.kind) {
         case 'choice':
-        case 'creature': {
+        case 'creature':
+        case 'keyword': {
             const options = filter.kind === 'choice' ? filter.options : []
-            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label ?? (filter.key === 't' ? typeLabel(v) : v))
+            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label
+                ?? (filter.key === 't' ? typeLabel(v) : filter.kind === 'keyword' ? keywordLabel(v) : v))
+            // several left out means none of them may be on the card
+            if (d.exclude && labels.length > 1) return `${filter.label}: none of ${labels.join(', ')}`
             return `${filter.label}: ${not}${list(labels, d.match === 'all' ? 'and' : 'or')}`
         }
         case 'color': {
@@ -429,6 +455,9 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
             }
             return { filter, draft: { ...draft, values: [v] } }
         }
+        case 'keyword':
+            if (rawOp !== ':' && rawOp !== '=') return null
+            return { filter, draft: { ...draft, values: [value.toLowerCase()] } }
         case 'color': {
             if (/^\d$/.test(value)) return { filter, draft: { ...draft, colorBy: 'count', compare: op, text: value } }
             const v = value.toLowerCase()
