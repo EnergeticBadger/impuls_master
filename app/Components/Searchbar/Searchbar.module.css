@@ -8,20 +8,40 @@
     box-shadow: var(--shadow);
 }
 
-/* logo on the left, the search form (which wraps onto more lines) beside it */
+/*
+ * Two rows on one grid. The search is the main thing to do here, so it gets the whole first row beside the
+ * brand. The results controls (count, pages, sort, size) go on the second row, lined up with the page's own
+ * edge like the grid of cards they control, rather than indented under the logo.
+ */
 .headerRow {
-    display: flex;
-    align-items: flex-start;
-    padding-left: var(--gutter);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "brand search search"
+        "pages pages view";
+    align-items: center;
+    gap: var(--space-2) var(--space-5);
+    padding: var(--space-3) var(--gutter);
 }
 
-/* lines the logo up with the search box on the first line of the form */
+/* the form's parts sit on the header's grid themselves */
+.searchbar {
+    display: contents;
+}
+
+.searchArea {
+    grid-area: search;
+    min-width: 0;
+}
+
+/* as tall as one line of the search box, so the logo lines up with it however many lines the chips take */
 .brand {
+    grid-area: brand;
+    align-self: start;
     display: flex;
-    flex: 0 0 auto;
     align-items: center;
     gap: var(--space-3);
-    margin-top: calc(var(--space-4) + 6px); /* the search box is ~12px taller than the logo */
+    height: var(--search-height);
     color: var(--text);
     font-weight: 700;
     font-size: 1.15rem;
@@ -41,38 +61,35 @@
     border-radius: var(--radius-sm);
 }
 
-/* the name only shows when there's room to spare */
+/* the name shows whenever the search box still gets most of the row */
 .brandName {
     display: none;
 }
 
-@media screen and (min-width: 1100px) {
+@media screen and (min-width: 900px) {
     .brandName {
         display: inline;
     }
 }
 
-.searchbar {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3) var(--space-6);
-    padding: var(--space-4) var(--gutter);
-}
-
 .Pages {
+    grid-area: pages;
     display: flex;
-    flex: 0 0 auto;
     align-items: center;
     gap: var(--space-3);
+    min-width: 0;
     color: var(--text);
     white-space: nowrap;
 }
 
+/* the count reads first, the page buttons after it */
 .count {
+    margin-right: var(--space-3);
     color: var(--text-muted);
+}
+
+.pageOf {
+    font-variant-numeric: tabular-nums;
 }
 
 .Pages:empty {
@@ -126,13 +143,13 @@
     visibility: visible;
 }
 
-/* sort + cards per row travel together, so when the header runs out of room they drop to a line of their own */
+/* sort + cards per row travel together at the right end of the results row */
 .viewOptions {
+    grid-area: view;
+    justify-self: end;
     display: flex;
-    flex: 0 1 auto;
-    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-4);
     min-width: 0;
 }
 
@@ -183,14 +200,31 @@
     }
 }
 
-@media screen and (max-width: 640px) {
-    .searchbar {
-        padding-block: var(--space-3);
-        padding-left: var(--space-3);
+/* not enough room for the count, pages, sort and size on one line: the pages get a line, sort and size the next */
+@media screen and (max-width: 1180px) {
+    .headerRow {
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            "brand search"
+            "pages pages"
+            "view view";
     }
 
-    .brand {
-        margin-top: calc(var(--space-3) + 6px);
+    /* the count on the left, the page buttons together on the right */
+    .count {
+        margin-right: auto;
+    }
+
+    .viewOptions {
+        justify-self: stretch;
+        justify-content: space-between;
+    }
+}
+
+@media screen and (max-width: 640px) {
+    .headerRow {
+        column-gap: var(--space-3);
+        padding-inline: var(--space-3);
     }
 
     .brand img {
@@ -198,22 +232,24 @@
         height: 32px;
     }
 
-    /* the count takes its own line so Previous / page / Next always fit */
-    .Pages {
-        flex: 1 1 100%;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        row-gap: var(--space-2);
+    /* the arrows and the count say enough on a phone; the words stay for screen readers via aria-label */
+    .wordy {
+        display: none;
     }
 
-    .count {
-        flex: 1 1 100%;
+    .Pages {
+        gap: var(--space-2);
+    }
+
+    /* thumb-sized page buttons */
+    .Pages button {
+        min-width: 44px;
+        min-height: 40px;
+        padding-inline: var(--space-3);
     }
 
     /* sort and cards per row share one line, the menus shrinking instead of pushing the page sideways */
     .viewOptions {
-        flex: 1 1 100%;
-        flex-wrap: nowrap;
         gap: var(--space-2);
     }
 

@@ -3,13 +3,15 @@ import { useSnapshot } from 'valtio'
 import styles from './QueryInput.module.css'
 import {
     buildQuery, buildToken, chipLabel, COLOR_COUNTS, COLOR_MODES, COLORS, COMPARE_WORDS, describe, emptyDraft, filterById,
-    isComplete, lastFragment, matchFilters, parseToken, splitTerms,
-    type Draft, type Filter, type Join, type Match,
+    FILTER_GROUPS, isComplete, lastFragment, matchFilters, parseToken, pickCount, splitTerms,
+    type Draft, type Filter, type Join,
 } from './filters'
-import { findTypes, isKnownType, loadTypeCatalogs, mergedNote, mergedType, singular, typeLabel, useCatalog, useTypeGroups } from './catalog'
+import {
+    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, mergedNote, mergedType, singular, typeLabel, useCatalog,
+    useKeywordGroups, useTypeGroups,
+} from './catalog'
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
-import { blockToken } from './rules'
 import { findRedundant } from './problems'
 
 // what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
@@ -45,6 +47,19 @@ export function QueryInput() {
 
     // the other type lists (lands, artifacts…) are only needed once someone starts building a search
     useEffect(() => { if (open) loadTypeCatalogs() }, [open])
+
+    // where the search box ends on screen: the panel below it may use the rest of the screen's height
+    // (the header is sticky, so this doesn't change as the page scrolls)
+    useEffect(() => {
+        const wrap = wrapRef.current
+        if (!wrap) return
+        const set = () => wrap.style.setProperty('--wrap-bottom', `${Math.round(wrap.getBoundingClientRect().bottom)}px`)
+        const observer = new ResizeObserver(set)
+        observer.observe(wrap)
+        window.addEventListener('resize', set)
+        set()
+        return () => { observer.disconnect(); window.removeEventListener('resize', set) }
+    }, [open])
 
     // clicking anywhere else closes the dropdown
     useEffect(() => {
@@ -302,14 +317,7 @@ export function QueryInput() {
 
                     <Editor filter={editing.filter} draft={draft} update={update} onDone={() => add(false)} />
 
-                    <div className={styles.row}>
-                        <span className={styles.label}>Show cards that</span>
-                        <Segmented
-                            value={draft.exclude ? 'not' : 'match'}
-                            options={[{ value: 'match', label: 'match this' }, { value: 'not', label: "don't match this" }]}
-                            onChange={(v) => update({ exclude: v === 'not' })}
-                        />
-                    </div>
+                    <ShowCards filter={editing.filter} draft={draft} update={update} />
 
                     {hasBefore ? (
                         <div className={styles.row}>
@@ -344,45 +352,63 @@ export function QueryInput() {
                         <strong>Add a filter</strong>
                         <span className={styles.muted}>or just type a card name and press Enter</span>
                     </div>
-                    <ul className={styles.list} id={listId} role="listbox">
-                        {items.map((item, i) => {
-                            const plural = 'type' in item && singular(fragment, creatures) === item.type && item.type.toLowerCase() !== fragment.toLowerCase()
-                            const merged = 'type' in item && !singular(fragment, creatures) ? mergedType(fragment) : undefined
-                            const mergedHere = merged && 'type' in item && merged.type === item.type ? merged : undefined
-                            return (
-                                <li
-                                    key={'type' in item ? `type-${item.type}` : item.filter.id}
-                                    id={`${listId}-${i}`}
-                                    role="option"
-                                    aria-selected={i === active}
-                                    className={styles.option}
-                                    data-type={'type' in item || undefined}
-                                    onPointerDown={(e) => e.preventDefault()}
-                                    onClick={() => pick(item)}
-                                    onPointerEnter={() => setActive(i)}
-                                >
-                                    {'type' in item ? (
-                                        <>
-                                            <span>Creature type: <strong>{item.type}</strong></span>
-                                            <span className={styles.muted}>
-                                                {mergedHere ? mergedNote(mergedHere)
-                                                    : plural ? `Types are singular, so “${fragment}” means ${item.type}` : `Add ${item.type} cards to your search`}
-                                            </span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span>{item.filter.label}</span>
-                                            <span className={styles.muted}>{item.filter.hint}</span>
-                                        </>
-                                    )}
-                                </li>
-                            )
-                        })}
-                    </ul>
+                    <div className={styles.groups} id={listId} role="listbox">
+                        {listGroups(items).map((group) => (
+                            <ul key={group.label} className={styles.group} role="group" aria-label={group.label || 'Creature types'} data-types={!group.label || undefined}>
+                                {group.label ? <li role="presentation" className={styles.groupLabel}>{group.label}</li> : null}
+                                {group.items.map(({ item, i }) => {
+                                    const plural = 'type' in item && singular(fragment, creatures) === item.type && item.type.toLowerCase() !== fragment.toLowerCase()
+                                    const merged = 'type' in item && !singular(fragment, creatures) ? mergedType(fragment) : undefined
+                                    const mergedHere = merged && 'type' in item && merged.type === item.type ? merged : undefined
+                                    return (
+                                        <li
+                                            key={'type' in item ? `type-${item.type}` : item.filter.id}
+                                            id={`${listId}-${i}`}
+                                            role="option"
+                                            aria-selected={i === active}
+                                            className={styles.option}
+                                            onPointerDown={(e) => e.preventDefault()}
+                                            onClick={() => pick(item)}
+                                            onPointerEnter={() => setActive(i)}
+                                        >
+                                            {'type' in item ? (
+                                                <>
+                                                    <span>Creature type: <strong>{item.type}</strong></span>
+                                                    <span className={styles.muted}>
+                                                        {mergedHere ? mergedNote(mergedHere)
+                                                            : plural ? `Types are singular, so “${fragment}” means ${item.type}` : `Add ${item.type} cards to your search`}
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>{item.filter.label}</span>
+                                                    <span className={styles.muted}>{item.filter.hint}</span>
+                                                </>
+                                            )}
+                                        </li>
+                                    )
+                                })}
+                            </ul>
+                        ))}
+                    </div>
                 </div>
             ) : null}
         </div>
     )
+}
+
+// the list's items under their group headings, keeping each item's place in the list for the arrow keys;
+// creature types matching what's typed come first, under no heading
+function listGroups(items: Item[]) {
+    const groups: { label: string, items: { item: Item, i: number }[] }[] = []
+    items.forEach((item, i) => {
+        const label = 'type' in item ? '' : item.filter.group
+        let group = groups.find((g) => g.label === label)
+        if (!group) groups.push(group = { label, items: [] })
+        group.items.push({ item, i })
+    })
+    const order = (label: string) => label ? FILTER_GROUPS.indexOf(label as typeof FILTER_GROUPS[number]) + 1 : 0
+    return groups.sort((a, b) => order(a.label) - order(b.label))
 }
 
 function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draft, update: (p: Partial<Draft>) => void, onDone: () => void }) {
@@ -413,19 +439,14 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                         const merged = draft.custom.trim() && !isKnownType(draft.custom.trim()) ? mergedType(draft.custom) : undefined
                         return merged ? <span className={styles.noteLine}>{mergedNote(merged)} This will search {merged.type}.</span> : null
                     })()}
-                    <MatchPicker count={draft.values.length + (draft.custom.trim() ? 1 : 0)} value={draft.match} onChange={(match) => update({ match })} />
                 </>
             )
         case 'rules':
-            return (
-                <>
-                    <RulesBuilder draft={draft} update={update} onDone={onDone} />
-                    <MatchPicker count={draft.values.length + draft.blocks.filter((b) => blockToken(b)).length + (draft.text.trim() ? 1 : 0)}
-                        value={draft.match} onChange={(match) => update({ match })} />
-                </>
-            )
+            return <RulesBuilder draft={draft} update={update} onDone={onDone} />
         case 'creature':
             return <CreaturePicker draft={draft} update={update} toggle={toggle} onDone={onDone} />
+        case 'keyword':
+            return <KeywordPicker filter={filter} draft={draft} toggle={toggle} onDone={onDone} />
         case 'color': {
             const colorless = draft.values.includes('c')
             const by = (
@@ -469,7 +490,7 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                     </div>
                     {!(colorless && filter.key === 'c') ? (
                         <div className={styles.row}>
-                            <span className={styles.label}>Colors</span>
+                            <span className={styles.label}>{filter.key === 'id' ? 'Identity' : 'Colors'}</span>
                             <Segmented value={draft.compare} options={COLOR_MODES[filter.key]} onChange={(compare) => update({ compare })} />
                         </div>
                     ) : null}
@@ -502,15 +523,124 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
     }
 }
 
-// with two or more picked, whether a card needs one of them or all of them
-function MatchPicker({ count, value, onChange }: { count: number, value: Match, onChange: (m: Match) => void }) {
-    if (count < 2) return null
+// Whether the filter keeps or leaves out the cards it matches; once two or more things are picked, whether a card
+// needs any of them, all of them, or none of them
+function ShowCards({ filter, draft, update }: { filter: Filter, draft: Draft, update: (p: Partial<Draft>) => void }) {
+    const several = pickCount(filter, draft) > 1
     return (
         <div className={styles.row}>
-            <span className={styles.label}>Cards can be</span>
-            <Segmented value={value} onChange={onChange}
-                options={[{ value: 'any', label: 'any one of these' }, { value: 'all', label: 'all of these at once' }]} />
+            <span className={styles.label}>Show cards that</span>
+            {several ? (
+                <Segmented
+                    value={draft.exclude ? 'none' : draft.match}
+                    options={[{ value: 'any', label: 'match any of these' }, { value: 'all', label: 'match all of these' }, { value: 'none', label: 'match none of these' }]}
+                    // "none of these" leaves out a card with any one of them
+                    onChange={(v) => update(v === 'none' ? { exclude: true, match: 'any' } : { exclude: false, match: v })}
+                />
+            ) : (
+                <Segmented
+                    value={draft.exclude ? 'not' : 'match'}
+                    options={[{ value: 'match', label: 'match this' }, { value: 'not', label: "don't match this" }]}
+                    onChange={(v) => update({ exclude: v === 'not' })}
+                />
+            )}
         </div>
+    )
+}
+
+// the common keywords as chips, a search over all of them, and the full lists grouped by kind to browse
+function KeywordPicker({ filter, draft, toggle, onDone }: {
+    filter: Filter & { kind: 'keyword' }, draft: Draft, toggle: (v: string) => void, onDone: () => void,
+}) {
+    const groups = useKeywordGroups()
+    const [q, setQ] = useState('')
+    const [hi, setHi] = useState(0)
+    const [browse, setBrowse] = useState(false)
+    const listId = useId()
+    const query = q.trim().toLowerCase()
+
+    const all = (groups ?? []).flatMap((g) => g.types.map((k) => ({ keyword: k, group: g.label })))
+    const groupOf = new Map(all.map((a) => [a.keyword.toLowerCase(), a.group]))
+    // ones that start with what's typed first, then ones that contain it
+    const hits = query
+        ? [...all.filter((a) => a.keyword.toLowerCase().startsWith(query)), ...all.filter((a) => !a.keyword.toLowerCase().startsWith(query) && a.keyword.toLowerCase().includes(query))]
+            .map((a) => a.keyword).filter((k) => !draft.values.includes(k.toLowerCase())).slice(0, 8)
+        : []
+    const total = all.length
+
+    // keywords picked from the search or the list stay on show next to the common ones
+    const chips = [...filter.common, ...draft.values.filter((v) => !filter.common.includes(v))]
+
+    function choose(k: string) {
+        const v = k.toLowerCase()
+        if (!draft.values.includes(v)) toggle(v)
+        setQ('')
+        setHi(0)
+    }
+
+    function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            if (hits.length) setHi((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length)
+        } else if (e.key === 'Enter') {
+            e.preventDefault()
+            if (query && hits[hi]) choose(hits[hi])
+            else if (!query) onDone()
+        }
+    }
+
+    return (
+        <>
+            <div className={styles.chips}>
+                {chips.map((v) => (
+                    <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => toggle(v)}>
+                        {keywordLabel(v)}
+                    </button>
+                ))}
+            </div>
+            <div className={styles.pieceWrap}>
+                <input className={styles.field} autoFocus value={q} role="combobox" aria-label="Search keywords" aria-expanded={!!query} aria-controls={listId}
+                    aria-activedescendant={hits[hi] ? `${listId}-${hi}` : undefined}
+                    placeholder={groups ? `Search all ${total} keywords, e.g. ward, surveil, raid` : 'Loading keywords…'}
+                    onChange={(e) => { setQ(e.target.value); setHi(0) }} onKeyDown={onKeyDown} />
+                {query ? (
+                    hits.length ? (
+                        <ul className={styles.suggest} id={listId} role="listbox">
+                            {hits.map((k, i) => (
+                                <li key={k} id={`${listId}-${i}`} role="option" aria-selected={i === hi} className={styles.option}
+                                    onPointerDown={(e) => e.preventDefault()} onPointerEnter={() => setHi(i)} onClick={() => choose(k)}>
+                                    <span>{k}</span>
+                                    <span className={styles.muted}>{groupOf.get(k.toLowerCase())?.replace(/s$/, '')}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : groups ? <span className={styles.muted}>No keyword matches “{q.trim()}”</span> : null
+                ) : null}
+            </div>
+            {groups ? (
+                <button type="button" className={styles.back} aria-expanded={browse} onClick={() => setBrowse((b) => !b)}>
+                    {browse ? '▴ Hide the list' : `▾ Browse all ${total} keywords`}
+                </button>
+            ) : null}
+            {browse && groups ? (
+                <div className={styles.browse}>
+                    {groups.map((g) => {
+                        const shown = g.types.filter((k) => k.toLowerCase().includes(query))
+                        return shown.length ? (
+                            <div key={g.label} className={styles.typeGroup}>
+                                <span className={styles.label}>{g.label}</span>
+                                <div className={styles.chips}>
+                                    {shown.map((k) => (
+                                        <button type="button" key={k} className={styles.chip} aria-pressed={draft.values.includes(k.toLowerCase())}
+                                            onClick={() => toggle(k.toLowerCase())}>{k}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null
+                    })}
+                </div>
+            ) : null}
+        </>
     )
 }
 
@@ -578,7 +708,6 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
                     </ul>
                 ) : types ? <span className={styles.muted}>No creature type matches “{q.trim()}”</span> : null
             ) : null}
-            <MatchPicker count={draft.values.length} value={draft.match} onChange={(match) => update({ match })} />
             <p className={styles.muted}>
                 Creature types are the words after the dash on a creature's type line, like “Legendary Creature — Dragon Wizard”. A card can have several.
             </p>
@@ -690,7 +819,6 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
                 const m = draft.custom.trim() && !isKnownType(draft.custom.trim()) ? mergedType(draft.custom) : undefined
                 return m ? <span className={styles.noteLine}>{mergedNote(m)} This will search {m.type}.</span> : null
             })()}
-            <MatchPicker count={draft.values.length + (draft.custom.trim() ? 1 : 0)} value={draft.match} onChange={(match) => update({ match })} />
             {groups ? (
                 <button type="button" className={styles.back} aria-expanded={browse} onClick={() => setBrowse((b) => !b)}>
                     {browse ? '▴ Hide the list' : `▾ Browse all ${total} card types`}

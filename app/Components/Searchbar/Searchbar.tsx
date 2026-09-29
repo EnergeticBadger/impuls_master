@@ -286,22 +286,24 @@ export function Searchbar() {
                 <span className={styles.brandName}>Impulse Caster</span>
             </a>
             <form className={styles.searchbar} onSubmit={searchQuery} ref={formRef}>
-                <QueryInput />
+                <div className={styles.searchArea}>
+                    <QueryInput />
+                </div>
                 <div className={styles.Pages}>
                     {query ? (
                         <>
                             {page.cards > 0 && (
-                                <span className={styles.count}>{page.cards.toLocaleString()} {page.cards === 1 ? 'card' : 'cards'} found</span>
+                                <span className={styles.count}>{page.cards.toLocaleString()} {page.cards === 1 ? 'card' : 'cards'}<span className={styles.wordy}> found</span></span>
                             )}
                             {/* implament last and first page buttons */}
                             {/* <button name="first">{"<<"}</button> */}
-                            <button disabled={busy || !(page.number > 1)} name="back" aria-busy={pending && loadingDir === 'back' || undefined}>
-                                <span className={styles.label}>{"< Previous"}</span>
+                            <button disabled={busy || !(page.number > 1)} name="back" aria-label="Previous page" aria-busy={pending && loadingDir === 'back' || undefined}>
+                                <span className={styles.label}>‹<span className={styles.wordy}> Previous</span></span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
-                            <span>{page.number} of {page.total}</span>
-                            <button disabled={busy || !page.has_more} name="next" aria-busy={pending && loadingDir === 'next' || undefined}>
-                                <span className={styles.label}>{"Next >"}</span>
+                            <span className={styles.pageOf}>{page.number} of {page.total}</span>
+                            <button disabled={busy || !page.has_more} name="next" aria-label="Next page" aria-busy={pending && loadingDir === 'next' || undefined}>
+                                <span className={styles.label}><span className={styles.wordy}>Next </span>›</span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             {/* <button name="last">{">>"}</button> */}

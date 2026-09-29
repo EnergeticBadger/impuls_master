@@ -29,8 +29,32 @@ export function meta() {
     { name: "twitter:description", content: DESCRIPTION },
     { name: "twitter:image", content: `${SITE_URL}/og-image.png` },
     { tagName: "link", rel: "canonical", href: `${SITE_URL}/` },
+    { "script:ld+json": STRUCTURED_DATA },
   ];
 }
+
+// schema.org data so search engines show the site's name as "Impulse Caster" and use its logo.
+// (There's no rich result for a search site's home page; the card pages carry the product data.)
+const STRUCTURED_DATA = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: TITLE,
+      url: `${SITE_URL}/`,
+      description: DESCRIPTION,
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: TITLE,
+      url: `${SITE_URL}/`,
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/apple-touch-icon.png`, width: 180, height: 180 },
+    },
+  ],
+};
 
 export default function Home() {
   const { cards, collapsed } = useSnapshot(compare)

@@ -9,7 +9,10 @@ const TYPE_CATALOGS = [
     'spell-types', 'battle-types', 'supertypes', 'card-types',
 ] as const
 
-type CatalogName = typeof TYPE_CATALOGS[number]
+// everything a `kw:` search matches: keyword abilities (Flying), keyword actions (Scry) and ability words (Landfall)
+const KEYWORD_CATALOGS = ['keyword-abilities', 'keyword-actions', 'ability-words'] as const
+
+type CatalogName = typeof TYPE_CATALOGS[number] | typeof KEYWORD_CATALOGS[number]
 
 const loaded: Partial<Record<CatalogName, string[]>> = {}
 const loading = new Map<CatalogName, Promise<string[]>>()
@@ -91,6 +94,35 @@ export function useTypeGroups(): TypeGroup[] | undefined {
     useEffect(() => {
         let live = true
         Promise.allSettled(TYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        return () => { live = false }
+    }, [])
+    return groups
+}
+
+const KEYWORD_GROUPS: { name: typeof KEYWORD_CATALOGS[number], label: string }[] = [
+    { name: 'keyword-abilities', label: 'Keyword abilities' },
+    { name: 'keyword-actions', label: 'Keyword actions' },
+    { name: 'ability-words', label: 'Ability words' },
+]
+
+// a keyword written the way cards print it: `first strike` → First strike
+export function keywordLabel(value: string) {
+    const v = value.toLowerCase()
+    const hit = KEYWORD_CATALOGS.flatMap((n) => loaded[n] ?? []).find((k) => k.toLowerCase() === v)
+    return hit ?? value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+// the three keyword lists as they load, each sorted A–Z
+export function useKeywordGroups(): TypeGroup[] | undefined {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
+    function build() {
+        const ready = KEYWORD_GROUPS.filter((g) => loaded[g.name])
+        if (!ready.length) return undefined
+        return ready.map((g) => ({ label: g.label, types: [...loaded[g.name]!].sort((a, b) => a.localeCompare(b)) }))
+    }
+    useEffect(() => {
+        let live = true
+        Promise.allSettled(KEYWORD_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
         return () => { live = false }
     }, [])
     return groups
