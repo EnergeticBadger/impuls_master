@@ -609,10 +609,9 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
             if (hits.length) setHi((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length)
         } else if (e.key === 'Enter') {
             e.preventDefault()
+            // only real types can be picked; a word that isn't one stays in the box with a note below
             if (query && hits[hi]) choose(hits[hi])
-            // a word that isn't in any list is still searched as typed
-            else if (query) { update({ custom: q.trim() }); setQ('') }
-            else onDone()
+            else if (!query) onDone()
         }
     }
 
@@ -648,7 +647,7 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
                                 </li>
                             ))}
                         </ul>
-                    ) : groups ? <span className={styles.muted}>No type matches “{q.trim()}”. Press Enter to search for it anyway.</span> : null
+                    ) : groups ? <span className={styles.muted}>“{q.trim()}” isn't a card type. Check the spelling or browse the list below.</span> : null
                 ) : null}
             </div>
             {(() => {

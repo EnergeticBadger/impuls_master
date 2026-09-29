@@ -423,6 +423,8 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
                 const typeFilter = filterById('type') as Filter & { kind: 'choice' }
                 // a real type word is picked like the chips; anything else stays as typed
                 const known = typeFilter.options.some((o) => o.value === fixed) || !!allTypes()?.some((t) => t.toLowerCase() === fixed)
+                // a word that isn't a type stays as plain text, where the note under the box points it out
+                if (!known && allTypes()) return null
                 return { filter: typeFilter, draft: { ...draft, values: known ? [fixed] : [], custom: known ? '' : fixed } }
             }
             return { filter, draft: { ...draft, values: [v] } }
