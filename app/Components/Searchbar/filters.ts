@@ -1,6 +1,6 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
-import { allTypes, creatureTypes, isKnownType, mergedType, singular } from './catalog'
+import { allTypes, creatureTypes, isKnownType, mergedType, singular, typeLabel } from './catalog'
 import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
@@ -96,10 +96,9 @@ const opts = (...values: string[]): Option[] =>
 export const FILTERS: Filter[] = [
     {
         id: 'type', kind: 'choice', key: 't', keys: ['t', 'type'],
-        label: 'Card type', hint: 'Creature, instant, land, a subtype like Elf…',
+        label: 'Card type', hint: 'Creature, instant, land, saga, equipment… search or browse all of them',
         keywords: ['type', 'creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'tribe', 'subtype'],
         options: opts('creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'legendary', 'equipment', 'aura', 'vehicle'),
-        customPlaceholder: 'Another type, e.g. saga, equipment',
     },
     {
         id: 'creature', kind: 'creature', key: 't', keys: ['t', 'type'],
@@ -294,7 +293,7 @@ export function describe(filter: Filter, d: Draft): string {
         case 'choice':
         case 'creature': {
             const options = filter.kind === 'choice' ? filter.options : []
-            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label ?? v)
+            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label ?? (filter.key === 't' ? typeLabel(v) : v))
             return `${filter.label}: ${not}${list(labels, d.match === 'all' ? 'and' : 'or')}`
         }
         case 'color': {
@@ -422,7 +421,8 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
                     return { filter: c, draft: { ...emptyDraft(c), values: [creature], exclude } }
                 }
                 const typeFilter = filterById('type') as Filter & { kind: 'choice' }
-                const known = typeFilter.options.some((o) => o.value === fixed)
+                // a real type word is picked like the chips; anything else stays as typed
+                const known = typeFilter.options.some((o) => o.value === fixed) || !!allTypes()?.some((t) => t.toLowerCase() === fixed)
                 return { filter: typeFilter, draft: { ...draft, values: known ? [fixed] : [], custom: known ? '' : fixed } }
             }
             return { filter, draft: { ...draft, values: [v] } }

@@ -6,7 +6,7 @@ import {
     isComplete, lastFragment, matchFilters, parseToken, splitTerms,
     type Draft, type Filter, type Join, type Match,
 } from './filters'
-import { findTypes, isKnownType, loadTypeCatalogs, mergedNote, mergedType, singular, useCatalog } from './catalog'
+import { findTypes, isKnownType, loadTypeCatalogs, mergedNote, mergedType, singular, typeLabel, useCatalog, useTypeGroups } from './catalog'
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { blockToken } from './rules'
@@ -359,6 +359,7 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
 
     switch (filter.kind) {
         case 'choice':
+            if (filter.id === 'type') return <TypePicker filter={filter} draft={draft} update={update} toggle={toggle} onDone={onDone} />
             return (
                 <>
                     <div className={styles.chips}>
@@ -563,6 +564,120 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
                         </div>
                     ))}
                     {!shown.length ? <span className={styles.muted}>No creature type matches “{q.trim()}”</span> : null}
+                </div>
+            ) : null}
+        </>
+    )
+}
+
+// the common card types as chips, a search over every type word, and the full list grouped by kind to browse
+function TypePicker({ filter, draft, update, toggle, onDone }: {
+    filter: Filter & { kind: 'choice' }, draft: Draft, update: (p: Partial<Draft>) => void, toggle: (v: string) => void, onDone: () => void,
+}) {
+    const groups = useTypeGroups()
+    const creatures = useCatalog('creature-types')
+    const [q, setQ] = useState('')
+    const [hi, setHi] = useState(0)
+    const [browse, setBrowse] = useState(false)
+    const listId = useId()
+    const query = q.trim().toLowerCase()
+
+    // every type word with the group it's from; creature types too, so "elf" still works here
+    const all = [
+        ...(groups ?? []).flatMap((g) => g.types.map((t) => ({ type: t, group: g.label }))),
+        ...(creatures ?? []).map((t) => ({ type: t, group: 'Creature type' })),
+    ]
+    const groupOf = new Map(all.map((a) => [a.type, a.group]))
+    const hits = findTypes(q, all.map((a) => a.type)).filter((t) => !draft.values.includes(t.toLowerCase()))
+    const merged = query && !singular(query, all.map((a) => a.type)) ? mergedType(query) : undefined
+    const total = (groups ?? []).reduce((n, g) => n + g.types.length, 0)
+
+    // types picked from the search or the list stay on show next to the common ones
+    const chips = [...filter.options.map((o) => o.value), ...draft.values.filter((v) => !filter.options.some((o) => o.value === v))]
+    const label = (v: string) => filter.options.find((o) => o.value === v)?.label ?? typeLabel(v)
+
+    function choose(t: string) {
+        const v = t.toLowerCase()
+        if (!draft.values.includes(v)) toggle(v)
+        setQ('')
+        setHi(0)
+    }
+
+    function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            if (hits.length) setHi((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length)
+        } else if (e.key === 'Enter') {
+            e.preventDefault()
+            if (query && hits[hi]) choose(hits[hi])
+            // a word that isn't in any list is still searched as typed
+            else if (query) { update({ custom: q.trim() }); setQ('') }
+            else onDone()
+        }
+    }
+
+    return (
+        <>
+            <div className={styles.chips}>
+                {chips.map((v) => (
+                    <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => toggle(v)}>
+                        {label(v)}
+                    </button>
+                ))}
+                {draft.custom.trim() ? (
+                    <button type="button" className={styles.chip} aria-pressed="true" title="Remove" onClick={() => update({ custom: '' })}>
+                        {draft.custom.trim()}
+                    </button>
+                ) : null}
+            </div>
+            <div className={styles.pieceWrap}>
+                <input className={styles.field} value={q} role="combobox" aria-label="Search card types" aria-expanded={!!query} aria-controls={listId}
+                    aria-activedescendant={hits[hi] ? `${listId}-${hi}` : undefined}
+                    placeholder={groups ? 'Search every type, e.g. saga, equipment, snow, Jace' : 'Loading types…'}
+                    onChange={(e) => { setQ(e.target.value); setHi(0) }} onKeyDown={onKeyDown} />
+                {query ? (
+                    hits.length ? (
+                        <ul className={styles.suggest} id={listId} role="listbox">
+                            {hits.map((t, i) => (
+                                <li key={t} id={`${listId}-${i}`} role="option" aria-selected={i === hi} className={styles.option}
+                                    onPointerDown={(e) => e.preventDefault()} onPointerEnter={() => setHi(i)} onClick={() => choose(t)}>
+                                    <span>{t}</span>
+                                    {merged && t === merged.type
+                                        ? <span className={styles.muted}>{mergedNote(merged)}</span>
+                                        : <span className={styles.muted}>{groupOf.get(t)?.replace(/s$/, '')}</span>}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : groups ? <span className={styles.muted}>No type matches “{q.trim()}”. Press Enter to search for it anyway.</span> : null
+                ) : null}
+            </div>
+            {(() => {
+                const m = draft.custom.trim() && !isKnownType(draft.custom.trim()) ? mergedType(draft.custom) : undefined
+                return m ? <span className={styles.noteLine}>{mergedNote(m)} This will search {m.type}.</span> : null
+            })()}
+            <MatchPicker count={draft.values.length + (draft.custom.trim() ? 1 : 0)} value={draft.match} onChange={(match) => update({ match })} />
+            {groups ? (
+                <button type="button" className={styles.back} aria-expanded={browse} onClick={() => setBrowse((b) => !b)}>
+                    {browse ? '▴ Hide the list' : `▾ Browse all ${total} card types`}
+                </button>
+            ) : null}
+            {browse && groups ? (
+                <div className={styles.browse}>
+                    {groups.map((g) => {
+                        const shown = g.types.filter((t) => t.toLowerCase().includes(query))
+                        return shown.length ? (
+                            <div key={g.label} className={styles.typeGroup}>
+                                <span className={styles.label}>{g.label}</span>
+                                <div className={styles.chips}>
+                                    {shown.map((t) => (
+                                        <button type="button" key={t} className={styles.chip} aria-pressed={draft.values.includes(t.toLowerCase())}
+                                            onClick={() => toggle(t.toLowerCase())}>{t}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null
+                    })}
+                    <span className={styles.muted}>Creature types like Elf or Dragon have their own list under the Creature type filter.</span>
                 </div>
             ) : null}
         </>

@@ -438,6 +438,7 @@ button.tokenLabel:hover,
 .browse {
     display: flex;
     flex-direction: column;
+    flex-shrink: 0; /* keeps its own height on short screens; the panel scrolls instead */
     gap: var(--space-3);
     max-height: 260px;
     overflow-y: auto;
@@ -457,6 +458,13 @@ button.tokenLabel:hover,
     flex: 0 0 1.2em;
     color: var(--text-muted);
     font-weight: bold;
+}
+
+/* card type list: one small heading per kind of type */
+.typeGroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
 }
 
 .browse .chip {

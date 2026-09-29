@@ -47,6 +47,55 @@ export function useCatalog(name: CatalogName) {
     return list
 }
 
+// every type word except creature types (those have their own picker), grouped the way a type line reads
+export const TYPE_GROUPS: { name: CatalogName, label: string }[] = [
+    { name: 'card-types', label: 'Card types' },
+    { name: 'supertypes', label: 'Supertypes' },
+    { name: 'artifact-types', label: 'Artifact types' },
+    { name: 'enchantment-types', label: 'Enchantment types' },
+    { name: 'land-types', label: 'Land types' },
+    { name: 'spell-types', label: 'Instant & sorcery types' },
+    { name: 'battle-types', label: 'Battle types' },
+    { name: 'planeswalker-types', label: 'Planeswalker types' },
+]
+
+// types Scryfall lists that no card in a normal search has (they're only on tokens, schemes or digital-only cards),
+// so offering them would only lead to "no cards found"
+// (checked against Scryfall one type at a time)
+const NO_CARDS = new Set([
+    'boss', 'event', 'ongoing', 'blood', 'gold', 'incubator', 'junk', 'map', 'terminus', 'role', 'shard', 'cloud',
+    'abian', 'deb', 'duck', 'ersta', 'inzerva', 'luxior', 'master', 'monopoly', 'svega', 'wanderer',
+])
+
+// a type written the way cards print it: `saga` → Saga, `urza's` → Urza's
+export function typeLabel(value: string) {
+    const v = value.toLowerCase()
+    const hit = TYPE_CATALOGS.flatMap((n) => loaded[n] ?? []).find((t) => t.toLowerCase() === v)
+    return hit ?? value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+export type TypeGroup = { label: string, types: string[] }
+
+// the groups above as they load, each list sorted A–Z
+export function useTypeGroups(): TypeGroup[] | undefined {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
+    function build() {
+        // a list that failed to load is just left out
+        const ready = TYPE_GROUPS.filter((g) => loaded[g.name])
+        if (!ready.length) return undefined
+        return ready.map((g) => ({
+            label: g.label,
+            types: loaded[g.name]!.filter((t) => !NO_CARDS.has(t.toLowerCase())).sort((a, b) => a.localeCompare(b)),
+        }))
+    }
+    useEffect(() => {
+        let live = true
+        Promise.allSettled(TYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        return () => { live = false }
+    }, [])
+    return groups
+}
+
 // words whose plural isn't just the singular plus an ending
 const IRREGULAR: Record<string, string> = {
     mice: 'mouse', geese: 'goose', cyclopes: 'cyclops', oxen: 'ox',
