@@ -43,11 +43,11 @@ export function RulesBuilder({ draft, update, onDone }: { draft: Draft, update: 
                     <div key={i} className={styles.block}>
                         <div className={styles.blockParts}>
                             <PiecePicker part="when" label="When" pieces={TRIGGERS} value={b.trigger} empty="Any time"
-                                placeholder="Type: enters, dies, attacks…" onChange={(trigger) => setBlock(i, { trigger })} />
+                                placeholder="Search, e.g. enters, dies, attacks…" onChange={(trigger) => setBlock(i, { trigger })} />
                             <PiecePicker part="does" label="Does" pieces={EFFECTS} value={b.effect} empty="Anything"
-                                placeholder="Type: draw, destroy, treasure…" onChange={(effect) => setBlock(i, { effect })} />
+                                placeholder="Search, e.g. draw, destroy, treasure…" onChange={(effect) => setBlock(i, { effect })} />
                             <PiecePicker part="with" label="To who or what" pieces={TARGETS} value={b.words} empty="Anyone or anything" free
-                                placeholder="Type: creature, opponent, or any words" onChange={(words) => setBlock(i, { words })} />
+                                placeholder="Search or type words, e.g. creature, opponent" onChange={(words) => setBlock(i, { words })} />
                             <button type="button" className={styles.tokenRemove} aria-label="Remove this ability" title="Remove this ability" onClick={() => removeBlock(i)}>×</button>
                         </div>
                         <span className={styles.blockSentence}>

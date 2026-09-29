@@ -1,6 +1,6 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
-import { allTypes, creatureTypes, isKnownType, mergedType, singular } from './catalog'
+import { allTypes, creatureTypes, isKnownType, mergedType, singular, typeLabel } from './catalog'
 import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
@@ -96,10 +96,9 @@ const opts = (...values: string[]): Option[] =>
 export const FILTERS: Filter[] = [
     {
         id: 'type', kind: 'choice', key: 't', keys: ['t', 'type'],
-        label: 'Card type', hint: 'Creature, instant, land, a subtype like Elf…',
+        label: 'Card type', hint: 'Creature, instant, land, saga, equipment… search or browse all of them',
         keywords: ['type', 'creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'tribe', 'subtype'],
         options: opts('creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'legendary', 'equipment', 'aura', 'vehicle'),
-        customPlaceholder: 'Another type, e.g. saga, equipment',
     },
     {
         id: 'creature', kind: 'creature', key: 't', keys: ['t', 'type'],
@@ -131,7 +130,7 @@ export const FILTERS: Filter[] = [
         id: 'mv', kind: 'number', key: 'mv', keys: ['mv', 'cmc', 'manavalue'],
         label: 'Mana value', hint: 'Total mana cost, e.g. at most 3',
         keywords: ['mana', 'cost', 'cmc', 'mana value', 'cheap'],
-        placeholder: '3',
+        placeholder: 'e.g. 3',
     },
     {
         id: 'oracle', kind: 'rules', key: 'o', keys: ['o', 'oracle', 'otag', 'function'],
@@ -142,32 +141,32 @@ export const FILTERS: Filter[] = [
         id: 'keyword', kind: 'text', key: 'kw', keys: ['kw', 'keyword'],
         label: 'Keyword ability', hint: 'Flying, trample, lifelink…',
         keywords: ['keyword', 'ability', 'flying', 'trample', 'haste'],
-        placeholder: 'flying',
+        placeholder: 'e.g. flying',
         suggestions: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'cycling', 'flashback', 'kicker', 'convoke'],
     },
     {
         id: 'name', kind: 'text', key: 'name', keys: ['name', 'n'],
         label: 'Name contains', hint: 'Part of the card name',
         keywords: ['name', 'called', 'title'],
-        placeholder: 'dragon',
+        placeholder: 'e.g. dragon',
     },
     {
         id: 'power', kind: 'number', key: 'pow', keys: ['pow', 'power'],
         label: 'Power', hint: 'Creature attack strength',
         keywords: ['power', 'attack', 'strength', 'pow'],
-        placeholder: '4',
+        placeholder: 'e.g. 4',
     },
     {
         id: 'toughness', kind: 'number', key: 'tou', keys: ['tou', 'toughness'],
         label: 'Toughness', hint: 'Creature defense',
         keywords: ['toughness', 'defense', 'tou'],
-        placeholder: '4',
+        placeholder: 'e.g. 4',
     },
     {
         id: 'loyalty', kind: 'number', key: 'loy', keys: ['loy', 'loyalty'],
         label: 'Loyalty', hint: 'Planeswalker starting loyalty',
         keywords: ['loyalty', 'planeswalker'],
-        placeholder: '3',
+        placeholder: 'e.g. 3',
     },
     {
         id: 'rarity', kind: 'choice', key: 'r', keys: ['r', 'rarity'],
@@ -185,25 +184,25 @@ export const FILTERS: Filter[] = [
         id: 'price', kind: 'number', key: 'usd', keys: ['usd', 'price'],
         label: 'Price (USD)', hint: 'Cheapest printing, e.g. less than 1',
         keywords: ['price', 'cost', 'usd', 'dollar', 'budget', 'cheap'],
-        placeholder: '1',
+        placeholder: 'e.g. 1',
     },
     {
         id: 'year', kind: 'number', key: 'year', keys: ['year'],
         label: 'Year printed', hint: 'e.g. at least 2020',
         keywords: ['year', 'date', 'new', 'old', 'released'],
-        placeholder: '2020',
+        placeholder: 'e.g. 2020',
     },
     {
         id: 'set', kind: 'text', key: 's', keys: ['s', 'set', 'e', 'edition'],
         label: 'Set code', hint: 'Three- to five-letter set code, e.g. neo',
         keywords: ['set', 'edition', 'expansion'],
-        placeholder: 'neo',
+        placeholder: 'e.g. neo',
     },
     {
         id: 'artist', kind: 'text', key: 'a', keys: ['a', 'artist'],
         label: 'Artist', hint: 'Who painted it',
         keywords: ['artist', 'art', 'illustrator', 'painter'],
-        placeholder: 'Rebecca Guay',
+        placeholder: 'e.g. Rebecca Guay',
     },
 ]
 
@@ -294,7 +293,7 @@ export function describe(filter: Filter, d: Draft): string {
         case 'choice':
         case 'creature': {
             const options = filter.kind === 'choice' ? filter.options : []
-            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label ?? v)
+            const labels = picked(filter, d).map((v) => options.find((o) => o.value === v)?.label ?? (filter.key === 't' ? typeLabel(v) : v))
             return `${filter.label}: ${not}${list(labels, d.match === 'all' ? 'and' : 'or')}`
         }
         case 'color': {
@@ -422,7 +421,10 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
                     return { filter: c, draft: { ...emptyDraft(c), values: [creature], exclude } }
                 }
                 const typeFilter = filterById('type') as Filter & { kind: 'choice' }
-                const known = typeFilter.options.some((o) => o.value === fixed)
+                // a real type word is picked like the chips; anything else stays as typed
+                const known = typeFilter.options.some((o) => o.value === fixed) || !!allTypes()?.some((t) => t.toLowerCase() === fixed)
+                // a word that isn't a type stays as plain text, where the note under the box points it out
+                if (!known && allTypes()) return null
                 return { filter: typeFilter, draft: { ...draft, values: known ? [fixed] : [], custom: known ? '' : fixed } }
             }
             return { filter, draft: { ...draft, values: [v] } }

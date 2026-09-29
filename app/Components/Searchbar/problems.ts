@@ -79,6 +79,13 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
         }
     }
 
+    // a typed t:word that isn't a type stays as text rather than becoming a chip
+    for (const [, word] of text.matchAll(/(?:^|\s)-?t(?:ype)?[:=]"?([\w'-]+)/gi)) {
+        if (allTypes() && !isKnownType(word) && !singular(word, allTypes()) && !mergedType(word)) {
+            found.push({ text: `“${word}” isn't a card type or subtype, so no card can match it. Browse the Card type filter for the full list.` })
+        }
+    }
+
     // a plain word only searches card names; one that's a creature type probably meant the type
     if (!/[:<>=()"]/.test(text)) {
         const creature = creatureTypes()
