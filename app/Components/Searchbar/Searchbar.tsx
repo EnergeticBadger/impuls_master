@@ -141,16 +141,22 @@ const PENDING_DELAY = 200
 let navRun = 0
 
 
+type PageState = { number: number, has_more: boolean, total: number, cards: number }
+
+// what the header showed last, so coming back from a card's page picks up where the results left off
+const remembered: { page: PageState, query: string, sort: Sort | null } = { page: { number: 1, has_more: false, total: 1, cards: 0 }, query: '', sort: null }
+
 export function Searchbar() {
 
     // check if query changed on submit
     // check current page and if there are more
 
 
-    const [page, setPage] = useState<{ number: number, has_more: boolean, total: number, cards: number }>({ number: 1, has_more: false, total: 1, cards: 0 })
+    const [page, setPage] = useState<PageState>(remembered.page)
 
 
-    const [query, setQuery] = useState<string>('')
+    const [query, setQuery] = useState<string>(remembered.query)
+    useEffect(() => { remembered.page = page; remembered.query = query }, [page, query])
 
     // a page change is in flight: Previous/Next ignore clicks until it lands
     const [busy, setBusy] = useState(false)
@@ -170,7 +176,14 @@ export function Searchbar() {
         return () => { observer.disconnect(); root.style.removeProperty('--header-height') }
     }, [])
     // the sort of the results on screen; Previous/Next page through those, a new search picks up the current sort
-    const shownSort = useRef<Sort>({ ...sort })
+    const shownSort = useRef<Sort>(remembered.sort ?? { ...sort })
+    // leaving for a card's page: a page load still in flight is dropped, so it can't swap the results
+    // behind the header's back (the header is gone, so its page number wouldn't follow)
+    useEffect(() => () => {
+        remembered.sort = shownSort.current
+        navRun++
+        cardsearch.pending = false
+    }, [])
 
     async function searchQuery(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault(); // Stop the page from reloading

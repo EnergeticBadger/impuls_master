@@ -17,8 +17,8 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
     const ref = useRef<HTMLDialogElement>(null)
     // the type lists, so plural and unknown-type checks can run
     const [typesReady, setTypesReady] = useState(false)
-    // cards found with each part taken out, by position; undefined while checking
-    const [without, setWithout] = useState<(number | undefined)[]>([])
+    // cards found with each part taken out, by position; undefined while checking, null if it couldn't be checked
+    const [without, setWithout] = useState<(number | null | undefined)[]>([])
 
     // the parts a card has to match: each chip, then any typed words
     const parts = [
@@ -45,8 +45,16 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
         if (!problem || parts.length < 2) return
         let live = true
         ;(async () => {
-            for (const [i, p] of parts.slice(0, MAX_TRIES).entries()) {
-                const n = p.query ? await count(p.query).catch(() => 0) : 0
+            const tries = parts.slice(0, MAX_TRIES)
+            for (const [i, p] of tries.entries()) {
+                let n: number | null
+                try {
+                    n = p.query ? await count(p.query) : 0
+                } catch {
+                    // Scryfall is busy: stop here rather than keep asking, and say these weren't checked
+                    if (live) setWithout((w) => tries.map((_, j) => j < i ? w[j] : null))
+                    return
+                }
                 if (!live) return
                 setWithout((w) => { const next = [...w]; next[i] = n; return next })
             }
@@ -92,7 +100,7 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
                                         <li key={p.query + i} className={styles.item}>
                                             <span className={styles.part}>{p.label}</span>
                                             <span className={styles.muted}>
-                                                {n === undefined ? 'Checking…' : n ? `Without it: ${n.toLocaleString()} ${n === 1 ? 'card' : 'cards'}` : 'Still nothing without it'}
+                                                {n === undefined ? 'Checking…' : n === null ? "Couldn't check right now" : n ? `Without it: ${n.toLocaleString()} ${n === 1 ? 'card' : 'cards'}` : 'Still nothing without it'}
                                             </span>
                                             {n ? <button type="button" className={styles.secondary} onClick={() => apply(p.remove)}>Remove &amp; search</button> : null}
                                         </li>

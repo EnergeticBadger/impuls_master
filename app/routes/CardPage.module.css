@@ -1,0 +1,269 @@
+/* ---- Header ---- */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--gutter);
+  background-color: var(--surface-1);
+  background-image: var(--felt-grain);
+  box-shadow: var(--shadow);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1.15rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.brand img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.back {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--ease);
+}
+
+.back:hover {
+  background-color: var(--raised-hover);
+}
+
+/* ---- Layout: the card on the left stays in view while the details scroll ---- */
+
+.page {
+  display: grid;
+  grid-template-columns: min(420px, 100%) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-7);
+}
+
+.media {
+  position: sticky;
+  top: calc(var(--space-6) + 64px); /* under the header */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.image img {
+  display: block;
+  width: 100%;
+  max-width: 100% !important;
+  height: auto;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  transition: transform var(--ease-slow);
+}
+
+/* a sideways card is ~1.4x wider than its column, so shrink it to fit */
+.image img[class*="rotate_90"],
+.image img[class*="rotate_neg_90"] {
+  scale: 0.716;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  --row: 2.4rem; /* button height, used by the shared .turn style */
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.name {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+/* the card's rules text, on a raised panel like the text box of a card */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-lg);
+  background-color: var(--raised-0);
+}
+
+.artist {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.facts,
+.prices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-4);
+}
+
+.facts>div,
+.price {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.fact_label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.label+.links {
+  margin-top: 0;
+}
+
+.links>a {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--ease);
+}
+
+.links>a:hover {
+  background-color: var(--raised-hover);
+}
+
+/* ---- Other printings ---- */
+
+.prints {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-4) var(--space-3);
+  list-style: none;
+}
+
+.print {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--ease);
+}
+
+.print:hover {
+  background-color: var(--surface-hover-0);
+}
+
+.print[aria-current="page"] {
+  background-color: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.print img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-card);
+}
+
+.print_set {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print_meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+@media screen and (max-width: 760px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+    padding-top: var(--space-5);
+  }
+
+  .media {
+    position: static;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+  }
+
+  .name {
+    font-size: 1.6rem;
+  }
+
+  .panel {
+    padding: var(--space-4);
+  }
+
+  .prints {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+}
+
+/* "Show all N printings", under the first ones */
+.more {
+  display: block;
+  margin: var(--space-4) auto 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  transition: background-color var(--ease);
+}
+
+.more:hover:not(:disabled) {
+  background-color: var(--raised-hover);
+}
+
+.more:disabled {
+  color: var(--text-muted);
+}

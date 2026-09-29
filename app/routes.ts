@@ -1,3 +1,8 @@
-import { type RouteConfig, index } from "@react-router/dev/routes";
+import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
-export default [index("routes/home.tsx")] satisfies RouteConfig;
+// /sitemap.xml and /sitemaps/* are static files made with the card data (scripts/card-data.ts)
+export default [
+  index("routes/home.tsx"),
+  route("card/:slug", "routes/card.tsx"),
+  route("card/:set/:number/:slug", "routes/card-printing.ts"),
+] satisfies RouteConfig;
