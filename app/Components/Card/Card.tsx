@@ -1,4 +1,5 @@
 import { useState, type SyntheticEvent } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './Card.module.css'
 import { type CardProps } from "~/types";
 import { all_alt_art, alternate, loadPrints, setCurrentAlternate } from './components/alternate_arts';
@@ -94,8 +95,10 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                     <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d="M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z" /></svg>
                 </button>) : null }
 
-                {/* Overlay: clicking the dimmed area around the panel closes it */}
-                <div className={version.name === name ? styles.overlay : styles.not_active} onClick={(e) => { if (e.target === e.currentTarget) handleOverlay(e, false, 'none') }}>
+                {/* Overlay: clicking the dimmed area around the panel closes it. It's portalled to <body> so the grid's
+                    loading fade (opacity) can't make the backdrop see-through or push it under the header. */}
+                {version.name === name ? createPortal(
+                <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) handleOverlay(e, false, 'none') }}>
                     <div className={styles.overlay_details}>
                         <div className={styles.tools}>
                             {canFlip || canRotate ? (
@@ -134,7 +137,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                         </div>
 
                     </div>
-                </div>
+                </div>, document.body) : null}
             </div>
         </div>
     );

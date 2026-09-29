@@ -1,6 +1,7 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
-import { allTypes, creatureTypes, isKnownType, singular } from './catalog'
+import { allTypes, creatureTypes, isKnownType, mergedType, singular } from './catalog'
+import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
 export type Option = { label: string, value: string, token?: string }
@@ -23,6 +24,8 @@ export type Filter =
     | Base & { kind: 'color', key: 'c' | 'id' }
     | Base & { kind: 'number', key: string, placeholder: string }
     | Base & { kind: 'text', key: string, placeholder: string, suggestions?: string[] }
+    // what the card does: roles (otag:), ability blocks built from pieces, and exact words (o:)
+    | Base & { kind: 'rules', key: 'o' }
 
 export type Compare = '=' | '>=' | '<=' | '>' | '<'
 export type Match = 'any' | 'all'
@@ -37,16 +40,21 @@ export type Draft = {
     exclude: boolean
     // color filters: pick the colors themselves, or just how many there are
     colorBy: 'colors' | 'count'
+    // rules filter: one entry per ability being looked for
+    blocks: readonly RuleBlock[]
 }
 
 export const emptyDraft = (filter: Filter): Draft => ({
     values: [],
     custom: '',
-    match: 'any',
+    // several things a card does usually means it should do all of them
+    match: filter.kind === 'rules' ? 'all' : 'any',
     compare: filter.kind === 'color' ? (filter.key === 'id' ? '<=' : '>=') : filter.kind === 'number' ? '>=' : '=',
     text: '',
     exclude: false,
     colorBy: 'colors',
+    // the ability builder starts with one empty ability, so its pieces are there to pick from
+    blocks: filter.kind === 'rules' ? [emptyBlock()] : [],
 })
 
 export const COMPARE_WORDS: { value: Compare, label: string }[] = [
@@ -126,10 +134,9 @@ export const FILTERS: Filter[] = [
         placeholder: '3',
     },
     {
-        id: 'oracle', kind: 'text', key: 'o', keys: ['o', 'oracle'],
-        label: 'Rules text', hint: 'Words in the card text, e.g. "draw a card"',
-        keywords: ['text', 'rules', 'oracle', 'ability', 'does', 'says'],
-        placeholder: 'draw a card',
+        id: 'oracle', kind: 'rules', key: 'o', keys: ['o', 'oracle', 'otag', 'function'],
+        label: 'What it does', hint: 'Removal, card draw… or build an ability like "when this enters, draw"',
+        keywords: ['text', 'rules', 'oracle', 'ability', 'does', 'says', 'effect', 'trigger', 'when', 'whenever', 'removal', 'draw', 'ramp', 'role', 'function'],
     },
     {
         id: 'keyword', kind: 'text', key: 'kw', keys: ['kw', 'keyword'],
@@ -218,10 +225,11 @@ export function matchFilters(fragment: string): Filter[] {
 
 const quote = (v: string) => /[\s()]/.test(v) ? `"${v.replace(/"/g, '')}"` : v.replace(/"/g, '')
 
-// a `t:` value that isn't a type but whose singular is (dragons → dragon); anything else is left alone
+// a `t:` value that isn't a type but whose singular is (dragons → dragon), or an old type that was merged
+// into another (ants → insect); anything else is left alone
 export function fixType(value: string) {
     if (isKnownType(value)) return value
-    return singular(value, allTypes())?.toLowerCase() ?? value
+    return (singular(value, allTypes()) ?? mergedType(value)?.type)?.toLowerCase() ?? value
 }
 
 // every picked value, including a typed-in extra one
@@ -261,6 +269,15 @@ export function buildToken(filter: Filter, d: Draft): string {
         case 'text':
             if (d.text.trim()) token = `${filter.key}:${quote(d.text.trim())}`
             break
+        case 'rules': {
+            const parts = [
+                ...d.values.map((v) => `otag:${v}`),
+                ...d.blocks.map(blockToken).filter(Boolean),
+                ...(d.text.trim() ? [`o:${quote(d.text.trim())}`] : []),
+            ]
+            token = parts.length > 1 ? (d.match === 'all' ? parts.join(' ') : `(${parts.join(' or ')})`) : parts[0] ?? ''
+            break
+        }
     }
     if (!token || !d.exclude) return token
     // one term takes a leading minus; a group needs parentheses around it first
@@ -295,6 +312,15 @@ export function describe(filter: Filter, d: Draft): string {
         }
         case 'text':
             return `${filter.label} ${d.exclude ? 'does not include' : 'includes'} “${d.text.trim()}”`
+        case 'rules': {
+            const said = [
+                ...d.values.map(roleLabel),
+                ...d.blocks.map(blockSentence).filter(Boolean),
+                ...(d.text.trim() ? [`says “${d.text.trim()}”`] : []),
+            ]
+            // the pieces have commas of their own, so they're joined with a plain AND / OR
+            return `${d.exclude ? "Doesn't do" : 'Does'}: ${said.join(d.match === 'all' ? ' AND ' : ' OR ')}`
+        }
     }
 }
 
@@ -365,6 +391,12 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
     const exclude = minus === '-'
     const op = (rawOp === ':' ? '=' : rawOp) as Compare
 
+    if (key === 'otag' || key === 'oracletag' || key === 'function') {
+        if (rawOp !== ':') return null
+        const filter = filterById('oracle')!
+        return { filter, draft: { ...emptyDraft(filter), values: [value.toLowerCase()], exclude } }
+    }
+
     if (key === 'is') {
         if (value.toLowerCase() !== 'commander' || rawOp !== ':') return null
         const filter = filterById('legendary')!
@@ -381,8 +413,8 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
             if (rawOp !== ':' && rawOp !== '=') return null
             const v = value.toLowerCase()
             if (filter.key === 't') {
-                // a creature type (or the plural of one) opens in the creature type picker
-                const creature = singular(v, creatureTypes())
+                // a creature type (or the plural of one, or an old type that was merged) opens in the creature type picker
+                const creature = singular(v, creatureTypes()) ?? mergedType(v)?.type
                 const fixed = fixType(v)
                 // only when no other type contains the word as typed, since Scryfall would match that one too
                 if (creature && creature.toLowerCase() === fixed) {
@@ -407,7 +439,9 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
             if (!/^\d+(\.\d+)?$/.test(value)) return null
             return { filter, draft: { ...draft, compare: op, text: value } }
         case 'text':
-            if (rawOp !== ':') return null
+        case 'rules':
+            // a hand-written regex stays as typed text
+            if (rawOp !== ':' || value.startsWith('/')) return null
             return { filter, draft: { ...draft, text: value } }
     }
 }

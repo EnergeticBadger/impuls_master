@@ -77,11 +77,55 @@ export function singular(word: string, types: readonly string[] | undefined): st
     return undefined
 }
 
+// Old creature types Wizards folded into another one (mostly in the 2007 creature type update), plus common
+// misspellings. Old cards were retyped, so searching the old word finds nothing, or worse, matches it inside
+// other words (`t:ant` finds Giants and Instants). Each was checked against how the named cards are typed today.
+export const MERGED_TYPES: Record<string, { type: string, why: 'merged' | 'spelling' }> = {
+    abomination: { type: 'Horror', why: 'merged' },
+    ant: { type: 'Insect', why: 'merged' },
+    asp: { type: 'Snake', why: 'merged' },
+    bandit: { type: 'Rogue', why: 'merged' },
+    bee: { type: 'Insect', why: 'merged' },
+    bull: { type: 'Ox', why: 'merged' },
+    cow: { type: 'Ox', why: 'merged' },
+    fairy: { type: 'Faerie', why: 'spelling' },
+    ghost: { type: 'Spirit', why: 'merged' },
+    hound: { type: 'Dog', why: 'merged' },
+    mage: { type: 'Wizard', why: 'merged' },
+    magician: { type: 'Wizard', why: 'merged' },
+    mammoth: { type: 'Elephant', why: 'merged' },
+    mummy: { type: 'Zombie', why: 'merged' },
+    paladin: { type: 'Knight', why: 'merged' },
+    pikeman: { type: 'Soldier', why: 'merged' },
+    priest: { type: 'Cleric', why: 'merged' },
+    robber: { type: 'Rogue', why: 'merged' },
+    spectre: { type: 'Specter', why: 'spelling' },
+    swarm: { type: 'Insect', why: 'merged' },
+    thief: { type: 'Rogue', why: 'merged' },
+    undead: { type: 'Zombie', why: 'merged' },
+    waterfowl: { type: 'Bird', why: 'merged' },
+}
+
+// an old or misspelled creature type word (plurals too: "ants", "thieves") and the type it became
+export function mergedType(word: string): { from: string, type: string, why: 'merged' | 'spelling' } | undefined {
+    const from = singular(word, Object.keys(MERGED_TYPES))
+    return from ? { from, ...MERGED_TYPES[from] } : undefined
+}
+
+// the sentence explaining a merged type, shown wherever someone searches the old word
+export function mergedNote(m: { from: string, type: string, why: 'merged' | 'spelling' }) {
+    const old = m.from[0].toUpperCase() + m.from.slice(1)
+    return m.why === 'spelling'
+        ? `Magic spells it ${m.type}, not “${old}”.`
+        : `${old} isn't a creature type any more. Wizards merged it into ${m.type}, and older ${old} cards were changed to ${m.type}.`
+}
+
 // types matching what's typed so far: exact or plural match first, then ones that start with it, then ones containing it
 export function findTypes(query: string, types: readonly string[] | undefined, limit = 8): string[] {
     const q = query.trim().toLowerCase()
     if (!q || !types) return []
-    const exact = singular(q, types)
+    // an old type points at the one it was merged into
+    const exact = singular(q, types) ?? mergedType(q)?.type
     const starts = types.filter((t) => t.toLowerCase().startsWith(q))
     const contains = types.filter((t) => !t.toLowerCase().startsWith(q) && t.toLowerCase().includes(q))
     return [...new Set([...(exact ? [exact] : []), ...starts, ...contains])].slice(0, limit)
@@ -89,8 +133,11 @@ export function findTypes(query: string, types: readonly string[] | undefined, l
 
 // a `t:` value is only wrong for sure when no type word contains it (Scryfall allows partial words)
 export function isKnownType(value: string) {
+    const v = value.toLowerCase()
+    // a merged type (`ant`) is contained in real words (Giant, Instant) but still isn't a type;
+    // none of the old words is a type today, so this doesn't need the lists to have loaded
+    if (mergedType(v)) return false
     const types = allTypes()
     if (!types) return true
-    const v = value.toLowerCase()
     return types.some((t) => t.toLowerCase().includes(v))
 }

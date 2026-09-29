@@ -4,6 +4,7 @@
     top: 0;
     z-index: var(--z-header);
     background-color: var(--surface-1);
+    background-image: var(--felt-grain);
     box-shadow: var(--shadow);
 }
 

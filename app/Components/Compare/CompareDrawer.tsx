@@ -78,7 +78,7 @@ export function CompareDrawer() {
                     <span className={styles.chevron} aria-hidden>▾</span>
                     Compare <span className={styles.muted}>{count} {count === 1 ? 'card' : 'cards'}</span>
                 </button>
-                {count === 1 && !snap.collapsed ? <span className={styles.hint}>Add another card with its compare button</span> : null}
+                {count === 1 ? <span className={styles.hint}>Add another card with its compare button</span> : null}
                 <button type="button" className={styles.clear} onClick={clearCompare}>Clear all</button>
             </div>
 

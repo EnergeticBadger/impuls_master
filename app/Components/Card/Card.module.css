@@ -74,10 +74,6 @@
   cursor: default;
 }
 
-.not_active {
-  display: none;
-}
-
 .overlay_details {
   /* height of the top row (flip, name, close), set by the name's font size so they all line up */
   --row: calc(var(--text-xl) * 1.6);

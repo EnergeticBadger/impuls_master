@@ -11,6 +11,8 @@
 body {
     font-family: var(--font-body);
     background-color: var(--surface-0);
+    background-image: var(--felt-grain), var(--felt-light);
+    background-attachment: fixed; /* the lighting stays put like a lamp over the table while cards scroll */
     color: var(--text);
     line-height: var(--leading);
     min-height: 100vh;
