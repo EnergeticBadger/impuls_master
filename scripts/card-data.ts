@@ -208,7 +208,7 @@ for await (const line of await lines("rulings", bulkUrl("rulings"))) {
 const records: CardRecord[] = [];
 const byName = new Map<string, Building[]>();
 for (const b of cards.values()) {
-    const s = slug(b.record.name) || "card";
+    const s = slug(b.record.name);
     let group = byName.get(s);
     if (!group) byName.set(s, group = []);
     group.push(b);

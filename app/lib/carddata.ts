@@ -17,9 +17,16 @@ export const DATA_DIR = "data";
 // about 40 cards per file
 export const BUCKETS = 1024;
 
-// "Lightning Bolt" -> "lightning-bolt", so links read nicely and search engines see the name in the URL
+// letters that don't break down into a plain letter plus an accent
+const LETTERS: Record<string, string> = { "æ": "ae", "œ": "oe", "ø": "o", "ß": "ss", "đ": "d", "ł": "l", "þ": "th", "ð": "d" };
+
+// "Lightning Bolt" -> "lightning-bolt", so links read nicely and search engines see the name in the URL.
+// Accents come off ("Lim-Dûl" -> "lim-dul", "Æther" -> "aether"), and the Un-set cards with a blank to fill in
+// keep it as a word: "_____ Goblin" -> "blank-goblin", "_____" -> "blank".
 export function slug(name: string) {
-    return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    return name.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "")
+        .replace(/[æœøßđłþð]/g, (c) => LETTERS[c]).replace(/_+/g, " blank ")
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "card";
 }
 
 // which file a card is in, by its name's slug (FNV-1a hash, so it doesn't depend on order)

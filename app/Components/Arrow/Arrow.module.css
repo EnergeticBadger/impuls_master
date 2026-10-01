@@ -1,0 +1,22 @@
+/* the arrow file is the shape; the colour comes from the text around it */
+.arrow {
+    display: inline-block;
+    flex: none;
+    width: 0.75em;
+    height: 0.75em;
+    background-color: currentColor;
+    -webkit-mask: url(/Arrow.svg) center / contain no-repeat;
+    mask: url(/Arrow.svg) center / contain no-repeat;
+}
+
+.arrow[data-to="down"] {
+    transform: rotate(90deg);
+}
+
+.arrow[data-to="left"] {
+    transform: rotate(180deg);
+}
+
+.arrow[data-to="up"] {
+    transform: rotate(-90deg);
+}
