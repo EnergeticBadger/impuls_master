@@ -104,6 +104,13 @@
     transition: background-color var(--ease);
 }
 
+.label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+}
+
 .Pages button:hover:not(:disabled) {
     background-color: var(--surface-hover-0);
 }
@@ -190,6 +197,87 @@
     background-color: var(--raised-hover);
 }
 
+/* phones only: what a sort menu is set to, drawn as a button under the menu itself (SortControl) */
+.sortFace {
+    display: none;
+}
+
+/* phones only: the gear that opens the layout settings, where cards per row lives */
+.settingsButton {
+    display: none;
+}
+
+/* the layout settings pop-up; the same calm dark base as the other pop-ups */
+.settings {
+    box-sizing: border-box;
+    width: min(360px, calc(100vw - 2 * var(--space-3)));
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-lg);
+    background-color: var(--raised-0);
+    color: var(--text);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.settings::backdrop {
+    background-color: rgba(0, 0, 0, 0.55);
+}
+
+.settingsBody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3) var(--space-5) var(--space-5);
+}
+
+.settingsHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.settingsHead h2 {
+    font-size: var(--text-xl);
+    font-weight: normal;
+}
+
+.settingsClose {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.settingsClose:hover {
+    color: var(--text);
+    background-color: var(--raised-hover);
+}
+
+/* the cards-per-row stepper across the pop-up, its buttons thumb-sized */
+.settingsLabel {
+    margin-right: var(--space-2);
+}
+
+.settingsBody [role="group"] {
+    margin-right: var(--space-2);
+}
+
+.settingsBody [role="group"] > button {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.settingsBody [role="group"] > button:nth-child(2) {
+    flex: 1 1 auto;
+}
+
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
@@ -221,15 +309,38 @@
     }
 }
 
+/*
+ * Phones: the logo and the search box on one line, then sort, then the count and pages in a darker strip along
+ * the header's bottom edge. Before the first search there's only the search line. Cards per row is set once and
+ * left alone, so it waits in the layout settings behind the gear.
+ */
 @media screen and (max-width: 640px) {
     .headerRow {
-        column-gap: var(--space-3);
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "search"
+            "view"
+            "pages";
+        row-gap: var(--space-3);
         padding-inline: var(--space-3);
     }
 
+    /* The logo sits at the start of the search box's line, and the box makes room for it (--bar-indent in
+       QueryInput), so what hangs under the box (the selected filters, notes) gets the whole width. */
+    .brand {
+        grid-area: search;
+        /* only as wide as the logo: a grid item stretches across its area, and the link would cover the box */
+        justify-self: start;
+        z-index: 1;
+    }
+
     .brand img {
-        width: 32px;
-        height: 32px;
+        width: var(--search-height);
+        height: var(--search-height);
+    }
+
+    .searchArea {
+        --bar-indent: calc(var(--search-height) + var(--space-2));
     }
 
     /* the arrows and the count say enough on a phone; the words stay for screen readers via aria-label */
@@ -237,20 +348,58 @@
         display: none;
     }
 
+    /* the results strip runs to the header's edges, a shade darker */
     .Pages {
         gap: var(--space-2);
+        margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
+        padding: var(--space-2) var(--space-3);
+        background-color: rgba(0, 0, 0, 0.22);
     }
 
-    /* thumb-sized page buttons */
+    /* thumb-sized page buttons (buttons are reset with `all: unset`, so the padding counts inside the size) */
     .Pages button {
-        min-width: 44px;
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 40px;
         min-height: 40px;
-        padding-inline: var(--space-3);
+        padding-inline: var(--space-2);
+        background-color: var(--raised-0);
     }
 
-    /* sort and cards per row share one line, the menus shrinking instead of pushing the page sideways */
+    .Pages button:hover:not(:disabled) {
+        background-color: var(--raised-hover);
+    }
+
+    /* the gear, then the two sort menus sharing the rest of the line; only once there are results to sort */
+    .viewOptions:not([data-searched]),
+    .inlineSize {
+        display: none;
+    }
+
     .viewOptions {
         gap: var(--space-2);
+    }
+
+    .settingsButton {
+        box-sizing: border-box;
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--border-faint);
+        border-radius: var(--radius-sm);
+        background-color: var(--raised-0);
+        cursor: pointer;
+    }
+
+    .settingsButton svg {
+        width: 1.5em;
+        height: 1.5em;
+        fill: var(--text);
     }
 
     .sort {
@@ -267,14 +416,47 @@
         clip-path: inset(50%);
     }
 
-    .sort label {
-        flex: 1 1 0;
+    /* each menu sits invisibly over its face, so a tap opens the phone's own picker */
+    .sortPick {
+        position: relative;
+        flex: 1 1 auto;
         min-width: 0;
     }
 
     .sort select {
-        flex: 1 1 0;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+    }
+
+    .sortFace {
+        box-sizing: border-box;
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-1);
         min-width: 0;
-        padding-inline: var(--space-2);
+        height: 40px;
+        padding: 0 var(--space-1) 0 var(--space-2);
+        border: 1px solid var(--border-faint);
+        border-radius: var(--radius-sm);
+        background-color: var(--raised-0);
+    }
+
+    .sortFace span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sortFace > :last-child {
+        margin-right: var(--space-2);
+    }
+
+    .sortPick:has(select:focus-visible) .sortFace {
+        outline: 2px solid var(--text);
+        outline-offset: 2px;
     }
 }

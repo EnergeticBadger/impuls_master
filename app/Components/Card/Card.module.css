@@ -288,12 +288,18 @@
   color: var(--text-muted);
 }
 
+/*
+ * On a phone the quick view takes the whole screen, like a page of its own. The name and × stay pinned at the
+ * top while it scrolls, so closing never means scrolling back up, and the actions share one row under them.
+ */
 @media screen and (max-width: 640px) {
   .overlay {
-    padding: var(--space-5) var(--space-3);
+    padding: 0;
+    overscroll-behavior: contain;
   }
 
   .overlay_details {
+    --pad: var(--space-4);
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "head"
@@ -301,7 +307,45 @@
       "media"
       "info";
     gap: var(--space-4);
-    padding: var(--space-5);
+    min-height: 100dvh;
+    max-width: none;
+    padding: 0 var(--pad) calc(var(--space-6) + env(safe-area-inset-bottom));
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .info_heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    align-items: center;
+    margin-inline: calc(-1 * var(--pad));
+    padding: var(--space-3) var(--pad);
+    border-bottom: 1px solid var(--border-faint);
+    background-color: var(--surface-0);
+  }
+
+  .name {
+    font-size: var(--text-lg);
+  }
+
+  /* one row of equal buttons, the icon over its word */
+  .tools {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .turn {
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-1);
+    height: auto;
+    min-height: 56px;
+    padding: var(--space-2) var(--space-1);
+    font-size: var(--text-sm);
+    line-height: 1.2;
+    text-align: center;
   }
 
   .overlay_media {
@@ -310,8 +354,10 @@
     margin: 0 auto;
   }
 
-  /* nothing beside the list to line up with on a phone, so cap it instead */
+  /* nothing beside the list to line up with on a phone, so cap it instead. The column has no height of its
+     own here, so a zero flex basis would squash the block (and the list in it) to nothing */
   .alt_art_block {
+    flex: 0 0 auto;
     min-height: 0;
   }
 
@@ -343,8 +389,10 @@
     gap: var(--space-2);
   }
 
+  /* a smaller status, so names like Commander and Oathbreaker fit beside it */
   .play_format_item> :first-child {
-    width: 6em;
+    width: 5.4em;
     padding-inline: var(--space-1);
+    font-size: 0.75rem;
   }
 }

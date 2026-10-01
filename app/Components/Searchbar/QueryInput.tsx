@@ -13,6 +13,8 @@ import {
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
+import { usePhone } from '../Hooks/usePhone'
+import { Arrow } from '../Arrow/Arrow'
 
 // what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
 type Item = { type: string } | { filter: Filter }
@@ -39,6 +41,10 @@ export function QueryInput() {
     const listId = useId()
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
+    // Phones keep the chips in a tray under the box, so the box keeps its width for typing. The tray is open
+    // while a search is being put together and folds away to "See selected filters" once it's searched.
+    const phone = usePhone()
+    const [chipsOpen, setChipsOpen] = useState(true)
 
     const fragment = lastFragment(text)
     // a typed word that names a creature type (plurals too) can be added straight away, like an @-mention
@@ -60,6 +66,15 @@ export function QueryInput() {
         set()
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
     }, [open])
+
+    // a search (not Previous/Next) folds the tray away, leaving the results more of the screen
+    useEffect(() => {
+        const form = inputRef.current?.form
+        if (!form) return
+        const onSubmit = (e: SubmitEvent) => { if ((e.submitter?.getAttribute('name') ?? 'search') === 'search') setChipsOpen(false) }
+        form.addEventListener('submit', onSubmit)
+        return () => form.removeEventListener('submit', onSubmit)
+    }, [])
 
     // clicking anywhere else closes the dropdown
     useEffect(() => {
@@ -90,6 +105,7 @@ export function QueryInput() {
             const d = { ...emptyDraft(filter), values: [item.type] }
             querybox.chips.push({ id: chipId(), token: buildToken(filter, d), join: 'and', filterId: filter.id, draft: d })
             querybox.text = text.slice(0, text.length - fragment.length)
+            setChipsOpen(true)
             setActive(-1)
             refocus()
             return
@@ -154,6 +170,7 @@ export function QueryInput() {
             requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
         } else {
             // back to the filter list, ready to add the next one
+            setChipsOpen(true)
             setEditing(null)
             setActive(-1)
         }
@@ -199,6 +216,7 @@ export function QueryInput() {
         } else if (before.some((t) => /^or$/i.test(t.term))) return
         querybox.chips.push({ id: chipId(), token: buildToken(parsed.filter, parsed.draft), join: joinWith, filterId: parsed.filter.id, draft: parsed.draft })
         querybox.text = keep
+        setChipsOpen(true)
         // an old creature type was swapped for the one it became; say so, since the chip shows the new name
         const typed = last.term.match(/^-?(?:t|type)[:=]"?([^"]+)"?$/i)?.[1]
         const merged = typed ? mergedType(typed) : undefined
@@ -211,6 +229,8 @@ export function QueryInput() {
             const last = snap.chips.at(-1)!.id
             if (armed === last) removeChip(last)
             else setArmed(last)
+            // the chip about to go should be in view
+            setChipsOpen(true)
             return
         }
         setArmed(null)
@@ -231,33 +251,36 @@ export function QueryInput() {
 
     const update = (patch: Partial<Draft>) => setDraft((d) => d && { ...d, ...patch })
 
+    // the search so far as chips, with AND / OR between them
+    const chips = snap.chips.map((c, i) => (
+        <span key={c.id} className={styles.chipGroup}>
+            {i > 0 ? (
+                <button type="button" className={styles.join} title="Switch between AND and OR"
+                    onClick={() => { querybox.chips[i].join = c.join === 'and' ? 'or' : 'and' }}>
+                    {c.join}
+                </button>
+            ) : null}
+            <span className={styles.token} data-armed={armed === c.id || undefined} data-editing={editing?.chipId === c.id || undefined}>
+                <button type="button" className={styles.tokenLabel} title={c.token} onClick={() => editChip(c.id)}>
+                    {chipLabel(c)}
+                </button>
+                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id)}>×</button>
+            </span>
+        </span>
+    ))
+
     return (
         <div className={styles.wrap} ref={wrapRef}>
             <div className={styles.bar}>
                 {/* clicking the empty part of the box puts the cursor in it */}
                 <div className={styles.box} onPointerDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}>
-                    {snap.chips.map((c, i) => (
-                        <span key={c.id} className={styles.chipGroup}>
-                            {i > 0 ? (
-                                <button type="button" className={styles.join} title="Switch between AND and OR"
-                                    onClick={() => { querybox.chips[i].join = c.join === 'and' ? 'or' : 'and' }}>
-                                    {c.join}
-                                </button>
-                            ) : null}
-                            <span className={styles.token} data-armed={armed === c.id || undefined} data-editing={editing?.chipId === c.id || undefined}>
-                                <button type="button" className={styles.tokenLabel} title={c.token} onClick={() => editChip(c.id)}>
-                                    {chipLabel(c)}
-                                </button>
-                                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id)}>×</button>
-                            </span>
-                        </span>
-                    ))}
+                    {phone ? null : chips}
                     <input
                         ref={inputRef}
                         type="text"
                         autoComplete="off"
                         className={styles.input}
-                        placeholder={snap.chips.length ? 'Add more, or type a card name…' : 'Search for Magic cards…'}
+                        placeholder={snap.chips.length ? (phone ? 'Add more filters' : 'Add more, or type a card name…') : 'Search for Magic cards…'}
                         aria-label="Search"
                         value={text}
                         role="combobox"
@@ -266,6 +289,8 @@ export function QueryInput() {
                         aria-activedescendant={!editing && active >= 0 ? `${listId}-${active}` : undefined}
                         onChange={(e) => onType(e.target.value)}
                         onFocus={() => { if (!refocusing.current) setOpen(true) }}
+                        // a tap on the box after searching (it still has focus) opens the filters again too
+                        onClick={() => setOpen(true)}
                         onKeyDown={onKeyDown}
                     />
                 </div>
@@ -274,13 +299,25 @@ export function QueryInput() {
                 <button type="button" className={styles.toggle} aria-expanded={open} aria-label={open ? 'Hide filters' : 'Show filters'}
                     onClick={() => open ? close() : (setOpen(true), refocus())}>
                     <span className={styles.wide}>{open ? 'Collapse' : 'Filters'}</span>
-                    <span className={styles.chevron} aria-hidden>▾</span>
+                    <Arrow to={open ? 'up' : 'down'} />
                 </button>
                 <button type="submit" className={styles.search} aria-label="Search" onClick={close}>
                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" /></svg>
                     <span className={styles.wide}>Search</span>
                 </button>
             </div>
+
+            {phone && snap.chips.length ? (
+                <div className={styles.tray} data-open={chipsOpen || undefined}>
+                    {/* first, so open it floats in the top corner and the chips flow around it */}
+                    <button type="button" className={styles.trayToggle} aria-expanded={chipsOpen}
+                        aria-label={chipsOpen ? 'Hide selected filters' : undefined} onClick={() => setChipsOpen((o) => !o)}>
+                        {chipsOpen ? null : <span>See selected filters</span>}
+                        <Arrow to={chipsOpen ? 'up' : 'down'} />
+                    </button>
+                    {chipsOpen ? chips : null}
+                </div>
+            ) : null}
 
             {tidy && dismissed !== query ? (
                 <div className={styles.suggest} role="status">
@@ -313,6 +350,7 @@ export function QueryInput() {
                         <button type="button" className={styles.back} onClick={() => setEditing(null)}>‹ All filters</button>
                         <strong>{editing.filter.label}</strong>
                         <span className={styles.muted}>{editing.filter.hint}</span>
+                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
                     </div>
 
                     <Editor filter={editing.filter} draft={draft} update={update} onDone={() => add(false)} />
@@ -351,6 +389,7 @@ export function QueryInput() {
                     <div className={styles.head}>
                         <strong>Add a filter</strong>
                         <span className={styles.muted}>or just type a card name and press Enter</span>
+                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
                     </div>
                     <div className={styles.groups} id={listId} role="listbox">
                         {listGroups(items).map((group) => (

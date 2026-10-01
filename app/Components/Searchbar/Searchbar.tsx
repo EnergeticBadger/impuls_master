@@ -1,6 +1,6 @@
 import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
-import { useEffect, useRef, useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { useSnapshot } from 'valtio';
 import { cardsearch, getPage, pageKey, showPage } from '../Context/cards';
 import { scryfallGet } from '~/lib/scryfall';
@@ -11,8 +11,11 @@ import { NoResults } from './NoResults';
 import { querybox } from '../Context/query';
 import { sort, sortKey } from '../Context/sort';
 import { SortControl } from './SortControl';
+import { Arrow } from '../Arrow/Arrow';
 
 type Sort = { order: string, dir: string }
+
+const SETTINGS_ICON = "m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99 41 39-68-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65-39-68-99 42q-22-23-48.5-38.5T533-694l-13-106h-79l-14 106q-31 8-57.5 23.5T321-633l-99-41-39 68 86 64q-5 15-7 30t-2 32q0 16 2 31t7 30l-86 65 39 68 99-42q22 23 48.5 38.5T427-266l13 106Zm42-180q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm-2-140Z"
 
 
 async function searchCard(page: number, query: string, by: Sort) {
@@ -164,6 +167,9 @@ export function Searchbar() {
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
     const formRef = useRef<HTMLFormElement>(null)
+    // phones set cards per row in a layout settings pop-up, opened from the gear beside sort
+    const settingsRef = useRef<HTMLDialogElement>(null)
+    const settingsTitle = useId()
     const headerRef = useRef<HTMLDivElement>(null)
 
     // publish the header's height so the open compare drawer can sit flush under it (the header grows with chips and wraps on phones)
@@ -298,24 +304,41 @@ export function Searchbar() {
                             {/* implament last and first page buttons */}
                             {/* <button name="first">{"<<"}</button> */}
                             <button disabled={busy || !(page.number > 1)} name="back" aria-label="Previous page" aria-busy={pending && loadingDir === 'back' || undefined}>
-                                <span className={styles.label}>‹<span className={styles.wordy}> Previous</span></span>
+                                <span className={styles.label}><Arrow to="left" /><span className={styles.wordy}>Previous</span></span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             <span className={styles.pageOf}>{page.number} of {page.total}</span>
                             <button disabled={busy || !page.has_more} name="next" aria-label="Next page" aria-busy={pending && loadingDir === 'next' || undefined}>
-                                <span className={styles.label}><span className={styles.wordy}>Next </span>›</span>
+                                <span className={styles.label}><span className={styles.wordy}>Next</span><Arrow to="right" /></span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             {/* <button name="last">{">>"}</button> */}
                         </>
                     ) : null}
                 </div>
-                <div className={styles.viewOptions}>
+                <div className={styles.viewOptions} data-searched={query ? '' : undefined}>
+                    <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
+                        onClick={() => settingsRef.current?.showModal()}>
+                        <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
+                    </button>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
-                    <RowSize />
+                    <div className={styles.inlineSize}>
+                        <RowSize />
+                    </div>
                 </div>
             </form>
             </div>
+            <dialog ref={settingsRef} className={styles.settings} aria-labelledby={settingsTitle}
+                onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.close() }}>
+                <div className={styles.settingsBody}>
+                    <div className={styles.settingsHead}>
+                        <h2 id={settingsTitle}>Layout settings</h2>
+                        <button type="button" className={styles.settingsClose} aria-label="Close" onClick={() => settingsRef.current?.close()}>×</button>
+                    </div>
+                    <span className={styles.settingsLabel}>Number of cards shown</span>
+                    <RowSize />
+                </div>
+            </dialog>
             <NoResults count={countCards} research={() => requestAnimationFrame(() => formRef.current?.requestSubmit())} />
         </div>
     );
