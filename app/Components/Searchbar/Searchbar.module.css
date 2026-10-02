@@ -94,11 +94,10 @@
     min-height: var(--strip-height);
     margin: 0 calc(-1 * var(--header-pad)) calc(-1 * var(--space-3));
     padding: var(--space-3) var(--header-pad);
-    background-color: color-mix(in srgb, var(--raised-0) 57%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    /* the glass's lit top edge */
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+    background-color: var(--glass-tint);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-edge);
     color: var(--text);
     white-space: nowrap;
 }

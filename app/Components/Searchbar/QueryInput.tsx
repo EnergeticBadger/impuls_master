@@ -118,10 +118,17 @@ export function QueryInput() {
         setOpen(true)
     }
 
-    function removeChip(id: number) {
+    // `search` re-runs the search without the chip; with nothing left there's nothing to search, and an empty
+    // query would have Searchbar repeat the last search instead
+    function removeChip(id: number, search = false) {
         const i = querybox.chips.findIndex((c) => c.id === id)
         if (i >= 0) querybox.chips.splice(i, 1)
         if (editing?.chipId === id) setEditing(null)
+        if (search && buildQuery(querybox.chips, querybox.text)) {
+            close()
+            // wait for React to write the new query into the form before submitting it
+            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
+        }
     }
 
     const token = editing && draft ? buildToken(editing.filter, draft) : ''
@@ -228,7 +235,7 @@ export function QueryInput() {
                 <button type="button" className={styles.tokenLabel} title={c.token} onClick={() => editChip(c.id)}>
                     {chipLabel(c)}
                 </button>
-                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id)}>×</button>
+                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id, true)}>×</button>
             </span>
         </span>
     ))
