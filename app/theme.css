@@ -112,7 +112,7 @@
   --gutter: var(--space-5);       /* side padding on every screen size */
   --search-height: 3.25rem;       /* one line of the header's search box; the logo lines up with it */
   --card-min: 200px;              /* smallest a grid card gets before a column drops */
-  --card-floor: 100px;            /* smallest a card gets when the user picks cards per row */
+  --card-floor: 150px;            /* smallest a card gets when the user picks cards per row: the width of its row of buttons */
   --overlay-width: 1000px;        /* card detail panel */
   --header-height: 0px;           /* set from the sticky header's real height (Searchbar.tsx) */
   --drawer-height: calc(100dvh - var(--header-height)); /* open compare drawer: reaches up flush with the header */

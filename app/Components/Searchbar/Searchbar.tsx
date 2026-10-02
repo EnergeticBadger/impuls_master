@@ -1,6 +1,6 @@
 import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, type ScryfallCard } from '~/types'
 import styles from './Searchbar.module.css'
-import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react' // Use FormEvent for form submissions
+import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { useSnapshot } from 'valtio';
 import { cardsearch, getPage, pageKey, showPage } from '../Context/cards';
 import { scryfallGet } from '~/lib/scryfall';
@@ -12,6 +12,7 @@ import { querybox } from '../Context/query';
 import { sort, sortKey } from '../Context/sort';
 import { SortControl } from './SortControl';
 import { Arrow } from '../Arrow/Arrow';
+import { view } from '../Context/view';
 
 type Sort = { order: string, dir: string }
 
@@ -149,6 +150,19 @@ type PageState = { number: number, has_more: boolean, total: number, cards: numb
 // what the header showed last, so coming back from a card's page picks up where the results left off
 const remembered: { page: PageState, query: string, sort: Sort | null } = { page: { number: 1, has_more: false, total: 1, cards: 0 }, query: '', sort: null }
 
+// one setting in the layout pop-up: its name, a Reset back to the default (live only once it's been changed), and its control
+function Setting({ label, changed, reset, children }: { label: string, changed: boolean, reset: () => void, children: ReactNode }) {
+    return (
+        <div className={styles.setting}>
+            <div className={styles.settingHead}>
+                <span>{label}</span>
+                <button type="button" className={styles.settingReset} onClick={reset} disabled={!changed} aria-label={`Reset ${label.toLowerCase()}`}>Reset</button>
+            </div>
+            {children}
+        </div>
+    )
+}
+
 export function Searchbar() {
 
     // check if query changed on submit
@@ -166,6 +180,7 @@ export function Searchbar() {
     // which button shows the spinner while a load is slow; a new search uses Next
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
+    const { perRow } = useSnapshot(view)
     const formRef = useRef<HTMLFormElement>(null)
     // cards per row is set in a layout settings pop-up, opened from the gear beside sort
     const settingsRef = useRef<HTMLDialogElement>(null)
@@ -331,8 +346,9 @@ export function Searchbar() {
                         <h2 id={settingsTitle}>Layout settings</h2>
                         <button type="button" className={styles.settingsClose} aria-label="Close" onClick={() => settingsRef.current?.close()}>×</button>
                     </div>
-                    <span className={styles.settingsLabel}>Number of cards shown</span>
-                    <RowSize />
+                    <Setting label="Number of cards shown" changed={!!perRow} reset={() => view.perRow = 0}>
+                        <RowSize />
+                    </Setting>
                 </div>
             </dialog>
             <NoResults count={countCards} research={() => requestAnimationFrame(() => formRef.current?.requestSubmit())} />

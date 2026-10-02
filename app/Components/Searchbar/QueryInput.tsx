@@ -39,7 +39,7 @@ export function QueryInput() {
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
     // The chips sit in a tray under the box, after "Add Search Filter", so the box keeps its width for typing. The
-    // tray is open while a search is being put together and folds away to "See selected filters" once it's searched.
+    // tray stays open, searching included, until it's folded away to "See selected filters".
     const [chipsOpen, setChipsOpen] = useState(true)
     const trayOpen = chipsOpen || !snap.chips.length
 
@@ -58,15 +58,6 @@ export function QueryInput() {
         set()
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
     }, [open])
-
-    // a search (not Previous/Next) folds the tray away, leaving the results more of the screen
-    useEffect(() => {
-        const form = inputRef.current?.form
-        if (!form) return
-        const onSubmit = (e: SubmitEvent) => { if ((e.submitter?.getAttribute('name') ?? 'search') === 'search') setChipsOpen(false) }
-        form.addEventListener('submit', onSubmit)
-        return () => form.removeEventListener('submit', onSubmit)
-    }, [])
 
     // clicking anywhere else closes the dropdown
     useEffect(() => {

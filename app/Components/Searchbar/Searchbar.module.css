@@ -346,10 +346,47 @@
     background-color: var(--raised-hover);
 }
 
-/* the cards-per-row stepper across the pop-up, its buttons thumb-sized */
-.settingsLabel {
+/* each setting: its name with a Reset on the right, the control under them */
+.setting {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.settingHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     margin-right: var(--space-2);
 }
+
+.settingReset {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color var(--ease), color var(--ease);
+}
+
+.settingReset:hover:not(:disabled) {
+    color: var(--text);
+    background-color: var(--raised-hover);
+}
+
+.settingReset:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+/* already the default: nothing to reset */
+.settingReset:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+/* the cards-per-row stepper across the pop-up, its buttons thumb-sized */
 
 .settingsBody [role="group"] {
     margin-right: var(--space-2);
