@@ -62,7 +62,7 @@ export default function Home() {
   return (
     <div>
       <Searchbar/>
-      <div className={styles.main_content} data-compare={cards.length ? (collapsed ? 'collapsed' : 'open') : undefined}>
+      <div className={styles.main_content} data-card-area data-compare={cards.length ? (collapsed ? 'collapsed' : 'open') : undefined}>
         <CardGrid />
       </div>
       <CompareDrawer />
