@@ -94,11 +94,10 @@
     min-height: var(--strip-height);
     margin: 0 calc(-1 * var(--header-pad)) calc(-1 * var(--space-3));
     padding: var(--space-3) var(--header-pad);
-    background-color: color-mix(in srgb, var(--raised-0) 57%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    /* the glass's lit top edge */
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+    background-color: var(--glass-tint);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-edge);
     color: var(--text);
     white-space: nowrap;
 }
@@ -346,10 +345,47 @@
     background-color: var(--raised-hover);
 }
 
-/* the cards-per-row stepper across the pop-up, its buttons thumb-sized */
-.settingsLabel {
+/* each setting: its name with a Reset on the right, the control under them */
+.setting {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.settingHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     margin-right: var(--space-2);
 }
+
+.settingReset {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color var(--ease), color var(--ease);
+}
+
+.settingReset:hover:not(:disabled) {
+    color: var(--text);
+    background-color: var(--raised-hover);
+}
+
+.settingReset:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+/* already the default: nothing to reset */
+.settingReset:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+/* the cards-per-row stepper across the pop-up, its buttons thumb-sized */
 
 .settingsBody [role="group"] {
     margin-right: var(--space-2);

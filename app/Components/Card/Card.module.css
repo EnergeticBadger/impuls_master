@@ -69,7 +69,10 @@
   align-items: flex-start;
   justify-content: center;
   padding: var(--space-7) var(--gutter);
-  background-color: var(--scrim);
+  /* the same glass as the header's results strip: the cards behind show through, blurred */
+  background-color: var(--glass-tint);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   overflow-y: auto;
   cursor: default;
 }

@@ -39,7 +39,7 @@ export function QueryInput() {
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
     // The chips sit in a tray under the box, after "Add Search Filter", so the box keeps its width for typing. The
-    // tray is open while a search is being put together and folds away to "See selected filters" once it's searched.
+    // tray stays open, searching included, until it's folded away to "See selected filters".
     const [chipsOpen, setChipsOpen] = useState(true)
     const trayOpen = chipsOpen || !snap.chips.length
 
@@ -58,15 +58,6 @@ export function QueryInput() {
         set()
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
     }, [open])
-
-    // a search (not Previous/Next) folds the tray away, leaving the results more of the screen
-    useEffect(() => {
-        const form = inputRef.current?.form
-        if (!form) return
-        const onSubmit = (e: SubmitEvent) => { if ((e.submitter?.getAttribute('name') ?? 'search') === 'search') setChipsOpen(false) }
-        form.addEventListener('submit', onSubmit)
-        return () => form.removeEventListener('submit', onSubmit)
-    }, [])
 
     // clicking anywhere else closes the dropdown
     useEffect(() => {
@@ -118,10 +109,17 @@ export function QueryInput() {
         setOpen(true)
     }
 
-    function removeChip(id: number) {
+    // `search` re-runs the search without the chip; with nothing left there's nothing to search, and an empty
+    // query would have Searchbar repeat the last search instead
+    function removeChip(id: number, search = false) {
         const i = querybox.chips.findIndex((c) => c.id === id)
         if (i >= 0) querybox.chips.splice(i, 1)
         if (editing?.chipId === id) setEditing(null)
+        if (search && buildQuery(querybox.chips, querybox.text)) {
+            close()
+            // wait for React to write the new query into the form before submitting it
+            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
+        }
     }
 
     const token = editing && draft ? buildToken(editing.filter, draft) : ''
@@ -228,7 +226,7 @@ export function QueryInput() {
                 <button type="button" className={styles.tokenLabel} title={c.token} onClick={() => editChip(c.id)}>
                     {chipLabel(c)}
                 </button>
-                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id)}>×</button>
+                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id, true)}>×</button>
             </span>
         </span>
     ))

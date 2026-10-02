@@ -460,3 +460,36 @@ export function splitTerms(text: string): { term: string, start: number }[] {
     }
     return terms
 }
+
+const isOr = (term: string) => /^or$/i.test(term)
+
+// The reverse of buildQuery, for a search read back from the address: as much as possible goes back into chips
+// and the rest stays as typed text. Either way it searches the same cards.
+export function parseQuery(q: string): { chips: Omit<Chip, 'id'>[], text: string } {
+    const terms = splitTerms(q).map((t) => t.term)
+    for (let n = terms.length; n > 0; n--) {
+        const rest = terms.slice(n)
+        // typed text is ANDed onto the chips, so an `or` of its own would change what it means
+        if (rest.some(isOr)) continue
+        const chips = toChips(terms.slice(0, n))
+        if (chips) return { chips, text: rest.join(' ') }
+    }
+    return { chips: [], text: q.trim() }
+}
+
+// terms the way buildQuery writes chips, back into chips; null if they aren't
+function toChips(terms: string[]): Omit<Chip, 'id'>[] | null {
+    const last = terms.at(-1)
+    const parsed = last ? parseToken(last) : null
+    if (!parsed) return null
+    const chip = { token: buildToken(parsed.filter, parsed.draft), filterId: parsed.filter.id, draft: parsed.draft }
+    if (terms.length === 1) return [{ ...chip, join: 'and' }]
+    if (isOr(terms.at(-2)!)) {
+        // `a or b`, or `(a b) or c`: everything before the `or` was bracketed if it was more than one term
+        if (terms.length !== 3) return null
+        const before = isGroup(terms[0]) ? toChips(splitTerms(terms[0].slice(1, -1)).map((t) => t.term)) : toChips([terms[0]])
+        return before && [...before, { ...chip, join: 'or' }]
+    }
+    const before = toChips(terms.slice(0, -1))
+    return before && [...before, { ...chip, join: 'and' }]
+}

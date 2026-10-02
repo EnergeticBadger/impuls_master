@@ -4,14 +4,17 @@ import { CardGrid } from "~/Components/CardGrid/CardGrid";
 import { CompareDrawer } from "~/Components/Compare/CompareDrawer";
 import { useSnapshot } from "valtio";
 import { compare } from "~/Components/Context/compare";
+import type { Route } from "./+types/home";
 
 const SITE_URL = "https://impulsecaster.cards";
 const TITLE = "Impulse Caster";
 const DESCRIPTION = "Fast, free Magic: The Gathering card search. Build searches with point-and-click filters, sort results and compare cards side by side. No syntax needed.";
 
-export function meta() {
+export function meta({ location }: Route.MetaArgs) {
+  // a search's own title, so it reads right in the history list and a bookmark
+  const q = new URLSearchParams(location.search).get('q')?.trim()
   return [
-    { title: `${TITLE} | MTG Card Search` },
+    { title: q ? `${q} | ${TITLE}` : `${TITLE} | MTG Card Search` },
     { name: "description", content: DESCRIPTION },
     { name: "theme-color", content: "#1a1515" },
     // og:image and og:url must be absolute or link previews won't pick them up
@@ -62,7 +65,7 @@ export default function Home() {
   return (
     <div>
       <Searchbar/>
-      <div className={styles.main_content} data-compare={cards.length ? (collapsed ? 'collapsed' : 'open') : undefined}>
+      <div className={styles.main_content} data-card-area data-compare={cards.length ? (collapsed ? 'collapsed' : 'open') : undefined}>
         <CardGrid />
       </div>
       <CompareDrawer />

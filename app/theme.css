@@ -49,7 +49,10 @@
   --felt-light:
     radial-gradient(ellipse 90% 70% at 50% 20%, rgba(255, 196, 170, 0.07), transparent 70%),
     radial-gradient(ellipse 120% 100% at 50% 40%, transparent 55%, var(--felt-900));
-  --scrim: rgba(36, 36, 36, 0.926); /* full-screen overlay backdrop */
+  /* liquid glass: a dark tint over whatever is behind, blurred (background-color + backdrop-filter), with a lit top edge */
+  --glass-tint: color-mix(in srgb, var(--raised-0) 57%, transparent);
+  --glass-blur: blur(16px) saturate(160%);
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
   --raised-0: var(--ink-900);     /* dropdowns and popovers */
   --raised-1: var(--ink-800);     /* fields and controls inside them */
   --raised-hover: var(--ink-700);
@@ -112,7 +115,7 @@
   --gutter: var(--space-5);       /* side padding on every screen size */
   --search-height: 3.25rem;       /* one line of the header's search box; the logo lines up with it */
   --card-min: 200px;              /* smallest a grid card gets before a column drops */
-  --card-floor: 100px;            /* smallest a card gets when the user picks cards per row */
+  --card-floor: 150px;            /* smallest a card gets when the user picks cards per row: the width of its row of buttons */
   --overlay-width: 1000px;        /* card detail panel */
   --header-height: 0px;           /* set from the sticky header's real height (Searchbar.tsx) */
   --drawer-height: calc(100dvh - var(--header-height)); /* open compare drawer: reaches up flush with the header */
