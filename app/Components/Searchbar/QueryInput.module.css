@@ -269,9 +269,25 @@ button.tokenLabel:hover,
     cursor: pointer;
 }
 
-.option[aria-selected="true"] {
+.option[aria-selected="true"],
+button.option:hover,
+button.option:focus-visible {
     background-color: var(--raised-hover);
     box-shadow: inset 3px 0 0 var(--accent-line);
+}
+
+/* the filters "Add Search Filter" lists are buttons, read across like the rows above */
+button.option {
+    width: 100%;
+    text-align: left;
+}
+
+button.option:focus-visible {
+    outline: none;
+}
+
+.group > li {
+    list-style: none;
 }
 
 /* filter editor: a label above its choices, and the choices across the whole width, so long ones wrap evenly */
