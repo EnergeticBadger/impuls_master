@@ -13,7 +13,6 @@ import {
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
-import { usePhone } from '../Hooks/usePhone'
 import { Arrow } from '../Arrow/Arrow'
 
 // what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
@@ -41,9 +40,8 @@ export function QueryInput() {
     const listId = useId()
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
-    // Phones keep the chips in a tray under the box, so the box keeps its width for typing. The tray is open
+    // The chips sit in a tray under the box, so the box keeps its width for typing. The tray is open
     // while a search is being put together and folds away to "See selected filters" once it's searched.
-    const phone = usePhone()
     const [chipsOpen, setChipsOpen] = useState(true)
 
     const fragment = lastFragment(text)
@@ -274,13 +272,12 @@ export function QueryInput() {
             <div className={styles.bar}>
                 {/* clicking the empty part of the box puts the cursor in it */}
                 <div className={styles.box} onPointerDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}>
-                    {phone ? null : chips}
                     <input
                         ref={inputRef}
                         type="text"
                         autoComplete="off"
                         className={styles.input}
-                        placeholder={snap.chips.length ? (phone ? 'Add more filters' : 'Add more, or type a card name…') : 'Search for Magic cards…'}
+                        placeholder={snap.chips.length ? 'Add more filters' : 'Search for Magic cards…'}
                         aria-label="Search"
                         value={text}
                         role="combobox"
@@ -296,18 +293,12 @@ export function QueryInput() {
                 </div>
                 {/* the search Searchbar reads: every chip plus what's typed */}
                 <input type="hidden" name="query" value={query} />
-                <button type="button" className={styles.toggle} aria-expanded={open} aria-label={open ? 'Hide filters' : 'Show filters'}
-                    onClick={() => open ? close() : (setOpen(true), refocus())}>
-                    <span className={styles.wide}>{open ? 'Collapse' : 'Filters'}</span>
-                    <Arrow to={open ? 'up' : 'down'} />
-                </button>
                 <button type="submit" className={styles.search} aria-label="Search" onClick={close}>
                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" /></svg>
-                    <span className={styles.wide}>Search</span>
                 </button>
             </div>
 
-            {phone && snap.chips.length ? (
+            {snap.chips.length ? (
                 <div className={styles.tray} data-open={chipsOpen || undefined}>
                     {/* first, so open it floats in the top corner and the chips flow around it */}
                     <button type="button" className={styles.trayToggle} aria-expanded={chipsOpen}

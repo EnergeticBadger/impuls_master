@@ -5,7 +5,7 @@ import { loadSort, sort, SORT_ORDERS, type SortDir, type SortOrder } from '../Co
 import { Arrow } from '../Arrow/Arrow';
 
 // "Sort by [what] [direction]", like Scryfall's two sort menus; changing either re-runs the search.
-// Phones show each menu as a button reading "Sort by: Name" and "Order: Default", with the menu itself over it.
+// Each menu shows as a button reading "Sort by: Name" and "Order: Default", with the menu itself over it.
 export function SortControl({ onChange }: { onChange: () => void }) {
     const snap = useSnapshot(sort)
     useEffect(loadSort, [])

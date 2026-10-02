@@ -8,7 +8,7 @@
     display: flex;
     align-items: stretch;
     gap: var(--space-2);
-    /* room for the logo on phones, where it sits on the box's line instead of beside the whole search (Searchbar) */
+    /* room for the logo, which sits on the box's line (Searchbar) */
     margin-left: var(--bar-indent, 0);
 }
 
@@ -44,7 +44,7 @@
     min-width: 6em;
     padding-block: var(--space-1);
     color: var(--text);
-    font-size: var(--text-lg);
+    font-size: var(--text-md);
     font-weight: 300;
     line-height: var(--leading);
 }
@@ -133,31 +133,19 @@ button.tokenLabel:hover,
     background-color: var(--raised-hover);
 }
 
-.toggle,
+/* the main action in the header, a square icon button; the box opens the filters when clicked, and the sheet has
+   its own ×, so there's no separate filters toggle. The header is already --accent, so it takes the lighter red */
 .search {
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-2);
     flex: 0 0 auto;
-    padding: 0 var(--space-3);
+    min-width: var(--search-height);
+    padding: 0;
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: background-color var(--ease);
-}
-
-.toggle {
-    border: 1px solid var(--border-faint);
-    background-color: var(--raised-0);
-}
-
-.toggle:hover {
-    background-color: var(--raised-hover);
-}
-
-/* the main action in the header; the header is already --accent, so it takes the lighter red to stand out */
-.search {
     background-color: var(--accent-line);
     border: 1px solid var(--border-faint);
 }
@@ -171,26 +159,30 @@ button.tokenLabel:hover,
 }
 
 /*
- * The filter panel takes the width of the whole search row (up to a comfortable reading width) and may reach
- * the bottom of the screen, sizing itself to what's in it. Its heading and its Add buttons stay pinned while
- * the middle scrolls, so the way out is always in view. --wrap-bottom is where the search box ends (QueryInput).
+ * The filter panel is a sheet: the whole width and everything below the search box, so the box and its chips
+ * stay in view above it while the filters get the rest of the screen, with × to put it away. Its heading and
+ * its Add buttons stay pinned while the middle scrolls, so the way out is always in view. --wrap-bottom is where
+ * the search box ends (QueryInput).
  */
 .panel {
-    position: absolute;
-    top: calc(100% + var(--space-2));
+    position: fixed;
+    top: calc(var(--wrap-bottom, 8rem) + var(--space-2));
     left: 0;
+    right: 0;
+    bottom: 0;
     z-index: var(--z-header);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    width: min(100%, 1120px);
-    max-height: max(16rem, calc(100dvh - var(--wrap-bottom, 8rem) - var(--space-2) - var(--space-4)));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--space-4);
+    /* clear of the home bar on phones that have one */
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
     border: 1px solid var(--border-faint);
-    border-radius: var(--radius-md);
+    border-width: 1px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     /* a neutral base; red is kept for what's selected and the main button */
     background-color: var(--raised-0);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
@@ -215,7 +207,7 @@ button.tokenLabel:hover,
     top: calc(-1 * var(--space-4));
     z-index: 3;
     margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
-    padding: var(--space-4) var(--space-4) var(--space-2);
+    padding: var(--space-4) calc(var(--space-4) + 44px) var(--space-2) var(--space-4);
     background-color: var(--raised-0);
 }
 
@@ -264,10 +256,14 @@ button.tokenLabel:hover,
     color: var(--text-muted);
 }
 
+/* thumb-sized rows in the filter list */
 .option {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: 2px;
+    min-height: 44px;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -278,11 +274,12 @@ button.tokenLabel:hover,
     box-shadow: inset 3px 0 0 var(--accent-line);
 }
 
-/* filter editor */
+/* filter editor: a label above its choices, and the choices across the whole width, so long ones wrap evenly */
 .row {
     display: flex;
+    flex-direction: column;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: stretch;
     gap: var(--space-2) var(--space-3);
 }
 
@@ -344,18 +341,31 @@ button.tokenLabel:hover,
 .pip[data-color="g"] { background-color: var(--mana-g); }
 .pip[data-color="c"] { background-color: var(--mana-c); }
 
+/* two choices side by side in equal halves; three or more read as a list, one per line, so none wraps onto a
+   ragged second row */
 .segmented {
-    display: inline-flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     border: 1px solid var(--border-faint);
     background-color: var(--raised-1);
     border-radius: var(--radius-sm);
     overflow: hidden;
 }
 
+.segmented:has(> :nth-child(3)) {
+    grid-template-columns: 1fr;
+}
+
 .segmented button {
+    box-sizing: border-box;
+    justify-content: center;
+    min-height: 44px;
     border-radius: 0;
     font-size: var(--text-sm);
+}
+
+.segmented:has(> :nth-child(3)) button + button {
+    border-top: 1px solid var(--border-faint);
 }
 
 .field {
@@ -383,16 +393,29 @@ button.tokenLabel:hover,
 /* pinned to the bottom of the scrolling panel, so Add is always in reach */
 .foot {
     position: sticky;
-    bottom: calc(-1 * var(--space-4));
+    /* down over the sheet's bottom padding, clear of the home bar */
+    bottom: calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
     z-index: 3;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
-    padding: var(--space-3) var(--space-4) var(--space-4);
+    margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
+    padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-faint);
     background-color: var(--raised-0);
+}
+
+/* what gets added on its own line, the buttons under it sharing the width, the main one the bigger share */
+.foot > button {
+    box-sizing: border-box;
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 44px;
+}
+
+.foot > .primary {
+    flex-grow: 2;
 }
 
 /* plain-English meaning above the syntax it writes */
@@ -400,7 +423,7 @@ button.tokenLabel:hover,
     display: flex;
     flex-direction: column;
     gap: 2px;
-    flex: 1 1 240px;
+    flex: 1 1 100%;
     min-width: 0;
 }
 
@@ -515,190 +538,88 @@ button.tokenLabel:hover,
     font-size: var(--text-sm);
 }
 
-/* phones only: the panel's own way out, since the toggle beside the search box is easy to miss */
+/* the sheet's way out */
 .sheetClose {
-    display: none;
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
 }
 
-@media screen and (max-width: 640px) {
-    /*
-     * On a phone the panel is a sheet: the whole width and everything below the search box, so the box and
-     * its chips stay in view above it while the filters get the rest of the screen, with × to put it away.
-     */
-    .panel {
-        position: fixed;
-        top: calc(var(--wrap-bottom, 8rem) + var(--space-2));
-        left: 0;
-        right: 0;
-        bottom: 0;
-        width: auto;
-        max-height: none;
-        border-width: 1px 0 0;
-        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-        /* clear of the home bar on phones that have one */
-        padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
-    }
-
-    .panel > .head {
-        padding-right: calc(var(--space-4) + 44px);
-    }
-
-    .sheetClose {
-        position: absolute;
-        top: var(--space-2);
-        right: var(--space-2);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 44px;
-        height: 44px;
-        border-radius: var(--radius-full);
-        color: var(--text-muted);
-        font-size: 1.5rem;
-        line-height: 1;
-        cursor: pointer;
-    }
-
-    .sheetClose:hover {
-        color: var(--text);
-        background-color: var(--raised-hover);
-    }
-
-    /* thumb-sized rows in the filter list */
-    .option {
-        box-sizing: border-box;
-        min-height: 44px;
-        justify-content: center;
-    }
-
-    .input {
-        font-size: var(--text-md);
-    }
-
-    /* icon-only buttons so the box keeps its room */
-    .wide {
-        display: none;
-    }
-
-    /* a label above its choices, and the choices across the whole width, so long ones wrap evenly */
-    .row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    /* two choices side by side in equal halves; three or more read as a list, one per line, so none wraps
-       onto a ragged second row */
-    .segmented {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .segmented:has(> :nth-child(3)) {
-        grid-template-columns: 1fr;
-    }
-
-    .segmented button {
-        box-sizing: border-box;
-        justify-content: center;
-        min-height: 44px;
-    }
-
-    .segmented:has(> :nth-child(3)) button + button {
-        border-top: 1px solid var(--border-faint);
-    }
-
-    /* what gets added on its own line, the buttons under it sharing the width, the main one the bigger share */
-    .preview {
-        flex-basis: 100%;
-    }
-
-    .foot {
-        padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
-        margin-bottom: calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
-        bottom: calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
-    }
-
-    .foot > button {
-        box-sizing: border-box;
-        flex: 1 1 0;
-        justify-content: center;
-        min-height: 44px;
-    }
-
-    .foot > .primary {
-        flex-grow: 2;
-    }
-
-    /* the box opens the filters when tapped, and the sheet has its own ×, so the toggle's room goes to the box */
-    .toggle {
-        display: none;
-    }
-
-    .search {
-        min-width: var(--search-height);
-        padding: 0;
-    }
-
-    /*
-     * The chips sit in a dark tray under the box, across the header's whole width. Open, they flow like words
-     * with ^ floated in the top corner, so only the first line makes room for it; folded away, the tray is one
-     * "See selected filters" bar.
-     */
-    .tray {
-        margin-top: var(--space-2);
-        border: 1px solid var(--border-faint);
-        border-radius: var(--radius-md);
-        background-color: var(--raised-0);
-    }
-
-    /* the chips' own bottom margins space the lines, so the bottom padding is the gap less one of them */
-    .tray[data-open] {
-        display: flow-root;
-        padding: var(--space-2) var(--space-1) 0 var(--space-2);
-    }
-
-    .tray .chipGroup {
-        vertical-align: top;
-        margin: 0 var(--space-2) var(--space-2) 0;
-    }
-
-    .trayToggle {
-        box-sizing: border-box;
-        display: flex;
-        width: 100%;
-        align-items: center;
-        justify-content: space-between;
-        min-height: 44px;
-        padding: 0 var(--space-3);
-        border-radius: var(--radius-md);
-        color: var(--text);
-        cursor: pointer;
-    }
-
-    /* as tall as a line of chips */
-    .tray[data-open] .trayToggle {
-        float: right;
-        justify-content: center;
-        width: 40px;
-        min-height: 34px;
-        margin-bottom: var(--space-2);
-        padding: 0;
-    }
-
-    .trayToggle > [data-to] {
-        font-size: 1.1rem;
-    }
-
-    .trayToggle:hover {
-        background-color: var(--raised-hover);
-    }
-
-    /* chips and and / or a little taller than in the desktop box, for thumbs */
-    .tray .tokenLabel,
-    .tray .join {
-        padding-block: 6px;
-    }
+.sheetClose:hover {
+    color: var(--text);
+    background-color: var(--raised-hover);
 }
+
+/*
+ * The chips sit in a dark tray under the box, across the header's whole width. Open, they flow like words with ^
+ * floated in the top corner, so only the first line makes room for it; folded away, the tray is one "See selected
+ * filters" bar.
+ */
+.tray {
+    margin-top: var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-md);
+    background-color: var(--raised-0);
+}
+
+/* the chips' own bottom margins space the lines, so the bottom padding is the gap less one of them */
+.tray[data-open] {
+    display: flow-root;
+    padding: var(--space-2) var(--space-1) 0 var(--space-2);
+}
+
+.tray .chipGroup {
+    vertical-align: top;
+    margin: 0 var(--space-2) var(--space-2) 0;
+}
+
+.trayToggle {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    cursor: pointer;
+}
+
+/* as tall as a line of chips */
+.tray[data-open] .trayToggle {
+    float: right;
+    justify-content: center;
+    width: 40px;
+    min-height: 34px;
+    margin-bottom: var(--space-2);
+    padding: 0;
+}
+
+.trayToggle > [data-to] {
+    font-size: 1.1rem;
+}
+
+.trayToggle:hover {
+    background-color: var(--raised-hover);
+}
+
+/* chips and and / or a little taller than in a text box, for thumbs */
+.tray .tokenLabel,
+.tray .join {
+    padding-block: 6px;
+}
+
 
 /* ---- "What it does" builder ---- */
 .section {

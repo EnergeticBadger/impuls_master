@@ -167,12 +167,12 @@ export function Searchbar() {
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
     const formRef = useRef<HTMLFormElement>(null)
-    // phones set cards per row in a layout settings pop-up, opened from the gear beside sort
+    // cards per row is set in a layout settings pop-up, opened from the gear beside sort
     const settingsRef = useRef<HTMLDialogElement>(null)
     const settingsTitle = useId()
     const headerRef = useRef<HTMLDivElement>(null)
 
-    // publish the header's height so the open compare drawer can sit flush under it (the header grows with chips and wraps on phones)
+    // publish the header's height so the open compare drawer can sit flush under it (the header grows with the chip tray and the results rows)
     useEffect(() => {
         const header = headerRef.current
         if (!header) return
@@ -289,7 +289,6 @@ export function Searchbar() {
             <div className={styles.headerRow}>
             <a className={styles.brand} href="/" aria-label="Impulse Caster home">
                 <img src="/logo.svg" alt="" width={40} height={40} />
-                <span className={styles.brandName}>Impulse Caster</span>
             </a>
             <form className={styles.searchbar} onSubmit={searchQuery} ref={formRef}>
                 <div className={styles.searchArea}>
@@ -299,17 +298,17 @@ export function Searchbar() {
                     {query ? (
                         <>
                             {page.cards > 0 && (
-                                <span className={styles.count}>{page.cards.toLocaleString()} {page.cards === 1 ? 'card' : 'cards'}<span className={styles.wordy}> found</span></span>
+                                <span className={styles.count}>{page.cards.toLocaleString()} {page.cards === 1 ? 'card' : 'cards'}</span>
                             )}
                             {/* implament last and first page buttons */}
                             {/* <button name="first">{"<<"}</button> */}
                             <button disabled={busy || !(page.number > 1)} name="back" aria-label="Previous page" aria-busy={pending && loadingDir === 'back' || undefined}>
-                                <span className={styles.label}><Arrow to="left" /><span className={styles.wordy}>Previous</span></span>
+                                <span className={styles.label}><Arrow to="left" /></span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             <span className={styles.pageOf}>{page.number} of {page.total}</span>
                             <button disabled={busy || !page.has_more} name="next" aria-label="Next page" aria-busy={pending && loadingDir === 'next' || undefined}>
-                                <span className={styles.label}><span className={styles.wordy}>Next</span><Arrow to="right" /></span>
+                                <span className={styles.label}><Arrow to="right" /></span>
                                 <span className={styles.spinner} role="status" aria-label="Loading" />
                             </button>
                             {/* <button name="last">{">>"}</button> */}
@@ -322,9 +321,6 @@ export function Searchbar() {
                         <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
                     </button>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
-                    <div className={styles.inlineSize}>
-                        <RowSize />
-                    </div>
                 </div>
             </form>
             </div>

@@ -1,27 +1,49 @@
-/* sticky header bar */
+/*
+ * The header, the same on every screen: the logo and the search box on one line, then sort, then the count and
+ * pages in a darker strip along the header's bottom edge. Before the first search there's only the search line.
+ * Cards per row is set once and left alone, so it waits in the layout settings behind the gear.
+ */
 .main_content {
+    --header-pad: var(--gutter);
+    --strip-height: calc(40px + 2 * var(--space-3));
     position: sticky;
     top: 0;
     z-index: var(--z-header);
-    background-color: var(--surface-1);
-    background-image: var(--felt-grain);
     box-shadow: var(--shadow);
 }
 
-/*
- * Two rows on one grid. The search is the main thing to do here, so it gets the whole first row beside the
- * brand. The results controls (count, pages, sort, size) go on the second row, lined up with the page's own
- * edge like the grid of cards they control, rather than indented under the logo.
- */
+/* phones keep the header's edges tight, so the search box gets the room */
+@media screen and (max-width: 640px) {
+    .main_content {
+        --header-pad: var(--space-3);
+    }
+}
+
+/* The results strip is glass: the cards scrolling under the header show through it, blurred. So the header's
+   felt (drawn behind its contents by ::before) stops where the strip starts. */
+.main_content::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--surface-1);
+    background-image: var(--felt-grain);
+}
+
+.main_content:has(.Pages:not(:empty))::before {
+    bottom: var(--strip-height);
+}
+
 .headerRow {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-        "brand search search"
-        "pages pages view";
+        "search"
+        "view"
+        "pages";
     align-items: center;
-    gap: var(--space-2) var(--space-5);
-    padding: var(--space-3) var(--gutter);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--header-pad);
 }
 
 /* the form's parts sit on the header's grid themselves */
@@ -29,30 +51,30 @@
     display: contents;
 }
 
+/* The logo sits at the start of the search box's line, and the box makes room for it (--bar-indent in
+   QueryInput), so what hangs under the box (the selected filters, notes) gets the whole width. */
 .searchArea {
+    --bar-indent: calc(var(--search-height) + var(--space-2));
     grid-area: search;
     min-width: 0;
 }
 
-/* as tall as one line of the search box, so the logo lines up with it however many lines the chips take */
+/* as tall as one line of the search box, and only as wide as the logo: a grid item stretches across its area,
+   and the link would cover the box */
 .brand {
-    grid-area: brand;
+    grid-area: search;
     align-self: start;
+    justify-self: start;
+    z-index: 1;
     display: flex;
     align-items: center;
-    gap: var(--space-3);
     height: var(--search-height);
-    color: var(--text);
-    font-weight: 700;
-    font-size: 1.15rem;
-    white-space: nowrap;
-    text-decoration: none;
 }
 
 .brand img {
     display: block;
-    width: 40px;
-    height: 40px;
+    width: var(--search-height);
+    height: var(--search-height);
 }
 
 .brand:focus-visible {
@@ -61,31 +83,29 @@
     border-radius: var(--radius-sm);
 }
 
-/* the name shows whenever the search box still gets most of the row */
-.brandName {
-    display: none;
-}
-
-@media screen and (min-width: 900px) {
-    .brandName {
-        display: inline;
-    }
-}
-
+/* the results strip runs to the header's edges, a frosted tint over whatever has scrolled under it */
 .Pages {
     grid-area: pages;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
+    min-height: var(--strip-height);
+    margin: 0 calc(-1 * var(--header-pad)) calc(-1 * var(--space-3));
+    padding: var(--space-3) var(--header-pad);
+    background-color: color-mix(in srgb, var(--raised-0) 57%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    /* the glass's lit top edge */
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
     color: var(--text);
     white-space: nowrap;
 }
 
-/* the count reads first, the page buttons after it */
+/* the count on the left, the page buttons together on the right */
 .count {
-    margin-right: var(--space-3);
-    color: var(--text-muted);
+    margin-right: auto;
 }
 
 .pageOf {
@@ -96,11 +116,20 @@
     display: none;
 }
 
+/* thumb-sized page buttons, drawn like the gear and sort menus above them (buttons are reset with
+   `all: unset`, so the padding and border count inside the size) */
 .Pages button {
-    padding: var(--space-2) var(--space-4);
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+    padding-inline: var(--space-2);
+    border: 1px solid var(--border-faint);
     border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
     cursor: pointer;
-    background-color: var(--surface-0);
     transition: background-color var(--ease);
 }
 
@@ -112,12 +141,16 @@
 }
 
 .Pages button:hover:not(:disabled) {
-    background-color: var(--surface-hover-0);
+    background-color: var(--raised-hover);
 }
 
+/* a button with nowhere to go keeps its dark face; only its arrow fades, so the header doesn't show through */
 .Pages button:disabled {
     cursor: not-allowed;
-    opacity: 0.5;
+}
+
+.Pages button:disabled .label {
+    opacity: 0.35;
 }
 
 /* the spinner sits inside the clicked button, in place of its label, once a page change has been waiting a moment */
@@ -150,61 +183,118 @@
     visibility: visible;
 }
 
-/* sort + cards per row travel together at the right end of the results row */
+/* the gear, then the two sort menus; only once there are results to sort */
 .viewOptions {
     grid-area: view;
-    justify-self: end;
     display: flex;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-2);
     min-width: 0;
 }
 
-/* "Sort by [what] [direction]": calm dark controls, like the cards-per-row stepper */
-.sort {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--text);
-    white-space: nowrap;
+.viewOptions:not([data-searched]) {
+    display: none;
 }
 
-.sort label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.sortLabel {
-    color: var(--text-muted);
-}
-
-.sort select {
+/* the gear that opens the layout settings, where cards per row lives */
+.settingsButton {
     box-sizing: border-box;
-    padding: var(--space-2) var(--space-3);
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-sm);
     background-color: var(--raised-0);
-    color: var(--text);
-    font: inherit;
-    color-scheme: dark; /* dark option list in the browser's own menu */
     cursor: pointer;
     transition: background-color var(--ease);
 }
 
-.sort select:hover {
+.settingsButton:hover {
     background-color: var(--raised-hover);
 }
 
-/* phones only: what a sort menu is set to, drawn as a button under the menu itself (SortControl) */
-.sortFace {
-    display: none;
+.settingsButton svg {
+    width: 1.5em;
+    height: 1.5em;
+    fill: var(--text);
 }
 
-/* phones only: the gear that opens the layout settings, where cards per row lives */
-.settingsButton {
-    display: none;
+/* "Sort by [what] [direction]": the two menus share the rest of the line, each no wider than it needs to read */
+.sort {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+/* the menus speak for themselves; the words stay for screen readers */
+.sortLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+/* each menu sits invisibly over its face, so a click opens the browser's own picker */
+.sortPick {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 16rem;
+}
+
+.sort select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    font: inherit;
+    color-scheme: dark; /* dark option list in the browser's own menu */
+    cursor: pointer;
+}
+
+/* what a sort menu is set to, drawn as a button under the menu itself (SortControl) */
+.sortFace {
+    box-sizing: border-box;
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1);
+    min-width: 0;
+    height: 40px;
+    padding: 0 var(--space-1) 0 var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    transition: background-color var(--ease);
+}
+
+.sortPick:hover .sortFace {
+    background-color: var(--raised-hover);
+}
+
+.sortFace span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sortFace > :last-child {
+    margin-right: var(--space-2);
+}
+
+.sortPick:has(select:focus-visible) .sortFace {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
 }
 
 /* the layout settings pop-up; the same calm dark base as the other pop-ups */
@@ -285,219 +375,5 @@
 @media (prefers-reduced-motion: reduce) {
     .spinner {
         animation-duration: 2.4s;
-    }
-}
-
-/* not enough room for the count, pages, sort and size on one line: the pages get a line, sort and size the next */
-@media screen and (max-width: 1180px) {
-    .headerRow {
-        grid-template-columns: auto minmax(0, 1fr);
-        grid-template-areas:
-            "brand search"
-            "pages pages"
-            "view view";
-    }
-
-    /* the count on the left, the page buttons together on the right */
-    .count {
-        margin-right: auto;
-    }
-
-    .viewOptions {
-        justify-self: stretch;
-        justify-content: space-between;
-    }
-}
-
-/*
- * Phones: the logo and the search box on one line, then sort, then the count and pages in a darker strip along
- * the header's bottom edge. Before the first search there's only the search line. Cards per row is set once and
- * left alone, so it waits in the layout settings behind the gear.
- */
-@media screen and (max-width: 640px) {
-    /* The results strip is glass: the cards scrolling under the header show through it, blurred. So the
-       header's felt (drawn behind its contents by ::before) stops where the strip starts. */
-    .main_content {
-        --strip-height: calc(40px + 2 * var(--space-3));
-        background: none;
-    }
-
-    .main_content::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background-color: var(--surface-1);
-        background-image: var(--felt-grain);
-    }
-
-    .main_content:has(.Pages:not(:empty))::before {
-        bottom: var(--strip-height);
-    }
-
-    .headerRow {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            "search"
-            "view"
-            "pages";
-        row-gap: var(--space-3);
-        padding-inline: var(--space-3);
-    }
-
-    /* The logo sits at the start of the search box's line, and the box makes room for it (--bar-indent in
-       QueryInput), so what hangs under the box (the selected filters, notes) gets the whole width. */
-    .brand {
-        grid-area: search;
-        /* only as wide as the logo: a grid item stretches across its area, and the link would cover the box */
-        justify-self: start;
-        z-index: 1;
-    }
-
-    .brand img {
-        width: var(--search-height);
-        height: var(--search-height);
-    }
-
-    .searchArea {
-        --bar-indent: calc(var(--search-height) + var(--space-2));
-    }
-
-    /* the arrows and the count say enough on a phone; the words stay for screen readers via aria-label */
-    .wordy {
-        display: none;
-    }
-
-    /* the results strip runs to the header's edges, a frosted tint over whatever has scrolled under it */
-    .Pages {
-        box-sizing: border-box;
-        gap: var(--space-3);
-        min-height: var(--strip-height);
-        margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
-        padding: var(--space-3);
-        background-color: color-mix(in srgb, var(--raised-0) 57%, transparent);
-        -webkit-backdrop-filter: blur(16px) saturate(160%);
-        backdrop-filter: blur(16px) saturate(160%);
-        /* the glass's lit top edge */
-        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
-    }
-
-    .count {
-        color: var(--text);
-    }
-
-    /* thumb-sized page buttons, drawn like the gear and sort menus above them (buttons are reset with
-       `all: unset`, so the padding and border count inside the size) */
-    .Pages button {
-        box-sizing: border-box;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 40px;
-        min-height: 40px;
-        padding-inline: var(--space-2);
-        border: 1px solid var(--border-faint);
-        background-color: var(--raised-0);
-    }
-
-    .Pages button:hover:not(:disabled) {
-        background-color: var(--raised-hover);
-    }
-
-    /* a button with nowhere to go keeps its dark face; only its arrow fades, so the header doesn't show through */
-    .Pages button:disabled {
-        opacity: 1;
-    }
-
-    .Pages button:disabled .label {
-        opacity: 0.35;
-    }
-
-    /* the gear, then the two sort menus sharing the rest of the line; only once there are results to sort */
-    .viewOptions:not([data-searched]),
-    .inlineSize {
-        display: none;
-    }
-
-    .viewOptions {
-        gap: var(--space-2);
-    }
-
-    .settingsButton {
-        box-sizing: border-box;
-        display: inline-flex;
-        flex: none;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        border: 1px solid var(--border-faint);
-        border-radius: var(--radius-sm);
-        background-color: var(--raised-0);
-        cursor: pointer;
-    }
-
-    .settingsButton svg {
-        width: 1.5em;
-        height: 1.5em;
-        fill: var(--text);
-    }
-
-    .sort {
-        flex: 1 1 0;
-        min-width: 0;
-    }
-
-    /* the menus speak for themselves here; the words stay for screen readers */
-    .sortLabel {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-    }
-
-    /* each menu sits invisibly over its face, so a tap opens the phone's own picker */
-    .sortPick {
-        position: relative;
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-
-    .sort select {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
-    }
-
-    .sortFace {
-        box-sizing: border-box;
-        display: flex;
-        flex: 1 1 auto;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-1);
-        min-width: 0;
-        height: 40px;
-        padding: 0 var(--space-1) 0 var(--space-2);
-        border: 1px solid var(--border-faint);
-        border-radius: var(--radius-sm);
-        background-color: var(--raised-0);
-    }
-
-    .sortFace span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .sortFace > :last-child {
-        margin-right: var(--space-2);
-    }
-
-    .sortPick:has(select:focus-visible) .sortFace {
-        outline: 2px solid var(--text);
-        outline-offset: 2px;
     }
 }
