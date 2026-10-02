@@ -1,6 +1,6 @@
 /*
- * The header, the same on every screen: the logo and the search box on one line, then sort, then the count and
- * pages in a darker strip along the header's bottom edge. Before the first search there's only the search line.
+ * The header, the same on every screen: the logo and the search box on one line, the filters tray under it, then
+ * sort, then (once there are results) the count and pages in a darker strip along the header's bottom edge.
  * Cards per row is set once and left alone, so it waits in the layout settings behind the gear.
  */
 .main_content {
@@ -183,17 +183,13 @@
     visibility: visible;
 }
 
-/* the gear, then the two sort menus; only once there are results to sort */
+/* the gear, then the two sort menus */
 .viewOptions {
     grid-area: view;
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-}
-
-.viewOptions:not([data-searched]) {
-    display: none;
 }
 
 /* the gear that opens the layout settings, where cards per row lives */

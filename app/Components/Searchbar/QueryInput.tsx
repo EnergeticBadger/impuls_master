@@ -35,16 +35,17 @@ export function QueryInput() {
     const creatures = useCatalog('creature-types')
     const wrapRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
-    // set while focus goes back to the box after adding a filter, so the dropdown doesn't pop straight back open
-    const refocusing = useRef(false)
     const listId = useId()
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
-    // The chips sit in a tray under the box, so the box keeps its width for typing. The tray is open
-    // while a search is being put together and folds away to "See selected filters" once it's searched.
+    // The chips sit in a tray under the box, after "Add Search Filter", so the box keeps its width for typing. The
+    // tray is open while a search is being put together and folds away to "See selected filters" once it's searched.
     const [chipsOpen, setChipsOpen] = useState(true)
+    const trayOpen = chipsOpen || !snap.chips.length
+    // the list was opened with "Add Search Filter", so it offers every filter rather than ones matching the typed word
+    const [browsing, setBrowsing] = useState(false)
 
-    const fragment = lastFragment(text)
+    const fragment = browsing ? '' : lastFragment(text)
     // a typed word that names a creature type (plurals too) can be added straight away, like an @-mention
     const typeHits = /^[a-z][a-z' -]{2,}$/i.test(fragment) ? findTypes(fragment, creatures, 3) : []
     const items: Item[] = [...typeHits.map((type) => ({ type })), ...matchFilters(fragment).map((filter) => ({ filter }))]
@@ -86,14 +87,22 @@ export function QueryInput() {
 
     function close() {
         setOpen(false)
+        setBrowsing(false)
         setEditing(null)
         setActive(-1)
     }
 
     function refocus() {
-        refocusing.current = true
         inputRef.current?.focus()
-        refocusing.current = false
+    }
+
+    // "Add Search Filter" opens the whole list of filters, and closes it again
+    function toggleFilters() {
+        if (open && browsing) return close()
+        setBrowsing(true)
+        setEditing(null)
+        setActive(-1)
+        setOpen(true)
     }
 
     function pick(item: Item) {
@@ -192,6 +201,7 @@ export function QueryInput() {
     // typed syntax like `t:elf` becomes a chip as soon as it's finished with a space
     function onType(value: string) {
         setOpen(true)
+        setBrowsing(false)
         setEditing(null)
         setActive(-1)
         setArmed(null)
@@ -277,7 +287,7 @@ export function QueryInput() {
                         type="text"
                         autoComplete="off"
                         className={styles.input}
-                        placeholder={snap.chips.length ? 'Add more filters' : 'Search for Magic cards…'}
+                        placeholder="Search for Magic cards…"
                         aria-label="Search"
                         value={text}
                         role="combobox"
@@ -285,9 +295,6 @@ export function QueryInput() {
                         aria-controls={listId}
                         aria-activedescendant={!editing && active >= 0 ? `${listId}-${active}` : undefined}
                         onChange={(e) => onType(e.target.value)}
-                        onFocus={() => { if (!refocusing.current) setOpen(true) }}
-                        // a tap on the box after searching (it still has focus) opens the filters again too
-                        onClick={() => setOpen(true)}
                         onKeyDown={onKeyDown}
                     />
                 </div>
@@ -298,17 +305,25 @@ export function QueryInput() {
                 </button>
             </div>
 
-            {snap.chips.length ? (
-                <div className={styles.tray} data-open={chipsOpen || undefined}>
-                    {/* first, so open it floats in the top corner and the chips flow around it */}
+            <div className={styles.tray} data-open={trayOpen || undefined}>
+                {/* first, so open it floats in the top corner and the chips flow around it */}
+                {snap.chips.length ? (
                     <button type="button" className={styles.trayToggle} aria-expanded={chipsOpen}
                         aria-label={chipsOpen ? 'Hide selected filters' : undefined} onClick={() => setChipsOpen((o) => !o)}>
                         {chipsOpen ? null : <span>See selected filters</span>}
                         <Arrow to={chipsOpen ? 'up' : 'down'} />
                     </button>
-                    {chipsOpen ? chips : null}
-                </div>
-            ) : null}
+                ) : null}
+                {trayOpen ? (
+                    <>
+                        <button type="button" className={styles.addFilter} aria-expanded={open && browsing} aria-controls={listId}
+                            onClick={toggleFilters}>
+                            Add Search Filter <span aria-hidden>+</span>
+                        </button>
+                        {chips}
+                    </>
+                ) : null}
+            </div>
 
             {tidy && dismissed !== query ? (
                 <div className={styles.suggest} role="status">

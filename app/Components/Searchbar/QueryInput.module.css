@@ -159,7 +159,7 @@ button.tokenLabel:hover,
 }
 
 /*
- * The filter panel is a sheet: the whole width and everything below the search box, so the box and its chips
+ * On a phone the filter panel is a sheet: the whole width and everything below the search box, so the box and its chips
  * stay in view above it while the filters get the rest of the screen, with × to put it away. Its heading and
  * its Add buttons stay pinned while the middle scrolls, so the way out is always in view. --wrap-bottom is where
  * the search box ends (QueryInput).
@@ -618,6 +618,47 @@ button.tokenLabel:hover,
 .tray .tokenLabel,
 .tray .join {
     padding-block: 6px;
+}
+
+/* the tray's first button, drawn like a chip, so the filters it adds line up after it */
+.addFilter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    vertical-align: top;
+    margin: 0 var(--space-2) var(--space-2) 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.addFilter > span {
+    font-size: 1.25em;
+    line-height: 1;
+}
+
+.addFilter:hover,
+.addFilter[aria-expanded="true"] {
+    background-color: var(--raised-hover);
+}
+
+/* Wider screens: the filters drop down under the tray instead of taking the screen, up to a comfortable reading
+   width, and reach no further than the bottom of the screen */
+@media screen and (min-width: 641px) {
+    .panel {
+        position: absolute;
+        top: calc(100% + var(--space-2));
+        right: auto;
+        bottom: auto;
+        width: min(100%, 1120px);
+        max-height: max(16rem, calc(100dvh - var(--wrap-bottom, 8rem) - var(--space-2) - var(--space-4)));
+        border-width: 1px;
+        border-radius: var(--radius-md);
+    }
 }
 
 

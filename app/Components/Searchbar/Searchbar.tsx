@@ -315,7 +315,7 @@ export function Searchbar() {
                         </>
                     ) : null}
                 </div>
-                <div className={styles.viewOptions} data-searched={query ? '' : undefined}>
+                <div className={styles.viewOptions}>
                     <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
                         onClick={() => settingsRef.current?.showModal()}>
                         <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
