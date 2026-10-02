@@ -3,7 +3,7 @@ import { useSnapshot } from 'valtio'
 import styles from './QueryInput.module.css'
 import {
     buildQuery, buildToken, chipLabel, COLOR_COUNTS, COLOR_MODES, COLORS, COMPARE_WORDS, describe, emptyDraft, filterById,
-    FILTER_GROUPS, isComplete, lastFragment, matchFilters, parseToken, pickCount, splitTerms,
+    FILTER_GROUPS, FILTERS, isComplete, parseToken, pickCount, splitTerms,
     type Draft, type Filter, type Join,
 } from './filters'
 import {
@@ -13,43 +13,35 @@ import {
 import { chipId, querybox } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
-import { usePhone } from '../Hooks/usePhone'
 import { Arrow } from '../Arrow/Arrow'
 
-// what the dropdown list offers: a creature type that matches the typed word, or a filter to fill in
-type Item = { type: string } | { filter: Filter }
+// the filters under their group headings, for the list "Add Search Filter" opens
+const FILTER_LIST = FILTER_GROUPS.map((label) => ({ label, filters: FILTERS.filter((f) => f.group === label) }))
 
-// The search box plus a dropdown that builds Scryfall syntax from plain choices:
-// pick a filter (or start typing its name), fill it in, and it's added to the search as a chip.
+// The search box plus a panel that builds Scryfall syntax from plain choices: "Add Search Filter" lists the
+// filters; pick one, fill it in, and it's added to the search as a chip. Typing in the box only ever searches.
 export function QueryInput() {
     // sync, so typing into the box never jumps the cursor
     const snap = useSnapshot(querybox, { sync: true })
     const text = snap.text
     const [open, setOpen] = useState(false)
-    const [active, setActive] = useState(-1)
-    // the filter being filled in; `fragment` is the typed word it replaces, `chipId` the chip it's editing
-    const [editing, setEditing] = useState<{ filter: Filter, fragment: string, chipId?: number } | null>(null)
+    // the filter being filled in, and `chipId` the chip it's editing
+    const [editing, setEditing] = useState<{ filter: Filter, chipId?: number } | null>(null)
     const [draft, setDraft] = useState<Draft | null>(null)
     const [join, setJoin] = useState<Join>('and')
     // the last chip, once Backspace has been pressed on an empty box; a second press removes it
     const [armed, setArmed] = useState<number | null>(null)
-    const creatures = useCatalog('creature-types')
+    // creature types typed as `t:elf` become chips, and telling them from other types needs the list
+    useCatalog('creature-types')
     const wrapRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
-    // set while focus goes back to the box after adding a filter, so the dropdown doesn't pop straight back open
-    const refocusing = useRef(false)
     const listId = useId()
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
-    // Phones keep the chips in a tray under the box, so the box keeps its width for typing. The tray is open
-    // while a search is being put together and folds away to "See selected filters" once it's searched.
-    const phone = usePhone()
+    // The chips sit in a tray under the box, after "Add Search Filter", so the box keeps its width for typing. The
+    // tray is open while a search is being put together and folds away to "See selected filters" once it's searched.
     const [chipsOpen, setChipsOpen] = useState(true)
-
-    const fragment = lastFragment(text)
-    // a typed word that names a creature type (plurals too) can be added straight away, like an @-mention
-    const typeHits = /^[a-z][a-z' -]{2,}$/i.test(fragment) ? findTypes(fragment, creatures, 3) : []
-    const items: Item[] = [...typeHits.map((type) => ({ type })), ...matchFilters(fragment).map((filter) => ({ filter }))]
+    const trayOpen = chipsOpen || !snap.chips.length
 
     // the other type lists (lands, artifacts…) are only needed once someone starts building a search
     useEffect(() => { if (open) loadTypeCatalogs() }, [open])
@@ -89,32 +81,23 @@ export function QueryInput() {
     function close() {
         setOpen(false)
         setEditing(null)
-        setActive(-1)
     }
 
     function refocus() {
-        refocusing.current = true
         inputRef.current?.focus()
-        refocusing.current = false
     }
 
-    function pick(item: Item) {
-        if ('type' in item) {
-            // straight in as a chip, replacing the word that found it
-            const filter = filterById('creature')!
-            const d = { ...emptyDraft(filter), values: [item.type] }
-            querybox.chips.push({ id: chipId(), token: buildToken(filter, d), join: 'and', filterId: filter.id, draft: d })
-            querybox.text = text.slice(0, text.length - fragment.length)
-            setChipsOpen(true)
-            setActive(-1)
-            refocus()
-            return
-        }
-        // the typed word was what found this filter, so the filter replaces it
-        setEditing({ filter: item.filter, fragment })
-        setDraft(emptyDraft(item.filter))
+    // "Add Search Filter" opens the list of filters (or goes back to it from a filter), and closes it again
+    function toggleFilters() {
+        if (open && !editing) return close()
+        setEditing(null)
+        setOpen(true)
+    }
+
+    function pick(filter: Filter) {
+        setEditing({ filter })
+        setDraft(emptyDraft(filter))
         setJoin('and')
-        setActive(-1)
     }
 
     // open a chip in its filter's editor, or hand a chip we can't edit back to the box as text
@@ -129,7 +112,7 @@ export function QueryInput() {
             refocus()
             return
         }
-        setEditing({ filter, fragment: '', chipId: id })
+        setEditing({ filter, chipId: id })
         setDraft({ ...chip.draft, values: [...chip.draft.values], blocks: chip.draft.blocks.map((b) => ({ ...b })) })
         setJoin(chip.join)
         setOpen(true)
@@ -141,7 +124,6 @@ export function QueryInput() {
         if (editing?.chipId === id) setEditing(null)
     }
 
-    const base = editing ? text.slice(0, text.length - editing.fragment.length) : text
     const token = editing && draft ? buildToken(editing.filter, draft) : ''
     const editIndex = editing?.chipId ? snap.chips.findIndex((c) => c.id === editing.chipId) : -1
     // what the chips would be once this filter is added or updated
@@ -158,10 +140,7 @@ export function QueryInput() {
         const chip = { token, join, filterId: editing.filter.id, draft: { ...draft, values: [...draft.values], blocks: draft.blocks.map((b) => ({ ...b })) } }
         const i = editing.chipId ? querybox.chips.findIndex((c) => c.id === editing.chipId) : -1
         if (i >= 0) Object.assign(querybox.chips[i], chip)
-        else {
-            querybox.chips.push({ id: chipId(), ...chip })
-            querybox.text = base
-        }
+        else querybox.chips.push({ id: chipId(), ...chip })
         setJoin('and')
         refocus()
         if (search) {
@@ -172,7 +151,6 @@ export function QueryInput() {
             // back to the filter list, ready to add the next one
             setChipsOpen(true)
             setEditing(null)
-            setActive(-1)
         }
     }
 
@@ -193,9 +171,6 @@ export function QueryInput() {
 
     // typed syntax like `t:elf` becomes a chip as soon as it's finished with a space
     function onType(value: string) {
-        setOpen(true)
-        setEditing(null)
-        setActive(-1)
         setArmed(null)
         querybox.text = value
         querybox.notice = null
@@ -234,19 +209,8 @@ export function QueryInput() {
             return
         }
         setArmed(null)
-        if (editing) return
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            setOpen(true)
-            const step = e.key === 'ArrowDown' ? 1 : -1
-            setActive((i) => (i + step + items.length) % items.length)
-        } else if (e.key === 'Enter') {
-            // Enter only picks from the list after arrowing to something; otherwise it searches as usual
-            if (open && active >= 0 && items[active]) {
-                e.preventDefault()
-                pick(items[active])
-            } else close()
-        }
+        // Enter searches, so the filters panel gets out of the way of the results
+        if (e.key === 'Enter') close()
     }
 
     const update = (patch: Partial<Draft>) => setDraft((d) => d && { ...d, ...patch })
@@ -274,50 +238,44 @@ export function QueryInput() {
             <div className={styles.bar}>
                 {/* clicking the empty part of the box puts the cursor in it */}
                 <div className={styles.box} onPointerDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}>
-                    {phone ? null : chips}
                     <input
                         ref={inputRef}
                         type="text"
                         autoComplete="off"
                         className={styles.input}
-                        placeholder={snap.chips.length ? (phone ? 'Add more filters' : 'Add more, or type a card name…') : 'Search for Magic cards…'}
+                        placeholder="Search for Magic cards…"
                         aria-label="Search"
                         value={text}
-                        role="combobox"
-                        aria-expanded={open}
-                        aria-controls={listId}
-                        aria-activedescendant={!editing && active >= 0 ? `${listId}-${active}` : undefined}
                         onChange={(e) => onType(e.target.value)}
-                        onFocus={() => { if (!refocusing.current) setOpen(true) }}
-                        // a tap on the box after searching (it still has focus) opens the filters again too
-                        onClick={() => setOpen(true)}
                         onKeyDown={onKeyDown}
                     />
                 </div>
                 {/* the search Searchbar reads: every chip plus what's typed */}
                 <input type="hidden" name="query" value={query} />
-                <button type="button" className={styles.toggle} aria-expanded={open} aria-label={open ? 'Hide filters' : 'Show filters'}
-                    onClick={() => open ? close() : (setOpen(true), refocus())}>
-                    <span className={styles.wide}>{open ? 'Collapse' : 'Filters'}</span>
-                    <Arrow to={open ? 'up' : 'down'} />
-                </button>
                 <button type="submit" className={styles.search} aria-label="Search" onClick={close}>
                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" /></svg>
-                    <span className={styles.wide}>Search</span>
                 </button>
             </div>
 
-            {phone && snap.chips.length ? (
-                <div className={styles.tray} data-open={chipsOpen || undefined}>
-                    {/* first, so open it floats in the top corner and the chips flow around it */}
+            <div className={styles.tray} data-open={trayOpen || undefined}>
+                {/* first, so open it floats in the top corner and the chips flow around it */}
+                {snap.chips.length ? (
                     <button type="button" className={styles.trayToggle} aria-expanded={chipsOpen}
                         aria-label={chipsOpen ? 'Hide selected filters' : undefined} onClick={() => setChipsOpen((o) => !o)}>
                         {chipsOpen ? null : <span>See selected filters</span>}
                         <Arrow to={chipsOpen ? 'up' : 'down'} />
                     </button>
-                    {chipsOpen ? chips : null}
-                </div>
-            ) : null}
+                ) : null}
+                {trayOpen ? (
+                    <>
+                        <button type="button" className={styles.addFilter} aria-expanded={open} aria-controls={listId}
+                            onClick={toggleFilters}>
+                            Add Search Filter <span aria-hidden>+</span>
+                        </button>
+                        {chips}
+                    </>
+                ) : null}
+            </div>
 
             {tidy && dismissed !== query ? (
                 <div className={styles.suggest} role="status">
@@ -373,7 +331,7 @@ export function QueryInput() {
                             {token ? (
                                 <>
                                     <span>{describe(editing.filter, draft)}</span>
-                                    <code>{buildQuery(nextChips, base)}</code>
+                                    <code>{buildQuery(nextChips, text)}</code>
                                 </>
                             ) : <span className={styles.muted}>Fill this in to see what gets added</span>}
                         </div>
@@ -384,49 +342,25 @@ export function QueryInput() {
                         <button type="button" className={styles.primary} disabled={!token} onClick={() => add(true)}>{editing.chipId ? 'Update' : 'Add'} &amp; search</button>
                     </div>
                 </div>
-            ) : open && items.length ? (
-                <div className={styles.panel}>
+            ) : open ? (
+                <div className={styles.panel} id={listId}>
                     <div className={styles.head}>
                         <strong>Add a filter</strong>
-                        <span className={styles.muted}>or just type a card name and press Enter</span>
+                        <span className={styles.muted}>or just type a card name in the search box</span>
                         <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
                     </div>
-                    <div className={styles.groups} id={listId} role="listbox">
-                        {listGroups(items).map((group) => (
-                            <ul key={group.label} className={styles.group} role="group" aria-label={group.label || 'Creature types'} data-types={!group.label || undefined}>
-                                {group.label ? <li role="presentation" className={styles.groupLabel}>{group.label}</li> : null}
-                                {group.items.map(({ item, i }) => {
-                                    const plural = 'type' in item && singular(fragment, creatures) === item.type && item.type.toLowerCase() !== fragment.toLowerCase()
-                                    const merged = 'type' in item && !singular(fragment, creatures) ? mergedType(fragment) : undefined
-                                    const mergedHere = merged && 'type' in item && merged.type === item.type ? merged : undefined
-                                    return (
-                                        <li
-                                            key={'type' in item ? `type-${item.type}` : item.filter.id}
-                                            id={`${listId}-${i}`}
-                                            role="option"
-                                            aria-selected={i === active}
-                                            className={styles.option}
-                                            onPointerDown={(e) => e.preventDefault()}
-                                            onClick={() => pick(item)}
-                                            onPointerEnter={() => setActive(i)}
-                                        >
-                                            {'type' in item ? (
-                                                <>
-                                                    <span>Creature type: <strong>{item.type}</strong></span>
-                                                    <span className={styles.muted}>
-                                                        {mergedHere ? mergedNote(mergedHere)
-                                                            : plural ? `Types are singular, so “${fragment}” means ${item.type}` : `Add ${item.type} cards to your search`}
-                                                    </span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <span>{item.filter.label}</span>
-                                                    <span className={styles.muted}>{item.filter.hint}</span>
-                                                </>
-                                            )}
-                                        </li>
-                                    )
-                                })}
+                    <div className={styles.groups}>
+                        {FILTER_LIST.map((group) => (
+                            <ul key={group.label} className={styles.group} aria-label={group.label}>
+                                <li aria-hidden className={styles.groupLabel}>{group.label}</li>
+                                {group.filters.map((filter) => (
+                                    <li key={filter.id}>
+                                        <button type="button" className={styles.option} onClick={() => pick(filter)}>
+                                            <span>{filter.label}</span>
+                                            <span className={styles.muted}>{filter.hint}</span>
+                                        </button>
+                                    </li>
+                                ))}
                             </ul>
                         ))}
                     </div>
@@ -434,20 +368,6 @@ export function QueryInput() {
             ) : null}
         </div>
     )
-}
-
-// the list's items under their group headings, keeping each item's place in the list for the arrow keys;
-// creature types matching what's typed come first, under no heading
-function listGroups(items: Item[]) {
-    const groups: { label: string, items: { item: Item, i: number }[] }[] = []
-    items.forEach((item, i) => {
-        const label = 'type' in item ? '' : item.filter.group
-        let group = groups.find((g) => g.label === label)
-        if (!group) groups.push(group = { label, items: [] })
-        group.items.push({ item, i })
-    })
-    const order = (label: string) => label ? FILTER_GROUPS.indexOf(label as typeof FILTER_GROUPS[number]) + 1 : 0
-    return groups.sort((a, b) => order(a.label) - order(b.label))
 }
 
 function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draft, update: (p: Partial<Draft>) => void, onDone: () => void }) {
