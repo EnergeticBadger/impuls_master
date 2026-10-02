@@ -2,13 +2,17 @@ import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, typ
 import styles from './Searchbar.module.css'
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { useSnapshot } from 'valtio';
-import { cardsearch, getPage, pageKey, showPage } from '../Context/cards';
+import { useLocation, useNavigate } from 'react-router';
+import { cardsearch, getPage, hidePages, pageKey, showPage } from '../Context/cards';
 import { scryfallGet } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
 import { QueryInput } from './QueryInput';
 import { RowSize } from '../CardGrid/RowSize';
 import { NoResults } from './NoResults';
-import { querybox } from '../Context/query';
+import { chipId, querybox } from '../Context/query';
+import { buildQuery, parseQuery } from './filters';
+import { loadCatalog } from './catalog';
+import { readSearchUrl, searchUrl } from './searchUrl';
 import { sort, sortKey } from '../Context/sort';
 import { SortControl } from './SortControl';
 import { Arrow } from '../Arrow/Arrow';
@@ -148,7 +152,8 @@ let navRun = 0
 type PageState = { number: number, has_more: boolean, total: number, cards: number }
 
 // what the header showed last, so coming back from a card's page picks up where the results left off
-const remembered: { page: PageState, query: string, sort: Sort | null } = { page: { number: 1, has_more: false, total: 1, cards: 0 }, query: '', sort: null }
+// `url` is the address of the results on screen
+const remembered: { page: PageState, query: string, sort: Sort | null, url: string } = { page: { number: 1, has_more: false, total: 1, cards: 0 }, query: '', sort: null, url: '' }
 
 // one setting in the layout pop-up: its name, a Reset back to the default (live only once it's been changed), and its control
 function Setting({ label, changed, reset, children }: { label: string, changed: boolean, reset: () => void, children: ReactNode }) {
@@ -198,92 +203,70 @@ export function Searchbar() {
     }, [])
     // the sort of the results on screen; Previous/Next page through those, a new search picks up the current sort
     const shownSort = useRef<Sort>(remembered.sort ?? { ...sort })
+    const location = useLocation()
+    const navigate = useNavigate()
+    // the address of the search on screen or on its way, so a search made here isn't run again when the address catches up
+    const requested = useRef(remembered.url)
     // leaving for a card's page: a page load still in flight is dropped, so it can't swap the results
     // behind the header's back (the header is gone, so its page number wouldn't follow)
     useEffect(() => () => {
         remembered.sort = shownSort.current
         navRun++
+        // and it's no longer on its way, so coming back to its address loads it again
+        requested.current = remembered.url
         cardsearch.pending = false
     }, [])
 
-    async function searchQuery(e: SubmitEvent<HTMLFormElement>) {
-        e.preventDefault(); // Stop the page from reloading
-        // Use FormData to get the value of the input named "query"
-        const formData = new FormData(e.currentTarget);
-        const queryTerm = formData.get('query')?.toString();
-        const submitter = e.nativeEvent.submitter
-        const action = submitter?.getAttribute("name") ?? "search"
-        if (busy && action !== "search") return
-        let termChanged = false
-        let tempPage = { number: page.number, has_more: page.has_more }
+    // show page `number` of a search: the kept copy if we've seen it, otherwise loaded. `isSearch` is a new search
+    // rather than paging, so finding nothing gets the pop-up. `url` is the address it's at, remembered once it lands.
+    async function go(q: string, by: Sort, number: number, isSearch: boolean, url: string) {
         const run = ++navRun
         let pendingTimer: ReturnType<typeof setTimeout> | undefined
-        let q = query
-        const by: Sort = action === 'search' ? { ...sort } : shownSort.current
-
+        // a different search or sort starts over, so the header resets if it fails
+        const termChanged = q !== query || sortKey(by) !== sortKey(shownSort.current)
+        if (q !== query) setQuery(q)
+        const key = resultKey(q, by, number)
 
         try {
-
-            // if there is a queryTerm from input and it's not the same rest
-            if (queryTerm && query !== queryTerm) {
-                setQuery(queryTerm)
-                termChanged = true
-                tempPage = { number: 1, has_more: false }
-            }
-
-            // a new sort starts over at the first page
-            if (sortKey(by) !== sortKey(shownSort.current)) {
-                termChanged = true
-                tempPage = { number: 1, has_more: false }
-            }
-
-
-            if (action === "next" && page.has_more) {
-                tempPage = { number: page.number + 1, has_more: true }
-            }
-
-            if (action === "back" && page.number > 1) {
-                tempPage = { number: page.number - 1, has_more: page.has_more }
-            }
-
-            q = queryTerm && query !== queryTerm ? queryTerm : query
-            if (!q) return
-            const key = resultKey(q, by, tempPage.number)
-
             // already seen this page: show the kept copy, no fetch and no image reload
             const kept = getPage(key)
             if (kept) {
-                setPage({ number: tempPage.number, has_more: kept.has_more, total: kept.total_pages, cards: kept.total_cards })
+                setPage({ number, has_more: kept.has_more, total: kept.total_pages, cards: kept.total_cards })
                 setCurrentAlternate('none', '')
                 shownSort.current = by
+                remembered.url = url
                 showPage(key)
-                preloadNext(q, tempPage.number, kept.has_more, by)
+                preloadNext(q, number, kept.has_more, by)
                 return
             }
 
             // keep the current page up; only mark it as loading if the wait drags on
             setBusy(true)
-            setLoadingDir(action === 'back' ? 'back' : 'next')
+            setLoadingDir(!termChanged && number < page.number ? 'back' : 'next')
             pendingTimer = setTimeout(() => { if (run === navRun) cardsearch.pending = true }, PENDING_DELAY)
 
             let data: PageData
             try {
-                data = await loadPage(q, tempPage.number, by)
+                data = await loadPage(q, number, by)
                 await firstRowReady(data.cards)
             } catch (error) {
-                if (run === navRun && termChanged) setPage({ number: 1, has_more: false, total: 1, cards: 0 })
+                if (run === navRun) {
+                    remembered.url = url
+                    if (termChanged) setPage({ number: 1, has_more: false, total: 1, cards: 0 })
+                }
                 throw error
             }
             if (run !== navRun) return
 
-            setPage({ number: tempPage.number, has_more: data.has_more, total: data.total_pages, cards: data.total_cards })
+            setPage({ number, has_more: data.has_more, total: data.total_pages, cards: data.total_cards })
             setCurrentAlternate('none', '')
             shownSort.current = by
+            remembered.url = url
             showPage(key, data.cards, data.has_more, data.total_pages, data.total_cards);
-            preloadNext(q, tempPage.number, data.has_more, by)
+            preloadNext(q, number, data.has_more, by)
         } catch (error: unknown) {
             // a search that found nothing gets the pop-up explaining why; paging errors just log
-            if (run === navRun && action === 'search' && error instanceof SearchError && (error.status === 404 || error.status === 400)) {
+            if (run === navRun && isSearch && error instanceof SearchError && (error.status === 404 || error.status === 400)) {
                 querybox.noResults = { query: q, status: error.status, details: error.details, warnings: error.warnings }
             }
             if (error instanceof Error) {
@@ -297,6 +280,68 @@ export function Searchbar() {
             }
         }
     }
+
+    function searchQuery(e: SubmitEvent<HTMLFormElement>) {
+        e.preventDefault(); // Stop the page from reloading
+        // Use FormData to get the value of the input named "query"
+        const formData = new FormData(e.currentTarget);
+        const queryTerm = formData.get('query')?.toString();
+        const submitter = e.nativeEvent.submitter
+        const action = submitter?.getAttribute("name") ?? "search"
+        if (busy && action !== "search") return
+        const by: Sort = action === 'search' ? { ...sort } : shownSort.current
+        const q = queryTerm || query
+        if (!q) return
+
+        // a new search or sort starts over at the first page
+        let number = page.number
+        if (q !== query || sortKey(by) !== sortKey(shownSort.current)) number = 1
+        else if (action === "next" && page.has_more) number++
+        else if (action === "back" && page.number > 1) number--
+
+        // each new search or page is a step in the history, so Back returns to it; the same one again just shows it again
+        const url = searchUrl({ q, ...by, page: number })
+        requested.current = url
+        navigate({ search: url }, { replace: url === location.search, preventScrollReset: true })
+        go(q, by, number, action === 'search', url)
+    }
+
+    // the address changed without a search being made here: opened from a link, refreshed, or Back/Forward
+    useEffect(() => {
+        const target = readSearchUrl(location.search)
+        const url = searchUrl(target)
+        if (url === requested.current) return
+        requested.current = url
+
+        if (!target) {
+            // back to before the first search
+            navRun++
+            setQuery('')
+            setPage({ number: 1, has_more: false, total: 1, cards: 0 })
+            setBusy(false)
+            remembered.url = ''
+            Object.assign(querybox, { chips: [], text: '', noResults: null, notice: null })
+            hidePages()
+            return
+        }
+
+        const by: Sort = { order: target.order, dir: target.dir }
+        sort.order = target.order
+        sort.dir = target.dir
+        if (buildQuery(querybox.chips, querybox.text) !== target.q) {
+            querybox.noResults = null
+            querybox.notice = null
+            // creature types need their list to come back as creature chips; the search doesn't wait for it
+            loadCatalog('creature-types').catch(() => { }).then(() => {
+                if (requested.current !== url) return
+                const { chips, text } = parseQuery(target.q)
+                querybox.chips = chips.map((c) => ({ id: chipId(), ...c }))
+                querybox.text = text
+            })
+        }
+        const isSearch = target.q !== query || sortKey(by) !== sortKey(shownSort.current) || target.page === 1
+        go(target.q, by, target.page, isSearch, url)
+    }, [location.search])
 
     return (
         // Wrap in a form to catch the "Enter" key and "Submit" events
