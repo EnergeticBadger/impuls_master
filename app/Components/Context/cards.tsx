@@ -21,10 +21,22 @@ export function getPage(key: string) {
     return cardsearch.pages.find((p) => p.key === key)
 }
 
-// show a page, adding it if it's new, and remember where we were scrolled on the page we're leaving
-export function showPage(key: string, cards?: CardProps[], has_more = false, total_pages = 1, total_cards = 0) {
+// remember where we were scrolled on the page we're leaving
+function leave() {
     const leaving = getPage(cardsearch.active)
     if (leaving && typeof window !== 'undefined') leaving.scrollY = window.scrollY
+}
+
+// back to no search: every page stays kept, just none of them is on screen
+export function hidePages() {
+    leave()
+    cardsearch.active = ''
+    cardsearch.pending = false
+}
+
+// show a page, adding it if it's new, and remember where we were scrolled on the page we're leaving
+export function showPage(key: string, cards?: CardProps[], has_more = false, total_pages = 1, total_cards = 0) {
+    leave()
 
     let page = getPage(key)
     if (!page) {
