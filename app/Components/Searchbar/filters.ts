@@ -7,14 +7,14 @@ import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from
 export type Option = { label: string, value: string, token?: string }
 
 // the headings the filter list is grouped under, in the order they're shown
-export const FILTER_GROUPS = ['Card', 'Rules text', 'Stats', 'Printing'] as const
+export const FILTER_GROUPS = ['Card', 'Rules text', 'Stats', 'Printing', 'Advanced'] as const
 
 type Base = {
     id: string
     group: typeof FILTER_GROUPS[number]
     label: string
     hint: string
-    // the Scryfall keys this filter writes; syntax typed with one (e.g. `c:red`) becomes this filter's chip
+    // the Scryfall keys this filter writes; syntax read from an address with one (e.g. `c:red`) becomes this filter's chip
     keys: string[]
 }
 
@@ -30,6 +30,8 @@ export type Filter =
     | Base & { kind: 'text', key: string, placeholder: string, suggestions?: string[] }
     // what the card does: roles (otag:), ability blocks built from pieces, and exact words (o:)
     | Base & { kind: 'rules', key: 'o' }
+    // Scryfall syntax written by hand, for whatever the other filters don't cover
+    | Base & { kind: 'query', placeholder: string }
 
 export type Compare = '=' | '>=' | '<=' | '>' | '<'
 export type Match = 'any' | 'all'
@@ -98,6 +100,12 @@ const opts = (...values: string[]): Option[] =>
     values.map((v) => ({ label: v[0].toUpperCase() + v.slice(1), value: v }))
 
 export const FILTERS: Filter[] = [
+    // first, now that there's no search box to type a name into
+    {
+        id: 'name', group: 'Card', kind: 'text', key: 'name', keys: ['name', 'n'],
+        label: 'Name contains', hint: 'Part of the card name',
+        placeholder: 'e.g. dragon',
+    },
     {
         id: 'type', group: 'Card', kind: 'choice', key: 't', keys: ['t', 'type'],
         label: 'Card type', hint: 'Creature, instant, land, saga, equipment… search or browse all of them',
@@ -135,11 +143,6 @@ export const FILTERS: Filter[] = [
         id: 'keyword', group: 'Rules text', kind: 'keyword', key: 'kw', keys: ['kw', 'keyword'],
         label: 'Keyword', hint: 'Flying, trample, scry, landfall… pick one or several',
         common: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'scry', 'cycling', 'flashback', 'landfall'],
-    },
-    {
-        id: 'name', group: 'Rules text', kind: 'text', key: 'name', keys: ['name', 'n'],
-        label: 'Name contains', hint: 'Part of the card name',
-        placeholder: 'e.g. dragon',
     },
     {
         id: 'mv', group: 'Stats', kind: 'number', key: 'mv', keys: ['mv', 'cmc', 'manavalue'],
@@ -191,9 +194,17 @@ export const FILTERS: Filter[] = [
         label: 'Artist', hint: 'Who painted it',
         placeholder: 'e.g. Rebecca Guay',
     },
+    {
+        id: 'custom', group: 'Advanced', kind: 'query', keys: [],
+        label: 'Custom query', hint: 'Write Scryfall syntax yourself, e.g. t:elf (o:draw or o:scry)',
+        placeholder: 'e.g. t:elf (o:draw or o:scry) mv<=3',
+    },
 ]
 
 const quote = (v: string) => /[\s()]/.test(v) ? `"${v.replace(/"/g, '')}"` : v.replace(/"/g, '')
+
+// a custom query written over several lines reads as one
+const oneLine = (v: string) => v.trim().replace(/\s*\n\s*/g, ' ')
 
 // a `t:` value that isn't a type but whose singular is (dragons → dragon), or an old type that was merged
 // into another (ants → insect); anything else is left alone
@@ -204,9 +215,10 @@ export function fixType(value: string) {
 
 // every picked value, including a typed-in extra one
 function picked(filter: Filter, d: Draft) {
+    if (filter.kind !== 'choice') return d.values
     let custom = d.custom.trim()
     if (custom && filter.key === 't') custom = fixType(custom)
-    return filter.kind === 'choice' && custom && !d.values.includes(custom) ? [...d.values, custom] : d.values
+    return custom && !d.values.includes(custom) ? [...d.values, custom] : d.values
 }
 
 // how many separate things a filter has picked; with two or more a card can match any, all or none of them
@@ -263,11 +275,13 @@ export function buildToken(filter: Filter, d: Draft): string {
             token = parts.length > 1 ? (d.match === 'all' ? parts.join(' ') : `(${parts.join(' or ')})`) : parts[0] ?? ''
             break
         }
+        case 'query':
+            token = oneLine(d.text)
+            break
     }
     if (!token || !d.exclude) return token
-    // one term takes a leading minus; a group needs parentheses around it first
-    const unquoted = token.replace(/"[^"]*"/g, '')
-    return /\s/.test(unquoted) && !token.startsWith('(') ? `-(${token})` : `-${token}`
+    // one term takes a leading minus; several need parentheses around them first
+    return isCompound(token) && !isGroup(token) ? `-(${token})` : `-${token}`
 }
 
 // the same filter as a sentence, so it's clear what the syntax means
@@ -310,6 +324,8 @@ export function describe(filter: Filter, d: Draft): string {
             // the pieces have commas of their own, so they're joined with a plain AND / OR
             return `${d.exclude ? "Doesn't do" : 'Does'}: ${said.join(d.match === 'all' ? ' AND ' : ' OR ')}`
         }
+        case 'query':
+            return `${filter.label}: ${not}${oneLine(d.text)}`
     }
 }
 
@@ -324,15 +340,19 @@ function isGroup(q: string) {
     return true
 }
 
-// add a filter to what's already in the box; OR means "everything so far, or this instead"
+// more than one term side by side, e.g. `t:elf c:g` or `t:elf or t:goblin`, but not `(a or b)` or `name:"two words"`
+const isCompound = (q: string) => splitTerms(q).length > 1
+
+// add a filter to what's already in the search; OR means "everything so far, or this instead"
 export function joinQuery(existing: string, token: string, join: Join) {
     const q = existing.trim()
     if (!q) return token
     if (join === 'and') return `${q} ${token}`
-    return `${/\s/.test(q) && !isGroup(q) ? `(${q})` : q} or ${token}`
+    // several terms (a custom query, say) stay together on the right of the OR, as they do on the left
+    return `${/\s/.test(q) && !isGroup(q) ? `(${q})` : q} or ${isCompound(token) && !isGroup(token) ? `(${token})` : token}`
 }
 
-// ---- chips: each filter in the search box is kept as its own piece ----
+// ---- chips: each filter in the search is kept as its own piece ----
 
 // `join` is how this chip combines with everything before it; the first chip's is ignored.
 // `filterId`/`draft` are there when the chip can be reopened in its filter's editor.
@@ -340,14 +360,22 @@ export type Chip = { id: number, token: string, join: Join, filterId?: string, d
 
 export const filterById = (id: string | undefined) => FILTERS.find((f) => f.id === id)
 
-// the whole search: chips read left to right, then whatever is typed in the box
-export function buildQuery(chips: readonly Pick<Chip, 'token' | 'join'>[], text: string) {
+// the whole search: chips read left to right
+export function buildQuery(chips: readonly Pick<Chip, 'token' | 'join'>[]) {
     let q = ''
-    for (const c of chips) q = joinQuery(q, c.token, c.join)
-    const t = text.trim()
-    if (!t) return q
-    // typed text with its own `or` keeps it to itself
-    return joinQuery(q, /\bor\b/i.test(t) && q && !isGroup(t) ? `(${t})` : t, 'and')
+    for (const c of chips) {
+        // a custom query with its own `or` keeps it to itself, wherever it sits among the others
+        const own = chips.length > 1 && splitTerms(c.token).some((t) => isOr(t.term)) && !isGroup(c.token)
+        q = joinQuery(q, own ? `(${c.token})` : c.token, c.join)
+    }
+    return q
+}
+
+// hand-written syntax as a Custom query chip
+export function customChip(text: string, join: Join = 'and'): Omit<Chip, 'id'> {
+    const filter = filterById('custom')!
+    const draft = { ...emptyDraft(filter), text: text.trim() }
+    return { token: buildToken(filter, draft), join, filterId: filter.id, draft }
 }
 
 // a chip's label in words, falling back to its syntax
@@ -438,6 +466,8 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
             // a hand-written regex stays as typed text
             if (rawOp !== ':' || value.startsWith('/')) return null
             return { filter, draft: { ...draft, text: value } }
+        case 'query':
+            return null
     }
 }
 
@@ -464,17 +494,17 @@ export function splitTerms(text: string): { term: string, start: number }[] {
 const isOr = (term: string) => /^or$/i.test(term)
 
 // The reverse of buildQuery, for a search read back from the address: as much as possible goes back into chips
-// and the rest stays as typed text. Either way it searches the same cards.
-export function parseQuery(q: string): { chips: Omit<Chip, 'id'>[], text: string } {
+// and the rest becomes a Custom query chip. Either way it searches the same cards.
+export function parseQuery(q: string): Omit<Chip, 'id'>[] {
     const terms = splitTerms(q).map((t) => t.term)
     for (let n = terms.length; n > 0; n--) {
         const rest = terms.slice(n)
-        // typed text is ANDed onto the chips, so an `or` of its own would change what it means
+        // the rest is ANDed onto the chips, so an `or` of its own would change what it means
         if (rest.some(isOr)) continue
         const chips = toChips(terms.slice(0, n))
-        if (chips) return { chips, text: rest.join(' ') }
+        if (chips) return rest.length ? [...chips, customChip(rest.join(' '))] : chips
     }
-    return { chips: [], text: q.trim() }
+    return q.trim() ? [customChip(q)] : []
 }
 
 // terms the way buildQuery writes chips, back into chips; null if they aren't

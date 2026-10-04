@@ -2,7 +2,7 @@
 
 import { allTypes, creatureTypes, isKnownType, mergedNote, mergedType, singular } from './catalog'
 import { buildToken, chipLabel, emptyDraft, filterById, splitTerms, type Chip, type Compare, type Draft } from './filters'
-import { chipId, querybox } from '../Context/query'
+import { querybox } from '../Context/query'
 
 export type Problem = { text: string, fix?: { label: string, apply: () => void } }
 
@@ -56,13 +56,13 @@ function numeric(chip: Chip): { key: string, span: [number, boolean, number, boo
     return null
 }
 
-export function findProblems(chips: readonly Chip[], text: string, warnings: readonly string[]): Problem[] {
+export function findProblems(chips: readonly Chip[], warnings: readonly string[]): Problem[] {
     const found: Problem[] = warnings.map((w) => ({ text: `Scryfall couldn't read part of your search: ${w}` }))
 
     // types that don't exist; a plural of a real one gets a one-click fix
     for (const chip of chips) {
         const filter = filterById(chip.filterId)
-        if (!filter || !chip.draft || filter.key !== 't') continue
+        if (!filter || !chip.draft || filter.kind === 'query' || filter.key !== 't') continue
         const d = chip.draft
         for (const v of [...d.values, ...(d.custom.trim() ? [d.custom.trim()] : [])]) {
             const opt = filter.kind === 'choice' ? filter.options.find((o) => o.value === v) : undefined
@@ -79,29 +79,40 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
         }
     }
 
-    // a typed t:word that isn't a type stays as text rather than becoming a chip
-    for (const [, word] of text.matchAll(/(?:^|\s)-?t(?:ype)?[:=]"?([\w'-]+)/gi)) {
-        if (allTypes() && !isKnownType(word) && !singular(word, allTypes()) && !mergedType(word)) {
-            found.push({ text: `“${word}” isn't a card type or subtype, so no card can match it. Browse the Card type filter for the full list.` })
+    // what's written in custom queries, the ones that have to match
+    const custom = chips.filter((c) => c.filterId === 'custom' && c.draft && !c.draft.exclude)
+
+    // a written t:word that isn't a type
+    for (const chip of custom) {
+        for (const [, word] of chip.draft!.text.matchAll(/(?:^|\s)-?t(?:ype)?[:=]"?([\w'-]+)/gi)) {
+            if (allTypes() && !isKnownType(word) && !singular(word, allTypes()) && !mergedType(word)) {
+                found.push({ text: `“${word}” isn't a card type or subtype, so no card can match it. Browse the Card type filter for the full list.` })
+            }
         }
     }
 
     // a plain word only searches card names; one that's a creature type probably meant the type
-    if (!/[:<>=()"]/.test(text)) {
+    for (const chip of custom) {
+        const text = chip.draft!.text
+        if (/[:<>=()"]/.test(text)) continue
         const creature = creatureTypes()
-        for (const word of text.trim().split(/\s+/).filter(Boolean)) {
+        const words = text.trim().split(/\s+/).filter(Boolean)
+        for (const word of words) {
             const merged = creature && !singular(word, creature) ? mergedType(word) : undefined
             const type = singular(word, creature) ?? merged?.type
             if (!type) continue
             found.push({
-                text: `Words typed on their own only search card names, and no card name has “${word}”. Looking for ${type} cards?${merged ? ` ${mergedNote(merged)}` : ''}`,
+                text: `Words on their own only search card names, and no card name has “${word}”. Looking for ${type} cards?${merged ? ` ${mergedNote(merged)}` : ''}`,
                 fix: {
                     label: `Search ${type} cards instead`,
                     apply: () => {
+                        // the word on its own becomes a Creature type chip in its place; among other words it's
+                        // written as the type, so the query keeps its shape
+                        if (words.length > 1) return redraft(chip.id, { text: words.map((w) => w === word ? `t:${type.toLowerCase()}` : w).join(' ') })
+                        const target = querybox.chips.find((c) => c.id === chip.id)
                         const filter = filterById('creature')!
                         const d = { ...emptyDraft(filter), values: [type] }
-                        querybox.text = text.split(/\s+/).filter((w) => w && w !== word).join(' ')
-                        querybox.chips.push({ id: chipId(), token: buildToken(filter, d), join: 'and', filterId: filter.id, draft: d })
+                        if (target) Object.assign(target, { token: buildToken(filter, d), filterId: filter.id, draft: d })
                     },
                 },
             })
@@ -109,7 +120,7 @@ export function findProblems(chips: readonly Chip[], text: string, warnings: rea
     }
 
     // filters that can't both be true; only checked when everything is joined with AND, where that's certain
-    if (!chips.some((c, i) => i > 0 && c.join === 'or') && !/\bor\b/i.test(text)) {
+    if (!chips.some((c, i) => i > 0 && c.join === 'or')) {
         const seen: { chip: Chip, key: string, span: [number, boolean, number, boolean] }[] = []
         for (const chip of chips) {
             const n = numeric(chip)
@@ -142,6 +153,12 @@ function onlyNumber(chip: Chip) {
 
 const termsOf = (s: string) => splitTerms(s).map((t) => t.term.toLowerCase())
 
+// the terms a card must match for a chip; none for a custom query with its own `or`, which requires none of them
+const required = (s: string) => {
+    const terms = termsOf(s)
+    return terms.includes('or') ? [] : terms
+}
+
 // the choices of an "any of" chip, e.g. (t:creature or t:elf) gives [[t:creature], [t:elf]]; null for anything else
 function optionsOf(token: string): string[][] | null {
     const group = /^\((.*)\)$/s.exec(token.trim())
@@ -156,11 +173,11 @@ function optionsOf(token: string): string[][] | null {
     return options.every((o) => o.length) ? options : null
 }
 
-// A simpler search that finds the same cards: repeated filters, ones another filter already covers,
-// and typed words a chip already searches. Only when everything is joined with AND, where that's certain.
-export type Tidy = { reasons: string[], removeIds: number[], text: string }
+// A simpler search that finds the same cards: repeated filters, and ones another filter already covers.
+// Only when everything is joined with AND, where that's certain.
+export type Tidy = { reasons: string[], removeIds: number[] }
 
-export function findRedundant(chips: readonly Chip[], text: string): Tidy | null {
+export function findRedundant(chips: readonly Chip[]): Tidy | null {
     if (chips.some((c, i) => i > 0 && c.join === 'or')) return null
     const reasons: string[] = []
     const removed = new Set<number>()
@@ -172,7 +189,7 @@ export function findRedundant(chips: readonly Chip[], text: string): Tidy | null
         const same = kept().find((c) => c.id !== chip.id && c.token.toLowerCase() === chip.token.toLowerCase())
         const wider = same ? undefined : kept().find((c) => {
             if (c.id === chip.id) return false
-            const theirs = termsOf(c.token)
+            const theirs = required(c.token)
             return mine.every((t) => theirs.includes(t))
         })
         if (same) reasons.push(`“${chipLabel(chip)}” is in your search twice.`)
@@ -188,7 +205,7 @@ export function findRedundant(chips: readonly Chip[], text: string): Tidy | null
         if (!options) continue
         const settles = kept().find((c) => {
             if (c.id === chip.id) return false
-            const theirs = termsOf(c.token)
+            const theirs = required(c.token)
             return options.some((o) => o.every((t) => theirs.includes(t)))
         })
         if (!settles) continue
@@ -211,17 +228,5 @@ export function findRedundant(chips: readonly Chip[], text: string): Tidy | null
         removed.add(chip.id)
     }
 
-    // words typed in the box that a chip already searches
-    let rest = text
-    if (!/\bor\b/i.test(text)) {
-        const chipTerms = new Map(kept().flatMap((c) => termsOf(c.token).map((t) => [t, c] as const)))
-        const words = splitTerms(text)
-        // the last word isn't finished until a space follows it
-        const done = /\s$/.test(text) ? words : words.slice(0, -1)
-        const extra = done.filter((w) => chipTerms.has(w.term.toLowerCase()))
-        for (const w of extra) reasons.push(`“${w.term}” is typed in the box but “${chipLabel(chipTerms.get(w.term.toLowerCase())!)}” already searches it.`)
-        if (extra.length) rest = words.filter((w) => !extra.includes(w)).map((w) => w.term).join(' ')
-    }
-
-    return reasons.length ? { reasons, removeIds: [...removed], text: rest } : null
+    return reasons.length ? { reasons, removeIds: [...removed] } : null
 }

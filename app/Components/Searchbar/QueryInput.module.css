@@ -1,60 +1,7 @@
-/* the search box and its buttons; the filter panel hangs below it */
+/* the filters tray and its chips; the filter panel hangs below it */
 .wrap {
     position: relative;
     min-width: 0;
-}
-
-.bar {
-    display: flex;
-    align-items: stretch;
-    gap: var(--space-2);
-    /* room for the logo, which sits on the box's line (Searchbar) */
-    margin-left: var(--bar-indent, 0);
-}
-
-/* when chips wrap onto more lines, the buttons stay one line tall at the top */
-.bar > button {
-    max-height: var(--search-height);
-}
-
-/* looks like one text box: the chips sit in it, before the cursor */
-.box {
-    box-sizing: border-box;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: var(--search-height);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-subtle);
-    background-color: var(--surface-0);
-    cursor: text;
-    transition: border-color var(--ease);
-}
-
-.box:focus-within {
-    border-color: var(--text);
-}
-
-.input {
-    flex: 1 1 8em;
-    min-width: 6em;
-    padding-block: var(--space-1);
-    color: var(--text);
-    font-size: var(--text-md);
-    font-weight: 300;
-    line-height: var(--leading);
-}
-
-.input::placeholder {
-    color: var(--text-muted);
-}
-
-.box .input:focus-visible {
-    outline: none;
 }
 
 .chipGroup {
@@ -80,7 +27,7 @@
     background-color: var(--raised-hover);
 }
 
-/* one filter in the box, or one picked creature type */
+/* one filter in the tray, or one picked creature type */
 .token {
     display: inline-flex;
     align-items: center;
@@ -92,8 +39,7 @@
     font-size: var(--text-sm);
 }
 
-.token[data-editing],
-.token[data-armed] {
+.token[data-editing] {
     border-color: var(--accent-line);
     background-color: var(--accent-tint);
 }
@@ -133,36 +79,11 @@ button.tokenLabel:hover,
     background-color: var(--raised-hover);
 }
 
-/* the main action in the header, a square icon button; the box opens the filters when clicked, and the sheet has
-   its own ×, so there's no separate filters toggle. The header is already --accent, so it takes the lighter red */
-.search {
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    min-width: var(--search-height);
-    padding: 0;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: background-color var(--ease);
-    background-color: var(--accent-line);
-    border: 1px solid var(--border-faint);
-}
-
-.search:hover {
-    background-color: var(--accent-hover);
-}
-
-.search svg {
-    fill: currentColor;
-}
-
 /*
- * On a phone the filter panel is a sheet: the whole width and everything below the search box, so the box and its chips
+ * On a phone the filter panel is a sheet: the whole width and everything below the filters tray, so the chips
  * stay in view above it while the filters get the rest of the screen, with × to put it away. Its heading and
  * its Add buttons stay pinned while the middle scrolls, so the way out is always in view. --wrap-bottom is where
- * the search box ends (QueryInput).
+ * the tray ends (QueryInput).
  */
 .panel {
     position: fixed;
@@ -406,6 +327,21 @@ button.option:focus-visible {
     width: 7em;
 }
 
+/* the custom query: written syntax, so it reads like code and wraps across the panel */
+.code {
+    width: 100%;
+    min-height: 5em;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--text-sm);
+    line-height: var(--leading);
+}
+
+.muted a {
+    color: var(--text);
+    text-decoration: underline;
+}
+
 /* pinned to the bottom of the scrolling panel, so Add is always in reach */
 .foot {
     position: sticky;
@@ -577,12 +513,11 @@ button.option:focus-visible {
 }
 
 /*
- * The chips sit in a dark tray under the box, across the header's whole width. Open, they flow like words with ^
+ * The chips sit in a dark tray under the logo, across the header's whole width. Open, they flow like words with ^
  * floated in the top corner, so only the first line makes room for it; folded away, the tray is one "See selected
  * filters" bar.
  */
 .tray {
-    margin-top: var(--space-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-md);
     background-color: var(--raised-0);
@@ -795,24 +730,6 @@ button.option:focus-visible {
 
 .pieceList > .muted {
     padding: var(--space-2) var(--space-3);
-}
-
-/* ---- notes about what was typed ---- */
-.notice {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border-faint);
-    border-left: 3px solid var(--amber-600);
-    border-radius: var(--radius-sm);
-    background-color: var(--raised-0);
-    font-size: var(--text-sm);
-}
-
-.notice > span {
-    flex: 1 1 auto;
 }
 
 /* "your search can be simpler": what's repeated, the tidier search, and buttons to use it */
