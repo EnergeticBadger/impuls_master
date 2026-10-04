@@ -597,6 +597,24 @@ button.option:focus-visible {
     background-color: var(--raised-hover);
 }
 
+/* next to "Add Search Filter" once there are filters, the same size, in the accent color */
+.traySearch {
+    vertical-align: top;
+    margin: 0 var(--space-2) var(--space-2) 0;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background-color: var(--accent);
+    font-size: var(--text-sm);
+    line-height: 1.25;
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.traySearch:hover {
+    background-color: var(--accent-hover);
+}
+
 /* Wider screens: the filters drop down under the tray instead of taking the screen, up to a comfortable reading
    width, and reach no further than the bottom of the screen */
 @media screen and (min-width: 641px) {

@@ -81,13 +81,13 @@ export function QueryInput({ searched }: { searched: string }) {
         if (!open) search()
     }
 
-    // what was changed while the panel was open is searched as it closes
-    function close() {
+    // what was changed while the panel was open is searched as it closes; `force` (the Search buttons) searches anyway
+    function close(force = false) {
         // focus goes back to the button that opened the panel, rather than nowhere
         if (panelRef.current?.contains(document.activeElement)) addRef.current?.focus()
         setOpen(false)
         setEditing(null)
-        if (buildQuery(querybox.chips) !== searchedRef.current) search()
+        if (force || buildQuery(querybox.chips) !== searchedRef.current) search()
     }
 
     // "Add Search Filter" opens the list of filters (or goes back to it from a filter), and closes it again
@@ -198,6 +198,10 @@ export function QueryInput({ searched }: { searched: string }) {
                             onClick={toggleFilters}>
                             Add Search Filter <span aria-hidden>+</span>
                         </button>
+                        {/* the panel has its own Search button while it's open */}
+                        {snap.chips.length && !open ? (
+                            <button type="button" className={styles.traySearch} onClick={search}>Search</button>
+                        ) : null}
                         {chips}
                     </>
                 ) : null}
@@ -226,7 +230,7 @@ export function QueryInput({ searched }: { searched: string }) {
                         <button type="button" className={styles.back} onClick={() => setEditing(null)}>‹ All filters</button>
                         <strong>{editing.filter.label}</strong>
                         <span className={styles.muted}>{editing.filter.hint}</span>
-                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
+                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={() => close()}>×</button>
                     </div>
 
                     <Editor filter={editing.filter} draft={draft} update={update} onDone={() => add(false)} />
@@ -265,7 +269,7 @@ export function QueryInput({ searched }: { searched: string }) {
                     <div className={styles.head}>
                         <strong>Add a filter</strong>
                         <span className={styles.muted}>Pick one, fill it in, and it joins your search</span>
-                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
+                        <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={() => close()}>×</button>
                     </div>
                     <div className={styles.groups}>
                         {FILTER_LIST.map((group) => (
@@ -281,6 +285,18 @@ export function QueryInput({ searched }: { searched: string }) {
                                 ))}
                             </ul>
                         ))}
+                    </div>
+                    <div className={styles.foot}>
+                        <div className={styles.preview}>
+                            {query ? (
+                                <>
+                                    <span>Your search</span>
+                                    <code>{query}</code>
+                                </>
+                            ) : <span className={styles.muted}>Add a filter to search</span>}
+                        </div>
+                        {/* with every filter taken out, it still clears the search on screen */}
+                        <button type="button" className={styles.primary} disabled={!query && !searched} onClick={() => close(true)}>Search</button>
                     </div>
                 </div>
             ) : null}
