@@ -3,14 +3,14 @@ import { useSnapshot } from 'valtio'
 import styles from './QueryInput.module.css'
 import {
     buildQuery, buildToken, chipLabel, COLOR_COUNTS, COLOR_MODES, COLORS, COMPARE_WORDS, describe, emptyDraft, filterById,
-    FILTER_GROUPS, FILTERS, isComplete, parseToken, pickCount, splitTerms,
+    FILTER_GROUPS, FILTERS, isComplete, pickCount,
     type Draft, type Filter, type Join,
 } from './filters'
 import {
     findTypes, isKnownType, keywordLabel, loadTypeCatalogs, mergedNote, mergedType, singular, typeLabel, useCatalog,
     useKeywordGroups, useTypeGroups,
 } from './catalog'
-import { chipId, querybox } from '../Context/query'
+import { querybox, chipId } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
 import { Arrow } from '../Arrow/Arrow'
@@ -18,35 +18,35 @@ import { Arrow } from '../Arrow/Arrow'
 // the filters under their group headings, for the list "Add Search Filter" opens
 const FILTER_LIST = FILTER_GROUPS.map((label) => ({ label, filters: FILTERS.filter((f) => f.group === label) }))
 
-// The search box plus a panel that builds Scryfall syntax from plain choices: "Add Search Filter" lists the
-// filters; pick one, fill it in, and it's added to the search as a chip. Typing in the box only ever searches.
-export function QueryInput() {
-    // sync, so typing into the box never jumps the cursor
-    const snap = useSnapshot(querybox, { sync: true })
-    const text = snap.text
+// The search, built from plain choices: "Add Search Filter" lists the filters; pick one, fill it in, and it's added
+// to the search as a chip. Whatever the filters don't cover can be written as a Custom query in Scryfall's syntax.
+// There's no search button: the search follows the chips. A change in the tray searches straight away; changes
+// made with the filters panel open search once it closes. `searched` is the search on screen (or on its way).
+export function QueryInput({ searched }: { searched: string }) {
+    const snap = useSnapshot(querybox)
     const [open, setOpen] = useState(false)
     // the filter being filled in, and `chipId` the chip it's editing
     const [editing, setEditing] = useState<{ filter: Filter, chipId?: number } | null>(null)
     const [draft, setDraft] = useState<Draft | null>(null)
     const [join, setJoin] = useState<Join>('and')
-    // the last chip, once Backspace has been pressed on an empty box; a second press removes it
-    const [armed, setArmed] = useState<number | null>(null)
-    // creature types typed as `t:elf` become chips, and telling them from other types needs the list
-    useCatalog('creature-types')
     const wrapRef = useRef<HTMLDivElement>(null)
-    const inputRef = useRef<HTMLInputElement>(null)
+    const panelRef = useRef<HTMLDivElement>(null)
+    const addRef = useRef<HTMLButtonElement>(null)
     const listId = useId()
     // the search a suggestion was waved away for, so it stays gone until the search changes
     const [dismissed, setDismissed] = useState<string | null>(null)
-    // The chips sit in a tray under the box, after "Add Search Filter", so the box keeps its width for typing. The
-    // tray stays open, searching included, until it's folded away to "See selected filters".
+    // The chips sit in a tray after "Add Search Filter". The tray stays open, searching included, until it's
+    // folded away to "See selected filters".
     const [chipsOpen, setChipsOpen] = useState(true)
     const trayOpen = chipsOpen || !snap.chips.length
+    // for close(), which also runs from listeners set up before the latest search
+    const searchedRef = useRef(searched)
+    useEffect(() => { searchedRef.current = searched }, [searched])
 
     // the other type lists (lands, artifacts…) are only needed once someone starts building a search
     useEffect(() => { if (open) loadTypeCatalogs() }, [open])
 
-    // where the search box ends on screen: the panel below it may use the rest of the screen's height
+    // where the tray ends on screen: the panel below it may use the rest of the screen's height
     // (the header is sticky, so this doesn't change as the page scrolls)
     useEffect(() => {
         const wrap = wrapRef.current
@@ -59,23 +59,35 @@ export function QueryInput() {
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
     }, [open])
 
-    // clicking anywhere else closes the dropdown
+    // clicking anywhere else, or Escape, closes the panel
     useEffect(() => {
         if (!open) return
         const onDown = (e: PointerEvent) => {
             if (!wrapRef.current?.contains(e.target as Node)) close()
         }
+        const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') close() }
         document.addEventListener('pointerdown', onDown)
-        return () => document.removeEventListener('pointerdown', onDown)
+        document.addEventListener('keydown', onKey)
+        return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
     }, [open])
 
-    function close() {
-        setOpen(false)
-        setEditing(null)
+    // run the search for the chips as they are now (Searchbar reads them); with none left, it goes back to no search
+    function search() {
+        wrapRef.current?.closest('form')?.requestSubmit()
     }
 
-    function refocus() {
-        inputRef.current?.focus()
+    // a change made outside the panel searches now; with the panel open it waits until it closes
+    function changed() {
+        if (!open) search()
+    }
+
+    // what was changed while the panel was open is searched as it closes
+    function close() {
+        // focus goes back to the button that opened the panel, rather than nowhere
+        if (panelRef.current?.contains(document.activeElement)) addRef.current?.focus()
+        setOpen(false)
+        setEditing(null)
+        if (buildQuery(querybox.chips) !== searchedRef.current) search()
     }
 
     // "Add Search Filter" opens the list of filters (or goes back to it from a filter), and closes it again
@@ -91,38 +103,28 @@ export function QueryInput() {
         setJoin('and')
     }
 
-    // open a chip in its filter's editor, or hand a chip we can't edit back to the box as text
+    // open a chip in its filter's editor; one without a filter of its own opens as a custom query
     function editChip(id: number) {
-        const i = querybox.chips.findIndex((c) => c.id === id)
-        const chip = querybox.chips[i]
-        const filter = filterById(chip?.filterId)
+        const chip = querybox.chips.find((c) => c.id === id)
         if (!chip) return
-        if (!filter || !chip.draft) {
-            querybox.chips.splice(i, 1)
-            querybox.text = `${text.trimEnd()} ${chip.token} `.trimStart()
-            refocus()
-            return
-        }
+        const known = filterById(chip.filterId)
+        const filter = known && chip.draft ? known : filterById('custom')!
+        const from = known && chip.draft ? chip.draft : { ...emptyDraft(filter), text: chip.token }
         setEditing({ filter, chipId: id })
-        setDraft({ ...chip.draft, values: [...chip.draft.values], blocks: chip.draft.blocks.map((b) => ({ ...b })) })
+        setDraft({ ...from, values: [...from.values], blocks: from.blocks.map((b) => ({ ...b })) })
         setJoin(chip.join)
         setOpen(true)
     }
 
-    // `search` re-runs the search without the chip; with nothing left there's nothing to search, and an empty
-    // query would have Searchbar repeat the last search instead
-    function removeChip(id: number, search = false) {
+    function removeChip(id: number) {
         const i = querybox.chips.findIndex((c) => c.id === id)
         if (i >= 0) querybox.chips.splice(i, 1)
         if (editing?.chipId === id) setEditing(null)
-        if (search && buildQuery(querybox.chips, querybox.text)) {
-            close()
-            // wait for React to write the new query into the form before submitting it
-            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
-        }
     }
 
-    const token = editing && draft ? buildToken(editing.filter, draft) : ''
+    // a custom query with a bracket or quote still open isn't ready to add
+    const unfinished = editing?.filter.kind === 'query' && !!draft && !isComplete(draft.text)
+    const token = editing && draft && !unfinished ? buildToken(editing.filter, draft) : ''
     const editIndex = editing?.chipId ? snap.chips.findIndex((c) => c.id === editing.chipId) : -1
     // what the chips would be once this filter is added or updated
     const nextChips = editing && token
@@ -140,75 +142,23 @@ export function QueryInput() {
         if (i >= 0) Object.assign(querybox.chips[i], chip)
         else querybox.chips.push({ id: chipId(), ...chip })
         setJoin('and')
-        refocus()
-        if (search) {
-            close()
-            // wait for React to write the new query into the form before submitting it
-            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
-        } else {
+        if (search) close()
+        else {
             // back to the filter list, ready to add the next one
             setChipsOpen(true)
             setEditing(null)
         }
     }
 
-    // a simpler search that finds the same cards, offered under the box
-    const query = buildQuery(snap.chips, text)
-    const tidy = findRedundant(snap.chips, text)
+    // a simpler search that finds the same cards, offered under the tray
+    const query = buildQuery(snap.chips)
+    const tidy = findRedundant(snap.chips)
 
-    function applyTidy(search: boolean) {
+    function applyTidy() {
         if (!tidy) return
         querybox.chips = querybox.chips.filter((c) => !tidy.removeIds.includes(c.id))
-        querybox.text = tidy.text
         if (editing?.chipId && tidy.removeIds.includes(editing.chipId)) setEditing(null)
-        if (search) {
-            close()
-            requestAnimationFrame(() => inputRef.current?.form?.requestSubmit())
-        } else refocus()
-    }
-
-    // typed syntax like `t:elf` becomes a chip as soon as it's finished with a space
-    function onType(value: string) {
-        setArmed(null)
-        querybox.text = value
-        querybox.notice = null
-        if (!value.endsWith(' ')) return
-        const terms = splitTerms(value)
-        const last = terms.at(-1)
-        if (!last || !isComplete(last.term)) return
-        const parsed = parseToken(last.term)
-        if (!parsed) return
-        const before = terms.slice(0, -1)
-        let joinWith: Join = 'and'
-        let keep = value.slice(0, last.start)
-        // `or` right before it, with nothing else typed, means "or" against the chips so far
-        if (before.at(-1)?.term.toLowerCase() === 'or') {
-            if (before.length > 1 || !querybox.chips.length) return
-            joinWith = 'or'
-            keep = ''
-        } else if (before.some((t) => /^or$/i.test(t.term))) return
-        querybox.chips.push({ id: chipId(), token: buildToken(parsed.filter, parsed.draft), join: joinWith, filterId: parsed.filter.id, draft: parsed.draft })
-        querybox.text = keep
-        setChipsOpen(true)
-        // an old creature type was swapped for the one it became; say so, since the chip shows the new name
-        const typed = last.term.match(/^-?(?:t|type)[:=]"?([^"]+)"?$/i)?.[1]
-        const merged = typed ? mergedType(typed) : undefined
-        if (merged && parsed.filter.id === 'creature') querybox.notice = `${mergedNote(merged)} Searching ${merged.type} instead.`
-    }
-
-    function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-        if (e.key === 'Escape') return close()
-        if (e.key === 'Backspace' && !text && snap.chips.length) {
-            const last = snap.chips.at(-1)!.id
-            if (armed === last) removeChip(last)
-            else setArmed(last)
-            // the chip about to go should be in view
-            setChipsOpen(true)
-            return
-        }
-        setArmed(null)
-        // Enter searches, so the filters panel gets out of the way of the results
-        if (e.key === 'Enter') close()
+        changed()
     }
 
     const update = (patch: Partial<Draft>) => setDraft((d) => d && { ...d, ...patch })
@@ -218,43 +168,21 @@ export function QueryInput() {
         <span key={c.id} className={styles.chipGroup}>
             {i > 0 ? (
                 <button type="button" className={styles.join} title="Switch between AND and OR"
-                    onClick={() => { querybox.chips[i].join = c.join === 'and' ? 'or' : 'and' }}>
+                    onClick={() => { querybox.chips[i].join = c.join === 'and' ? 'or' : 'and'; changed() }}>
                     {c.join}
                 </button>
             ) : null}
-            <span className={styles.token} data-armed={armed === c.id || undefined} data-editing={editing?.chipId === c.id || undefined}>
+            <span className={styles.token} data-editing={editing?.chipId === c.id || undefined}>
                 <button type="button" className={styles.tokenLabel} title={c.token} onClick={() => editChip(c.id)}>
                     {chipLabel(c)}
                 </button>
-                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => removeChip(c.id, true)}>×</button>
+                <button type="button" className={styles.tokenRemove} aria-label={`Remove ${chipLabel(c)}`} onClick={() => { removeChip(c.id); changed() }}>×</button>
             </span>
         </span>
     ))
 
     return (
         <div className={styles.wrap} ref={wrapRef}>
-            <div className={styles.bar}>
-                {/* clicking the empty part of the box puts the cursor in it */}
-                <div className={styles.box} onPointerDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}>
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        autoComplete="off"
-                        className={styles.input}
-                        placeholder="Search for Magic cards…"
-                        aria-label="Search"
-                        value={text}
-                        onChange={(e) => onType(e.target.value)}
-                        onKeyDown={onKeyDown}
-                    />
-                </div>
-                {/* the search Searchbar reads: every chip plus what's typed */}
-                <input type="hidden" name="query" value={query} />
-                <button type="submit" className={styles.search} aria-label="Search" onClick={close}>
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" /></svg>
-                </button>
-            </div>
-
             <div className={styles.tray} data-open={trayOpen || undefined}>
                 {/* first, so open it floats in the top corner and the chips flow around it */}
                 {snap.chips.length ? (
@@ -266,7 +194,7 @@ export function QueryInput() {
                 ) : null}
                 {trayOpen ? (
                     <>
-                        <button type="button" className={styles.addFilter} aria-expanded={open} aria-controls={listId}
+                        <button type="button" ref={addRef} className={styles.addFilter} aria-expanded={open} aria-controls={listId}
                             onClick={toggleFilters}>
                             Add Search Filter <span aria-hidden>+</span>
                         </button>
@@ -279,29 +207,21 @@ export function QueryInput() {
                 <div className={styles.suggest} role="status">
                     <div className={styles.suggestHead}>
                         <strong>Your search can be simpler</strong>
-                        <button type="button" className={styles.tokenRemove} aria-label="Dismiss" onClick={() => { setDismissed(query); refocus() }}>×</button>
+                        <button type="button" className={styles.tokenRemove} aria-label="Dismiss" onClick={() => setDismissed(query)}>×</button>
                     </div>
                     <ul>{tidy.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
                     <div className={styles.suggestFoot}>
                         <span className={styles.muted}>Same cards with</span>
-                        <code>{buildQuery(snap.chips.filter((c) => !tidy.removeIds.includes(c.id)), tidy.text) || 'nothing'}</code>
+                        <code>{buildQuery(snap.chips.filter((c) => !tidy.removeIds.includes(c.id))) || 'nothing'}</code>
                         <span className={styles.suggestButtons}>
-                            <button type="button" className={styles.secondary} onClick={() => applyTidy(false)}>Update</button>
-                            <button type="button" className={styles.primary} onClick={() => applyTidy(true)}>Update &amp; search</button>
+                            <button type="button" className={styles.primary} onClick={applyTidy}>Simplify</button>
                         </span>
                     </div>
                 </div>
             ) : null}
 
-            {snap.notice ? (
-                <div className={styles.notice} role="status">
-                    <span>{snap.notice}</span>
-                    <button type="button" className={styles.tokenRemove} aria-label="Dismiss" onClick={() => { querybox.notice = null }}>×</button>
-                </div>
-            ) : null}
-
             {open && editing && draft ? (
-                <div className={styles.panel}>
+                <div className={styles.panel} ref={panelRef}>
                     <div className={styles.head}>
                         <button type="button" className={styles.back} onClick={() => setEditing(null)}>‹ All filters</button>
                         <strong>{editing.filter.label}</strong>
@@ -329,22 +249,22 @@ export function QueryInput() {
                             {token ? (
                                 <>
                                     <span>{describe(editing.filter, draft)}</span>
-                                    <code>{buildQuery(nextChips, text)}</code>
+                                    <code>{buildQuery(nextChips)}</code>
                                 </>
                             ) : <span className={styles.muted}>Fill this in to see what gets added</span>}
                         </div>
                         {editing.chipId ? (
-                            <button type="button" className={styles.secondary} onClick={() => { removeChip(editing.chipId!); refocus() }}>Remove</button>
+                            <button type="button" className={styles.secondary} onClick={() => removeChip(editing.chipId!)}>Remove</button>
                         ) : null}
                         <button type="button" className={styles.secondary} disabled={!token} onClick={() => add(false)}>{editing.chipId ? 'Update' : 'Add'}</button>
                         <button type="button" className={styles.primary} disabled={!token} onClick={() => add(true)}>{editing.chipId ? 'Update' : 'Add'} &amp; search</button>
                     </div>
                 </div>
             ) : open ? (
-                <div className={styles.panel} id={listId}>
+                <div className={styles.panel} id={listId} ref={panelRef}>
                     <div className={styles.head}>
                         <strong>Add a filter</strong>
-                        <span className={styles.muted}>or just type a card name in the search box</span>
+                        <span className={styles.muted}>Pick one, fill it in, and it joins your search</span>
                         <button type="button" className={styles.sheetClose} aria-label="Close filters" onClick={close}>×</button>
                     </div>
                     <div className={styles.groups}>
@@ -475,6 +395,20 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                             ))}
                         </div>
                     ) : null}
+                </>
+            )
+        case 'query':
+            return (
+                <>
+                    <textarea className={`${styles.field} ${styles.code}`} autoFocus rows={3} spellCheck={false} autoCapitalize="off"
+                        autoComplete="off" aria-label={filter.label} placeholder={filter.placeholder} value={draft.text}
+                        onChange={(e) => update({ text: e.target.value })}
+                        // Enter adds it like the other filters; Shift+Enter starts a new line
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDone() } }} />
+                    {!isComplete(draft.text) ? <span className={styles.noteLine}>A bracket or quote is still open.</span> : null}
+                    <span className={styles.muted}>
+                        Written in Scryfall's search syntax. <a href="https://scryfall.com/docs/syntax" target="_blank" rel="noreferrer">See the syntax guide</a>
+                    </span>
                 </>
             )
     }

@@ -1,7 +1,7 @@
 /*
- * The header, the same on every screen: the logo and the search box on one line, the filters tray under it, then
- * sort, then (once there are results) the count and pages in a darker strip along the header's bottom edge.
- * Cards per row is set once and left alone, so it waits in the layout settings behind the gear.
+ * The header, the same on every screen: the logo and name with the gear across from them, the filters tray under
+ * them, then sort, then (once there are results) the count and pages in a darker strip along the header's bottom
+ * edge. Cards per row is set once and left alone, so it waits in the layout settings behind the gear.
  */
 .main_content {
     --header-pad: var(--gutter);
@@ -12,7 +12,7 @@
     box-shadow: var(--shadow);
 }
 
-/* phones keep the header's edges tight, so the search box gets the room */
+/* phones keep the header's edges tight, so the filters get the room */
 @media screen and (max-width: 640px) {
     .main_content {
         --header-pad: var(--space-3);
@@ -36,45 +36,46 @@
 
 .headerRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-        "search"
-        "view"
-        "pages";
+        "brand settings"
+        "search search"
+        "view view"
+        "pages pages";
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--header-pad);
 }
 
-/* the form's parts sit on the header's grid themselves */
-.searchbar {
-    display: contents;
-}
-
-/* The logo sits at the start of the search box's line, and the box makes room for it (--bar-indent in
-   QueryInput), so what hangs under the box (the selected filters, notes) gets the whole width. */
 .searchArea {
-    --bar-indent: calc(var(--search-height) + var(--space-2));
     grid-area: search;
     min-width: 0;
 }
 
-/* as tall as one line of the search box, and only as wide as the logo: a grid item stretches across its area,
-   and the link would cover the box */
+/* only as wide as the logo and name, so the rest of the line isn't a link */
 .brand {
-    grid-area: search;
-    align-self: start;
+    grid-area: brand;
     justify-self: start;
-    z-index: 1;
     display: flex;
     align-items: center;
-    height: var(--search-height);
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--text);
+    font-size: var(--text-md);
+    text-decoration: none;
+    white-space: nowrap;
 }
 
 .brand img {
     display: block;
-    width: var(--search-height);
-    height: var(--search-height);
+    flex: none;
+    width: 40px;
+    height: 40px;
+}
+
+.brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .brand:focus-visible {
@@ -182,7 +183,7 @@
     visibility: visible;
 }
 
-/* the gear, then the two sort menus */
+/* the two sort menus */
 .viewOptions {
     grid-area: view;
     display: flex;
@@ -191,8 +192,9 @@
     min-width: 0;
 }
 
-/* the gear that opens the layout settings, where cards per row lives */
+/* the gear that opens the layout settings, where cards per row lives, at the end of the logo's line */
 .settingsButton {
+    grid-area: settings;
     box-sizing: border-box;
     display: inline-flex;
     flex: none;
