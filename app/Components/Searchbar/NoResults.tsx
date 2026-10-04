@@ -20,11 +20,8 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
     // cards found with each part taken out, by position; undefined while checking, null if it couldn't be checked
     const [without, setWithout] = useState<(number | null | undefined)[]>([])
 
-    // the parts a card has to match: each chip, then any typed words
-    const parts = [
-        ...snap.chips.map((c) => ({ label: chipLabel(c), query: buildQuery(snap.chips.filter((x) => x !== c), snap.text), remove: () => { querybox.chips.splice(querybox.chips.findIndex((x) => x.id === c.id), 1) } })),
-        ...(snap.text.trim() ? [{ label: /[:<>=]/.test(snap.text) ? `“${snap.text.trim()}”` : `Card name has “${snap.text.trim()}”`, query: buildQuery(snap.chips, ''), remove: () => { querybox.text = '' } }] : []),
-    ]
+    // the parts a card has to match: each chip
+    const parts = snap.chips.map((c) => ({ label: chipLabel(c), query: buildQuery(snap.chips.filter((x) => x !== c)), remove: () => { querybox.chips.splice(querybox.chips.findIndex((x) => x.id === c.id), 1) } }))
     const key = parts.map((p) => p.query).join('\u0000')
 
     useEffect(() => {
@@ -65,7 +62,7 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
     const close = () => { querybox.noResults = null }
     const apply = (fn: () => void) => { fn(); close(); research() }
 
-    const problems = problem && typesReady ? findProblems(snap.chips, snap.text, problem.warnings) : []
+    const problems = problem && typesReady ? findProblems(snap.chips, problem.warnings) : []
 
     return (
         <dialog ref={ref} className={styles.dialog} onClose={close} aria-labelledby="no-results-title"

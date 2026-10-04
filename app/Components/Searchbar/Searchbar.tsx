@@ -187,7 +187,7 @@ export function Searchbar() {
     const { pending } = useSnapshot(cardsearch)
     const { perRow } = useSnapshot(view)
     const formRef = useRef<HTMLFormElement>(null)
-    // cards per row is set in a layout settings pop-up, opened from the gear beside sort
+    // cards per row is set in a layout settings pop-up, opened from the gear across from the logo
     const settingsRef = useRef<HTMLDialogElement>(null)
     const settingsTitle = useId()
     const headerRef = useRef<HTMLDivElement>(null)
@@ -283,15 +283,17 @@ export function Searchbar() {
 
     function searchQuery(e: SubmitEvent<HTMLFormElement>) {
         e.preventDefault(); // Stop the page from reloading
-        // Use FormData to get the value of the input named "query"
-        const formData = new FormData(e.currentTarget);
-        const queryTerm = formData.get('query')?.toString();
         const submitter = e.nativeEvent.submitter
         const action = submitter?.getAttribute("name") ?? "search"
         if (busy && action !== "search") return
         const by: Sort = action === 'search' ? { ...sort } : shownSort.current
-        const q = queryTerm || query
-        if (!q) return
+        // a search is for the chips as they are now; Previous/Next page through the search on screen
+        const q = action === 'search' ? buildQuery(querybox.chips) : query
+        if (!q) {
+            // every filter taken out: back to no search
+            if (query) navigate({ search: '' }, { preventScrollReset: true })
+            return
+        }
 
         // a new search or sort starts over at the first page
         let number = page.number
@@ -320,7 +322,7 @@ export function Searchbar() {
             setPage({ number: 1, has_more: false, total: 1, cards: 0 })
             setBusy(false)
             remembered.url = ''
-            Object.assign(querybox, { chips: [], text: '', noResults: null, notice: null })
+            Object.assign(querybox, { chips: [], noResults: null })
             hidePages()
             return
         }
@@ -328,15 +330,12 @@ export function Searchbar() {
         const by: Sort = { order: target.order, dir: target.dir }
         sort.order = target.order
         sort.dir = target.dir
-        if (buildQuery(querybox.chips, querybox.text) !== target.q) {
+        if (buildQuery(querybox.chips) !== target.q) {
             querybox.noResults = null
-            querybox.notice = null
             // creature types need their list to come back as creature chips; the search doesn't wait for it
             loadCatalog('creature-types').catch(() => { }).then(() => {
                 if (requested.current !== url) return
-                const { chips, text } = parseQuery(target.q)
-                querybox.chips = chips.map((c) => ({ id: chipId(), ...c }))
-                querybox.text = text
+                querybox.chips = parseQuery(target.q).map((c) => ({ id: chipId(), ...c }))
             })
         }
         const isSearch = target.q !== query || sortKey(by) !== sortKey(shownSort.current) || target.page === 1
@@ -344,15 +343,24 @@ export function Searchbar() {
     }, [location.search])
 
     return (
-        // Wrap in a form to catch the "Enter" key and "Submit" events
         <div className={styles.main_content} ref={headerRef}>
-            <div className={styles.headerRow}>
-            <a className={styles.brand} href="/" aria-label="Impulse Caster home">
-                <img src="/logo.svg" alt="" width={40} height={40} />
-            </a>
-            <form className={styles.searchbar} onSubmit={searchQuery} ref={formRef}>
+            {/* a search is the form's submit: the filters panel, a sort menu or Previous/Next send it. Enter in a
+                filter's field never does, since it would press the first button in the form, Previous page */}
+            <form className={styles.headerRow} onSubmit={searchQuery} ref={formRef}
+                onKeyDown={(e) => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault() }}>
+                <a className={styles.brand} href="/">
+                    <img src="/logo.svg" alt="" width={40} height={40} />
+                    <span>Impulse Caster</span>
+                </a>
+                <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
+                    onClick={() => settingsRef.current?.showModal()}>
+                    <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
+                </button>
                 <div className={styles.searchArea}>
-                    <QueryInput />
+                    <QueryInput searched={query} />
+                </div>
+                <div className={styles.viewOptions}>
+                    <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
                 </div>
                 <div className={styles.Pages}>
                     {query ? (
@@ -375,15 +383,7 @@ export function Searchbar() {
                         </>
                     ) : null}
                 </div>
-                <div className={styles.viewOptions}>
-                    <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
-                        onClick={() => settingsRef.current?.showModal()}>
-                        <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
-                    </button>
-                    <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
-                </div>
             </form>
-            </div>
             <dialog ref={settingsRef} className={styles.settings} aria-labelledby={settingsTitle}
                 onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.close() }}>
                 <div className={styles.settingsBody}>
