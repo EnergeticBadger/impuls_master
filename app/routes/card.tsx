@@ -7,7 +7,11 @@ import cardStyles from "~/Components/Card/Card.module.css";
 import { isScryfallCard, type Ruling, type ScryfallCard } from "~/types";
 import { scryfallServerGet, unavailable } from "~/lib/scryfall.server";
 import { findCard, sameName } from "~/lib/carddata.server";
-import { SITE_URL, findPrinting, printEntry, printKey, printingCard, priceRange, slug, type PrintEntry } from "~/lib/carddata";
+import {
+  SITE_URL, findPrinting, imageUris, printEntry, printKey, printingCard, priceRange, setPath, slug,
+  type PrintEntry, type RelatedCard,
+} from "~/lib/carddata";
+import { SiteHeader, backLinkClass } from "~/Components/Site/SiteHeader";
 import { loadRecord } from "~/lib/card";
 import { useCardLayout } from "~/Components/Hooks/useCardLayout";
 import { CardText, textFaces } from "~/Components/CardDetails/CardText";
@@ -31,6 +35,7 @@ type PageData = {
   selected: string
   main: string
   priceRange: { low: string, high: string } | null
+  related: RelatedCard[]
 }
 
 // a list Scryfall couldn't give us right now is left out (null) rather than taking the whole page down
@@ -79,7 +84,7 @@ async function fromScryfall(pageSlug: string, want: string | null, get: (path: s
   const selected = `${found.set}-${found.collector_number}`
   return {
     card: found, rulings, prints: prints ?? [], printCount: prints?.length ?? 0,
-    slug: pageSlug, selected, main: want ? prints?.[0]?.key ?? selected : selected, priceRange: null,
+    slug: pageSlug, selected, main: want ? prints?.[0]?.key ?? selected : selected, priceRange: null, related: [],
   }
 }
 
@@ -121,6 +126,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
       selected: printKey(record.prints[index]),
       main: printKey(record.prints[record.main]),
       priceRange: priceRange(record),
+      related: record.related ?? [],
     }
   }
   // a page missing a list isn't kept, so the next visit (or crawl) gets the whole thing. Browsers check back
@@ -237,7 +243,7 @@ const TURN_ICON = "M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-3
 function BackLink() {
   const navigate = useNavigate()
   return (
-    <Link to="/" className={styles.back} onClick={(e) => {
+    <Link to="/" className={backLinkClass} onClick={(e) => {
       if (window.history.state?.idx > 0) {
         e.preventDefault()
         navigate(-1)
@@ -317,13 +323,32 @@ function Printings({ page }: { page: PageData }) {
   )
 }
 
+// cards it names or makes, then cards like it; links to their pages
+function Related({ cards }: { cards: RelatedCard[] }) {
+  if (!cards.length) return null
+  return (
+    <section>
+      <h2 className={styles.label}>Related cards</h2>
+      <ul className={styles.prints}>
+        {cards.map(([slug, name, id, stamp]) => (
+          <li key={slug}>
+            <Link to={`/card/${slug}`} className={styles.print}>
+              {stamp ? <img src={imageUris(id, "front", stamp).small} alt="" width={146} height={204} loading="lazy" /> : null}
+              <span className={styles.print_name}>{name}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function CardDetail({ page }: { page: PageData }) {
   const { card, rulings } = page
   const prices = PRICES.filter((p) => card.prices?.[p.key])
   const stores = STORES.filter((s) => card.purchase_uris?.[s.key])
   const artists = [...new Set(textFaces(card).map((f) => f.artist).filter(Boolean))].join(" & ") || card.artist
   const links = [
-    { label: "Scryfall", href: card.scryfall_uri },
     { label: "EDHREC", href: card.related_uris?.edhrec },
     { label: "Gatherer", href: card.related_uris?.gatherer },
   ].filter((l): l is { label: string, href: string } => !!l.href)
@@ -350,7 +375,7 @@ function CardDetail({ page }: { page: PageData }) {
           <div className={styles.facts}>
             <div>
               <span className={styles.fact_label}>Set</span>
-              <span>{card.set_name} ({card.set.toUpperCase()})</span>
+              <Link to={setPath(card.set)} className={styles.set_link}>{card.set_name} ({card.set.toUpperCase()})</Link>
             </div>
             <div>
               <span className={styles.fact_label}>Number</span>
@@ -403,6 +428,8 @@ function CardDetail({ page }: { page: PageData }) {
         {/* a new card starts with its own list */}
         <Printings key={page.slug} page={page} />
 
+        <Related cards={page.related} />
+
         {links.length ? (
           <section>
             <h2 className={styles.label}>More on this card</h2>
@@ -420,13 +447,9 @@ export default function CardPage({ loaderData }: Route.ComponentProps) {
   const page = loaderData as PageData
   return (
     <div>
-      <header className={styles.header}>
-        <Link className={styles.brand} to="/" aria-label="Impulse Caster home">
-          <img src="/logo.svg" alt="" width={40} height={40} />
-          <span>Impulse Caster</span>
-        </Link>
+      <SiteHeader>
         <BackLink />
-      </header>
+      </SiteHeader>
       <CardDetail page={page} />
     </div>
   )

@@ -17,11 +17,11 @@ const requestHandler = createRequestHandler(
 	import.meta.env.MODE
 );
 
-// Card pages (and the data behind them, for moving between pages in the browser) are kept for a day in each
+// Card and set pages (and the data behind them, for moving between pages in the browser) are kept for a day in each
 // Cloudflare location, so only the first visit there spends the Worker's CPU rendering the page. The key
 // includes the deploy's version and the build's id: a new deploy (daily, with new card data) mustn't serve pages
 // built by the old one, whose scripts are gone.
-const CACHED_PAGES = /^\/card\//;
+const CACHED_PAGES = /^\/(card\/|sets(\/|\.data$|$))/;
 const EDGE_TTL = 60 * 60 * 24;
 // what the browser was told, kept alongside the day-long copy
 const BROWSER_CACHE = "X-Browser-Cache-Control";

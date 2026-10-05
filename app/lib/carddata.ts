@@ -43,6 +43,12 @@ export const paths = {
     bucket: (bucket: number) => `${DATA_DIR}/cards/${bucket}.json`,
     // page slug -> name slug, for the few cards whose page needed more than the name (see Renamed)
     renamed: () => `${DATA_DIR}/cards/renamed.json`,
+    // every set with a page, newest first
+    sets: () => `${DATA_DIR}/sets.json`,
+    // one set's cards
+    set: (code: string) => `${DATA_DIR}/sets/${code}.json`,
+    // the links in the site's footer
+    browse: () => `${DATA_DIR}/browse.json`,
 };
 
 // Cards that share a name with another card (tokens called "Soldier", the Unstable variants) get a longer
@@ -122,7 +128,39 @@ export type CardRecord = {
     prints: Printing[];
     // the printing the page opens on: the newest regular one
     main: number;
+    // cards it names or makes, then cards like it (see scripts/card-data.ts)
+    related?: RelatedCard[];
 };
+
+// another card, linked from a card's page: [page slug, name, printing id, image stamp]
+export type RelatedCard = [string, string, string, string?];
+
+// a set, as its page and the list of sets show it
+export type SetSummary = {
+    code: string;
+    name: string;
+    // Scryfall's set type: expansion, core, commander, promo...
+    type: string;
+    released: string;
+    // cards in it that have a page
+    count: number;
+    icon?: string;
+    digital?: true;
+};
+
+// one printing in a set's list: [page slug, name, collector number, rarity, printing id, image stamp, US price,
+// 1 when it's the printing the card's page opens on]
+export type SetCard = [string, string, string, string, string, string?, string?, 1?];
+
+export type SetFile = SetSummary & { cards: SetCard[] };
+
+// cards on each page of a set's list; the biggest sets have over a thousand, too many to render in one go
+export const SET_PAGE = 120;
+
+export const setPath = (code: string, page = 1) => `/sets/${code}${page > 1 ? `?page=${page}` : ""}`;
+
+// the footer's links: the newest sets and the cards people play most
+export type Browse = { latest: SetSummary[]; popular: [string, string][] };
 
 // header entry: [page slug, oracle id, byte offset, byte length], offsets counted from just after the header line
 export type BucketEntry = [string, string, number, number];
