@@ -13,7 +13,8 @@
     "preview": "npm run build && wrangler dev",
     "cf-typegen": "wrangler types",
     "fuzz-rules": "node scripts/fuzz-rules.ts",
-    "test-rules": "node scripts/test-rules.ts"
+    "test-rules": "node scripts/test-rules.ts",
+    "test-syntax": "node scripts/test-syntax.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
