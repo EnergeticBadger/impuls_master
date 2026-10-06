@@ -52,6 +52,8 @@ export type LocalCard = {
     edhrec?: number,
     reserved: boolean,
     gameChanger: boolean,
+    // a meld card's part in it: "part" (Bruna, the Fading Light) or "result" (Brisela, Voice of Nightmares)
+    meld: "" | "part" | "result",
     // is:funny: see FUNNY_CARDS
     funny: boolean,
     printings: number[],
@@ -86,8 +88,12 @@ export type Printing = {
     reprint: boolean,
     spotlight: boolean,
     oversized: boolean,
+    // in booster packs, and with a high-resolution scan
+    booster: boolean,
+    hires: boolean,
     finishes: Set<string>,
     watermark: string,
+    // a face each, "" where a face has none
     flavor: string[],
     stamp: string,
     // why it isn't shown unless asked for (see revealed): "withdrawn" (the cards banned in 2020 for racist
@@ -151,7 +157,10 @@ export function cardText(c: any): { printed: string[], text: string[], fullPrint
     const own: string[] = [fullName, ...faces.map((f) => f.name)];
     const legend = /legendary/i.test(c.type_line ?? faces[0]?.type_line ?? "");
     const short = own.flatMap((n) => [n.split(",")[0], ...(legend ? [n.split(/ (?:the|of) /)[0]] : [])]);
-    const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 2).sort((a, b) => b.length - a.length);
+    // ("MJ" counts; a name with a dot in it doesn't: J. Jonah Jameson stays, but Nick Fury, Agent of
+    // S.H.I.E.L.D. is Nick Fury). Right for 2,087 of the 2,099 legends their text names only partly; the rest
+    // are first names (Ryan, Zurgo) Scryfall seems to pick by hand
+    const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 1 && !n.includes(".")).sort((a, b) => b.length - a.length);
     // as whole words, so Khaaaaaaaaaaaannn!'s name, ending in "!", stays as it is
     const self = names.length ? new RegExp(`\\b(?:${names.map(escapeRe).join("|")})\\b`, "g") : null;
     const raw = faces.map((f) => (f.oracle_text ?? c.oracle_text ?? "") as string);
@@ -192,6 +201,7 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
         edhrec: c.edhrec_rank,
         reserved: !!c.reserved,
         gameChanger: !!c.game_changer,
+        meld: c.layout !== "meld" ? "" : c.all_parts?.some((p: any) => p.component === "meld_result" && p.name === c.name) ? "result" : "part",
     };
 }
 
@@ -224,9 +234,11 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         reprint: !!c.reprint,
         spotlight: !!c.story_spotlight,
         oversized: !!c.oversized,
+        booster: !!c.booster,
+        hires: !!c.highres_image,
         finishes: lower(c.finishes),
         watermark: (c.watermark ?? faces.find((f) => f.watermark)?.watermark ?? "").toLowerCase(),
-        flavor: faces.map((f) => f.flavor_text ?? c.flavor_text).filter(Boolean),
+        flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
         extra: extraKind(c),
     };
@@ -274,6 +286,8 @@ export type Cards = {
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
+    // every promo type there is, for is:prerelease and the like
+    promoTypes: Set<string>,
 };
 
 // Scryfall's list of sets, for b: (blocks aren't in the bulk files): SCRYFALL_BULK_DIR/sets.json like
@@ -339,7 +353,8 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
     if (setsPath && existsSync(setsPath)) {
         for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
     }
-    return { cards, prints, tags, setDates, blocks };
+    const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
+    return { cards, prints, tags, setDates, blocks, promoTypes };
 }
 
 // ---- the query language ----
@@ -552,12 +567,12 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a creature with no rules text at all
     vanilla: (c) => /\bcreature\b/.test(c.faceTypes[0]) && !c.text[0]?.trim(),
     // every line starts with one of its keywords, then ends, or goes on with ", " (anything after it), a cost
-    // (not an activated one, "Waterbend {3}: …"), "—" or reminder text: "Protection from red", "Bushido 1",
-    // "Revolt — …", "Flying; banding" and a line of reminder text alone don't count, but "First strike,
-    // protection from white" does
+    // ("Prototype {2}{R} — 3/2" and "Swampcycling {2}, …" too, but not an activated one, "Waterbend {3}: …"),
+    // "—" or reminder text: "Protection from red", "Bushido 1", "Revolt — …", "Flying; banding" and a line of
+    // reminder text alone don't count, but "First strike, protection from white" does
     frenchvanilla: (c) => {
         if (!isCreature(c) || !c.keywords.size || !c.fullText.some((t) => t.trim())) return false;
-        const line = new RegExp(`^(?:${[...c.keywords].sort((a, b) => b.length - a.length).map(escapeRe).join("|")})(?:$|, | (?:\\{[^}]+\\})+(?:$| \\()|—| \\()`, "i");
+        const line = new RegExp(`^(?:${[...c.keywords].sort((a, b) => b.length - a.length).map(escapeRe).join("|")})(?:$|, | (?:\\{[^}]+\\})+(?:$|, | — | \\()|—| \\()`, "i");
         return c.fullText.every((t) => t.split("\n").every((l) => line.test(l)));
     },
     // the front face: Scorned Villager // Moonscarred Werewolf isn't one by its 2/2 back
@@ -574,9 +589,12 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     partner: (c) => /\blegendary\b/.test(c.faceTypes[0]) && (["partner", "partner with", "friends forever", "choose a background", "doctor's companion"].some((k) => c.keywords.has(k))
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
     companion: (c) => c.keywords.has("companion"),
+    meldpart: (c) => c.meld === "part",
+    meldresult: (c) => c.meld === "result",
     funny: (c) => c.funny,
-    // printed in one set only (two printings in one set still count)
-    unique: (c, data) => new Set(c.printings.filter((p) => !data.prints[p].extra).map((p) => data.prints[p].set)).size === 1,
+    // printed in one set only (two printings in one set still count; an oversized one, like Gavi's in oc20,
+    // is another)
+    unique: (c, data) => new Set(c.printings.map((p) => data.prints[p].set)).size === 1,
 };
 // a reversible printing is double-faced even when the card isn't, so layouts are per printing
 const IS_PRINT: Record<string, (p: Printing) => boolean> = {
@@ -605,7 +623,15 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     rebalanced: (p) => p.promoTypes.has("rebalanced"),
     universesbeyond: (p) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond"),
     ub: (p) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond"),
+    booster: (p) => p.booster,
+    hires: (p) => p.hires,
+    masterpiece: (p) => p.setType === "masterpiece",
+    colorshifted: (p) => p.frameEffects.has("colorshifted"),
 };
+
+// Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro, is:media or
+// is:brawler: those are wider than the intropack, mediainsert and brawldeck promo types
+const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 
 // keys that change how results are shown, not which cards match
 const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "lang", "sort"]);
@@ -687,6 +713,9 @@ function compile(t: Term, data: Cards): Test {
             const onCard = IS_CARD[v], onPrint = IS_PRINT[v];
             if (onCard) return card((c) => onCard(c, data) !== negate);
             if (onPrint) return print((p) => onPrint(p) !== negate);
+            // the kinds of promo, as the printings' promo types name them (is:prerelease, is:fnm…)
+            const promo = PROMO_NAMES[v] ?? v;
+            if (data.promoTypes.has(promo)) return print((p) => p.promoTypes.has(promo) !== negate);
             throw new Unsupported(`is:${v}`);
         }
         // the printing's own facts
@@ -704,7 +733,9 @@ function compile(t: Term, data: Cards): Test {
             return print((p) => compare(t.op === ":" ? "=" : t.op, rarityOf(p.rarity), want));
         }
         case "a": case "artist": { const m = plainOrRegex(t.op); return print((p) => m([p.artist])); }
-        case "ft": case "flavor": { const m = plainOrRegex(t.op); return print((p) => m(p.flavor)); }
+        // a regex reads the front face's only: Invasion of Dominaria's back face mentions Yawgmoth, but
+        // ft:/yawgmoth/ doesn't find it, where ft:yawgmoth does
+        case "ft": case "flavor": { const m = plainOrRegex(t.op); return print((p) => m(t.regex ? p.flavor.slice(0, 1) : p.flavor)); }
         case "wm": case "watermark": return print((p) => p.watermark === v);
         case "frame": return print((p) => p.frame === v || p.frameEffects.has(v));
         case "border": return print((p) => p.border === v);
@@ -724,12 +755,13 @@ function compile(t: Term, data: Cards): Test {
             const n = number(), key = t.key as "usd" | "eur" | "tix";
             return print((p) => p[key] !== undefined && compare(t.op, p[key]!, n));
         }
-        // ever printed in a set, set type, game or rarity
+        // ever printed in a set, set type, game or rarity (not counting masterpieces, Secret Lair and the like, or
+        // From the Vault, all mythic: in:mythic isn't Swords to Plowshares)
         case "in": {
             const st = setType(v), r = rarityOf(v);
             return card((c) => c.printings.some((i) => {
                 const p = data.prints[i];
-                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && p.setType !== "masterpiece" && p.setType !== "box" && rarityOf(p.rarity) === r) || p.lang === v;
+                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r) || p.lang === v;
             }));
         }
         case "prints": case "sets": case "paperprints": case "papersets": {
