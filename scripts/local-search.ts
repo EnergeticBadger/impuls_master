@@ -617,15 +617,21 @@ const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("
     || c.text.some((t) => [...t.matchAll(/\bis also an? ([^.]*)/gi)].some((m) => re.test(m[1].toLowerCase())));
 
 
+// a commander by its type or text, whatever the ban list says (see is:commander)
+const canLead = (c: LocalCard) => c.meld !== "result" && (
+    /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
+    || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t)));
+
 // the is: shortcuts, by what they look at
 const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a legendary creature or a Background, or the card says so
     // the front face is a legendary creature or Background, or a legendary Vehicle or Spacecraft with power and
     // toughness (The Falcon, Airship Restored), or the card says so ("can be your commander", Grist's "it's a 1/1
     // Insect creature" off the battlefield); but not a card banned in Commander (Leovold) or a meld card's back
-    commander: (c) => !c.banned.has("commander") && c.meld !== "result" && (
-        /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
-        || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t))),
+    commander: (c) => !c.banned.has("commander") && canLead(c),
+    // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
+    // a legendary planeswalker, legal in Brawl
+    brawler: (c) => c.legal.has("brawl") && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
     // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
     // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
     // Conspiracies aren't
@@ -703,8 +709,8 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     colorshifted: (p) => p.frameEffects.has("colorshifted"),
 };
 
-// Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro, is:media or
-// is:brawler: those are wider than the intropack, mediainsert and brawldeck promo types
+// Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
+// are wider than the intropack and mediainsert promo types
 const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 
 // the land groups (is:fetchland, is:shockland…): Scryfall keeps them by hand, so they're its own lists, kept in

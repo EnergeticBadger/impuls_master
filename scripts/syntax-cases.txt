@@ -240,7 +240,8 @@ is:instore
 is:convention
 is:giftbox
 is:league
-is:brawler
+is:brawler mv=3
+is:brawler t:planeswalker
 # land groups: Scryfall's own lists, kept in land-cycles.json (npm run land-cycles)
 is:bikeland
 is:bondland
