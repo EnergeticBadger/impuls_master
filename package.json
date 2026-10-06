@@ -14,7 +14,12 @@
     "cf-typegen": "wrangler types",
     "fuzz-rules": "node scripts/fuzz-rules.ts",
     "test-rules": "node scripts/test-rules.ts",
-    "test-syntax": "node scripts/test-syntax.ts"
+    "test-syntax": "node scripts/test-syntax.ts",
+    "land-cycles": "node scripts/land-cycles.ts",
+    "panel-cases": "node --import ./scripts/app-paths.ts scripts/panel-cases.ts",
+    "test-keys": "node scripts/test-keys.ts",
+    "fuzz-syntax": "node scripts/fuzz-syntax.ts",
+    "short-names": "node scripts/short-names.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",

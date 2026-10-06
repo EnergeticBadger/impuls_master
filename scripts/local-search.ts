@@ -12,6 +12,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeF
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { join } from "node:path";
+import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -22,9 +23,12 @@ export type LocalCard = {
     oracleId: string,
     name: string,
     faceNames: string[],
-    // rules text as o: sees it, a face each: the card's own name as ~, reminder text left out
+    // rules text as o: sees it, a face each, reminder text left out: as printed, and with the card's own name
+    // as ~ for a search with ~ in it
+    printed: string[],
     text: string[],
     // as fo: sees it: reminder text kept
+    fullPrinted: string[],
     fullText: string[],
     // type line a face each, lower case
     faceTypes: string[],
@@ -41,14 +45,19 @@ export type LocalCard = {
     mv: number,
     // a face each, so m=1R finds Fire // Ice by Fire's cost
     manaCosts: string[],
-    // a face each, undefined where a face has none, so pow>tou compares a face with itself
+    // a face each, undefined where a face has none
     power: (string | undefined)[],
     toughness: (string | undefined)[],
     loyalty: (string | undefined)[],
     produced: Set<string>,
     edhrec?: number,
+    penny?: number,
     reserved: boolean,
     gameChanger: boolean,
+    // a meld card's part in it: "part" (Bruna, the Fading Light) or "result" (Brisela, Voice of Nightmares)
+    meld: "" | "part" | "result",
+    // is:funny: see FUNNY_CARDS
+    funny: boolean,
     printings: number[],
 };
 
@@ -57,6 +66,8 @@ export type Printing = {
     card: number,
     // a reversible printing has its own name ("Birds of Paradise // Birds of Paradise") and layout
     name: string,
+    // a Universes Beyond printing's other name: Homeward Path is "Green Dragon Inn" in The Lord of the Rings
+    flavorName: string,
     layout: string,
     set: string,
     setType: string,
@@ -81,37 +92,68 @@ export type Printing = {
     reprint: boolean,
     spotlight: boolean,
     oversized: boolean,
+    // in booster packs, and with a high-resolution scan
+    booster: boolean,
+    hires: boolean,
     finishes: Set<string>,
-    watermark: string,
+    // a face each where they differ: Breaking // Entering is Dimir and Rakdos
+    watermarks: Set<string>,
+    // a face each, "" where a face has none
     flavor: string[],
     stamp: string,
-    // why it isn't shown unless asked for: "extra" (tokens, art cards, memorabilia…) needs include:extras, its
-    // set, its type or a name: search; "funny" (playtest cards, Heroes of the Realm…) also shows for is:funny;
-    // "" is shown
-    extra: "" | "extra" | "funny",
+    // the art, for new:art
+    art: string,
+    // why it isn't shown unless asked for (see revealed): "setOnly" (only include:extras or its set shows it)
+    // or "extra" (tokens, art cards, playtest cards…); "" is shown
+    extra: "" | "setOnly" | "extra",
 };
 
 // printings Scryfall's search doesn't show by default (found by comparing with it, see npm run test-syntax):
-// these layouts, tokens, "Card"s, memorabilia (but not dungeons), Alchemy's specialize variants (in Alchemy
-// sets but legal nowhere), Astral and Sega printings; and, until is:funny asks for them, playtest cards and
-// Heroes of the Realm and holiday promos
+// these layouts and memorabilia (but not dungeons), tokens, "Card"s, Alchemy's specialize variants (in Alchemy
+// sets but legal nowhere), Astral and Sega printings, playtest cards, Heroes of the Realm and holiday promos,
+// silver-bordered promos, Gleemox ("This card is banned.") and Secret Lair's sticker sheet. Only
+// include:extras or naming the set shows the seven cards Wizards banned in 2020 for racist content, and the
+// gold-bordered World Championship decks (border:gold finds nothing) and the Sega Dreamcast cards
+const WITHDRAWN = new Set(["Crusade", "Cleanse", "Imprison", "Invoke Prejudice", "Jihad", "Pradesh Gypsies", "Stone-Throwing Devils"]);
+const HIDDEN_FUNNY = new Set(["Gleemox", "Sticker sheet"]);
+// is:funny though nothing in the bulk files says so (see isFunnyPrinting)
+const FUNNY_CARDS = new Set([...HIDDEN_FUNNY, "Baldur's Gate Wilderness"]);
 const EXTRA_LAYOUTS = new Set(["token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard"]);
 const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel)$/;
 function extraKind(c: any): Printing["extra"] {
     const games: string[] = c.games ?? [];
     const type: string = c.type_line ?? c.card_faces?.[0]?.type_line ?? "";
     const legalNowhere = !Object.values(c.legalities ?? {}).some((v) => v === "legal" || v === "restricted");
-    if (EXTRA_LAYOUTS.has(c.layout) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !/\bdungeon\b/i.test(type))
-        || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral" || g === "sega"))) return "extra";
-    if (c.promo_types?.includes("playtest") || EXTRA_SETS.test(c.set)) return "funny";
+    if (WITHDRAWN.has(c.name) || (c.border_color === "gold" && c.set_type === "memorabilia")
+        || (games.length > 0 && games.every((g) => g === "sega"))) return "setOnly";
+    // dungeons are shown, even Undercity // The Initiative, a double-faced token
+    const dungeon = /^dungeon\b/i.test(type);
+    if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
+        || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
+    // silver-bordered promos too: Goblin Mime's Arena League one shows for e:pal04, not for r:rare (Secret
+    // Lair's silver-bordered ponies are shown)
+    if (c.promo_types?.includes("playtest") || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name)
+        || (c.border_color === "silver" && c.set_type === "promo")) return "extra";
     return "";
 }
 
 const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 
+// what becomes ~ in a card's text besides its names (see cardText): "this" and a card type or subtype the card
+// calls itself by, but not "this turn", "this way", "this scheme", "this Case", "this Room" or "this
+// planeswalker" (Sanctum Lurker's "This planeswalker deals" is another card). Oracle text now says "Destroy
+// this enchantment" where it said "Destroy Aether Storm", and o:/destroy ~/ finds both
+const THIS_WORDS = "creature|artifact|enchantment|land|battle|spell|card|permanent|token|aura|equipment|vehicle|saga|siege|class|contraption|attraction|spacecraft";
+const THIS = new RegExp(`\\bthis (?:${THIS_WORDS})\\b`, "gi");
+
+// text with its accents off and Æ as Ae, as Scryfall compares it: o:Æther, o:aether and o:/æther/ are the same
+export const fold = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").replace(/æ/g, "ae").replace(/Æ/g, "Ae");
+
 // A Scryfall regex as JavaScript reads it. Scryfall's never cross a line break: . and [^…] don't match one,
-// and ^ $ match at each line, so `choose one —[^.]*exile` misses "choose one —\n• Exile" there
-export function scryfallRegex(body: string): RegExp {
+// and ^ $ match at each line, so `choose one —[^.]*exile` misses "choose one —\n• Exile" there. A ~ is a ~,
+// against text with the card's names and "this creature" and the like as ~ (see cardText)
+export function scryfallRegex(regex: string): RegExp {
+    const body = fold(regex);
     let out = "", inClass = false;
     for (let i = 0; i < body.length; i++) {
         const ch = body[i];
@@ -129,27 +171,38 @@ export function scryfallRegex(body: string): RegExp {
     return new RegExp(out, "im");
 }
 
-// a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept), with the
-// card's own name as ~. Takes a card as Scryfall's API and bulk files give it
-export function cardText(c: any): { text: string[], fullText: string[] } {
+// the legends whose short names Scryfall picks differently from cardText's rule, kept by npm run short-names
+const SHORT_NAMES: Record<string, string[]> = JSON.parse(readFileSync(new URL("./short-names.json", import.meta.url), "utf8"));
+
+// a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept): as printed,
+// and with the card itself as ~, by its names and as "this creature", "this Aura"…. Scryfall matches a search
+// without ~ against the printed text, so o:"fire deals" finds Banefire and o:/untap this\b/ "untap this
+// creature"; one with ~ against the other, so `untap (this|~)\b` finds nothing at all: "this creature" is ~
+// there, and no \b follows a ~. Accents are off (see fold). Takes a card as Scryfall's API and bulk files give it
+export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[], text: string[], fullPrinted: string[], fullText: string[] } {
     const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
     const fullName: string = c.name;
     // the card's names, longest first, become ~: the whole name, each face's, and a legend's short name
     // ("Baxter" in "Baxter, Fly in the Ointment", "Círdan" in "Círdan the Shipwright")
     const own: string[] = [fullName, ...faces.map((f) => f.name)];
     const legend = /legendary/i.test(c.type_line ?? faces[0]?.type_line ?? "");
-    const short = own.flatMap((n) => [n.split(",")[0], ...(legend ? [n.split(/ (?:the|of) /)[0]] : [])]);
-    const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 2).sort((a, b) => b.length - a.length);
-    const self = names.length ? new RegExp(names.map(escapeRe).join("|"), "g") : null;
-    const raw = faces.map((f) => (f.oracle_text ?? c.oracle_text ?? "") as string);
-    const tilde = (t: string) => self ? t.replace(self, "~") : t;
-    return { text: raw.map((t) => tilde(t.replace(/ ?\([^)]*\)/g, ""))), fullText: raw.map(tilde) };
+    // ("MJ" counts; a name with a dot in it doesn't: J. Jonah Jameson stays, but Nick Fury, Agent of
+    // S.H.I.E.L.D. is Nick Fury). Right for 2,087 of the 2,099 legends their text names only partly; for the
+    // rest, which Scryfall seems to pick by hand (Ryan Sinclair is "Ryan"), its own choice is in shortNames
+    const short = shortNames[fullName] ?? own.flatMap((n) => [n.split(",")[0], ...(legend ? [n.split(/ (?:the|of) /)[0]] : [])]);
+    const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 1 && !n.includes(".")).sort((a, b) => b.length - a.length);
+    // as whole words, so Khaaaaaaaaaaaannn!'s name, ending in "!", stays as it is
+    const self = names.length ? new RegExp(`\\b(?:${names.map((n) => escapeRe(fold(n))).join("|")})\\b`, "g") : null;
+    const raw = faces.map((f) => fold((f.oracle_text ?? c.oracle_text ?? "") as string));
+    const tilde = (t: string) => (self ? t.replace(self, "~") : t).replace(THIS, "~");
+    const printed = raw.map((t) => t.replace(/ ?\([^)]*\)/g, ""));
+    return { printed, text: printed.map(tilde), fullPrinted: raw, fullText: raw.map(tilde) };
 }
 
 const lower = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
 const price = (v?: string | null) => v == null ? undefined : Number(v);
 
-function toCard(c: any, faces: any[]): Omit<LocalCard, "printings"> {
+function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     const legal = (want: string[]) => new Set(Object.entries(c.legalities ?? {}).filter(([, v]) => want.includes(v as string)).map(([k]) => k));
     const each = (field: string) => faces.map((f) => (f[field] ?? (faces.length === 1 ? c[field] : undefined)) as string | undefined);
     return {
@@ -169,14 +222,17 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings"> {
         keywords: lower(c.keywords),
         // a reversible printing keeps these on its faces only
         mv: c.cmc ?? faces[0]?.cmc ?? 0,
-        manaCosts: faces.length > 1 ? faces.map((f) => f.mana_cost ?? "").filter(Boolean) : [c.mana_cost ?? ""],
+        // with more than two faces (Who // What // When // Where // Why), the whole cost counts too, so m:RG finds it
+        manaCosts: faces.length > 1 ? [...faces.map((f) => f.mana_cost ?? ""), ...(faces.length > 2 ? [c.mana_cost ?? ""] : [])].filter(Boolean) : [c.mana_cost ?? ""],
         power: each("power"),
         toughness: each("toughness"),
         loyalty: each("loyalty"),
         produced: lower(c.produced_mana),
         edhrec: c.edhrec_rank,
+        penny: c.penny_rank,
         reserved: !!c.reserved,
         gameChanger: !!c.game_changer,
+        meld: c.layout !== "meld" ? "" : c.all_parts?.some((p: any) => p.component === "meld_result" && p.name === c.name) ? "result" : "part",
     };
 }
 
@@ -184,6 +240,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
         card,
         name: c.name,
+        flavorName: c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // "),
         layout: c.layout,
         set: c.set,
         setType: c.set_type,
@@ -209,12 +266,25 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         reprint: !!c.reprint,
         spotlight: !!c.story_spotlight,
         oversized: !!c.oversized,
+        booster: !!c.booster,
+        hires: !!c.highres_image,
         finishes: lower(c.finishes),
-        watermark: (c.watermark ?? faces.find((f) => f.watermark)?.watermark ?? "").toLowerCase(),
-        flavor: faces.map((f) => f.flavor_text ?? c.flavor_text).filter(Boolean),
+        watermarks: lower([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
+        flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
+        art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
         extra: extraKind(c),
     };
+}
+
+// is:funny is a card's, not a printing's: a card legal nowhere with a printing in an Un-set (not the holiday
+// promos), acorn-stamped, a playtest card or silver-bordered (not counting the tokens in tust and the like, so
+// the Goblin token isn't funny but the Dragon from the h17 promo is, in every printing), plus FUNNY_CARDS.
+// Steamflogger Boss's Unstable printing doesn't make it funny: it's legal. Checked against all 1,476 of
+// Scryfall's
+function isFunnyPrinting(c: any): boolean {
+    return (c.set_type === "funny" && c.set !== "hho") || c.security_stamp === "acorn" || !!c.promo_types?.includes("playtest")
+        || (c.border_color === "silver" && c.set_type !== "token");
 }
 
 async function* jsonLines(path: string) {
@@ -249,6 +319,8 @@ export type Cards = {
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
+    // every promo type there is, for is:prerelease and the like
+    promoTypes: Set<string>,
 };
 
 // Scryfall's list of sets, for b: (blocks aren't in the bulk files): SCRYFALL_BULK_DIR/sets.json like
@@ -265,11 +337,15 @@ export async function setsFile(cache: string): Promise<string> {
     return path;
 }
 
+// a Tagger tag's name with only its letters and digits, as Scryfall matches a tag's aliases
+const tagKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+
 // every card and printing (default_cards), each Tagger tag's cards (a tag's cards include its child tags', as
 // on Scryfall), and the sets' blocks
 export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string): Promise<Cards> {
     const cards: LocalCard[] = [], prints: Printing[] = [];
     const byOracle = new Map<string, number>();
+    const funnyPrinting = new Set<number>();
     const setDates = new Map<string, string>();
     for await (const c of jsonLines(printsPath)) {
         const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
@@ -277,21 +353,30 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         if (!oracleId) continue;
         let card = byOracle.get(oracleId);
         if (card === undefined) {
-            card = cards.push({ ...toCard(c, faces), printings: [] }) - 1;
+            card = cards.push({ ...toCard(c, faces), funny: false, printings: [] }) - 1;
             byOracle.set(oracleId, card);
         } else if (cards[card].layout === "reversible_card" && c.layout !== "reversible_card") {
             // a reversible printing is the card twice over; its ordinary printing says what the card is
-            cards[card] = { ...toCard(c, faces), printings: cards[card].printings };
+            cards[card] = { ...toCard(c, faces), funny: false, printings: cards[card].printings };
         }
+        if (isFunnyPrinting(c)) funnyPrinting.add(card);
         cards[card].printings.push(prints.push(toPrinting(c, faces, card)) - 1);
+        // legal in a format if any printing is: Ancestral Recall's Alpha one is restricted in Old School, its
+        // 30th Anniversary one not legal
+        for (const [format, status] of Object.entries(c.legalities ?? {})) {
+            if (status === "legal" || status === "restricted") cards[card].legal.add(format);
+            if (status === "restricted") cards[card].restricted.add(format);
+            if (status === "banned") cards[card].banned.add(format);
+        }
         const first = setDates.get(c.set);
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
+    for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal.size && !c.banned.size);
     const tags = new Map<string, Set<string>>();
     if (tagsPath && existsSync(tagsPath)) {
-        const byId = new Map<string, { slug: string, children: string[], cards: string[] }>();
+        const byId = new Map<string, { slug: string, aliases: string[], children: string[], cards: string[] }>();
         for await (const t of jsonLines(tagsPath)) {
-            byId.set(t.id, { slug: t.slug, children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g.oracle_id) });
+            byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g.oracle_id) });
         }
         const gather = (id: string, into: Set<string>, seen: Set<string>) => {
             if (seen.has(id)) return;
@@ -305,13 +390,16 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
             const into = new Set<string>();
             gather(id, into, new Set());
             tags.set(t.slug, into);
+            // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
+            for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
         }
     }
     const blocks = new Map<string, string>();
     if (setsPath && existsSync(setsPath)) {
         for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
     }
-    return { cards, prints, tags, setDates, blocks };
+    const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
+    return { cards, prints, tags, setDates, blocks, promoTypes };
 }
 
 // ---- the query language ----
@@ -378,26 +466,43 @@ function tokenize(q: string): (string | Term)[] {
     return out;
 }
 
+// Scryfall reads the minus in -mv=2 as part of the key, an unknown one, and drops the whole term (it warns
+// "Invalid expression"): so -mv=2 t:sliver is every sliver, and -mv=2 or t:goblin only goblins. It does so for
+// the number keys in MINUS_DROPPED (shared with the search box, which warns about them); -mv:even, -(mv=2),
+// mv!=2, -c=2 and -r>=rare are read as meant. And it keeps the term but drops the minus for date:
+// -date>=2020-01-01 is date>=2020-01-01
+
 export function parse(q: string): Node {
     const tokens = tokenize(q);
     let at = 0;
-    const expr = (): Node => {
-        const any: Node[] = [all()];
+    // each returns null for a part that's all dropped terms, which is then left out
+    const expr = (): Node | null => {
+        const any = [all()];
         while (tokens[at] === "or") { at++; any.push(all()); }
-        return any.length === 1 ? any[0] : { or: any };
+        const kept = any.filter((n): n is Node => n !== null);
+        return kept.length > 1 ? { or: kept } : kept[0] ?? null;
     };
-    const all = (): Node => {
-        const parts: Node[] = [];
+    const all = (): Node | null => {
+        const parts: (Node | null)[] = [];
         while (at < tokens.length && tokens[at] !== ")" && tokens[at] !== "or") {
             if (tokens[at] === "and") { at++; continue; }
             parts.push(one());
         }
         if (!parts.length) throw new Unsupported("empty group");
-        return parts.length === 1 ? parts[0] : { and: parts };
+        const kept = parts.filter((n): n is Node => n !== null);
+        return kept.length > 1 ? { and: kept } : kept[0] ?? null;
     };
-    const one = (): Node => {
+    const one = (): Node | null => {
         const t = tokens[at++];
-        if (t === "-") return { not: one() };
+        if (t === "-") {
+            const next = tokens[at];
+            if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) { at++; return null; }
+            if (typeof next === "object" && next.key === "date") return one();
+            // which cards have printings in other languages needs every language's (the all_cards bulk file)
+            if (typeof next === "object" && (next.key === "lang" || next.key === "language")) throw new Unsupported("-lang: needs every language's printings");
+            const inner = one();
+            return inner && { not: inner };
+        }
         if (t === "(") {
             const inner = expr();
             if (tokens[at++] !== ")") throw new Unsupported("a bracket isn't closed");
@@ -408,6 +513,7 @@ export function parse(q: string): Node {
     };
     const node = expr();
     if (at < tokens.length) throw new Unsupported(`unexpected ${String(tokens[at])}`);
+    if (!node) throw new Unsupported("every term is one Scryfall ignores");
     return node;
 }
 
@@ -506,25 +612,57 @@ const isCreature = (c: LocalCard) => anyFace(c, /\bcreature\b/);
 // mana symbols anywhere on the card: its costs, and in its rules text ({W/P} in an ability)
 const symbolsOf = (c: LocalCard) => [...c.manaCosts, ...c.text].flatMap((t) => [...t.matchAll(/\{([^}]+)\}/g)].map((m) => m[1].toUpperCase()));
 // changelings are every creature type
-const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("changeling");
+// and so are the types a card's text gives it: "Burakos is also a Cleric, Rogue, Warrior, and Wizard"
+const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("changeling")
+    || c.text.some((t) => [...t.matchAll(/\bis also an? ([^.]*)/gi)].some((m) => re.test(m[1].toLowerCase())));
+
+
+// a commander by its type or text, whatever the ban list says (see is:commander)
+const canLead = (c: LocalCard) => c.meld !== "result" && (
+    /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
+    || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t)));
 
 // the is: shortcuts, by what they look at
 const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a legendary creature or a Background, or the card says so
-    commander: (c) => /\blegendary\b/.test(c.faceTypes[0]) && /\b(creature|background)\b/.test(c.faceTypes[0]) || c.text.some((t) => /can be your commander/i.test(t)),
-    spell: (c) => !/\bland\b/.test(c.faceTypes[0]),
+    // the front face is a legendary creature or Background, or a legendary Vehicle or Spacecraft with power and
+    // toughness (The Falcon, Airship Restored), or the card says so ("can be your commander", Grist's "it's a 1/1
+    // Insect creature" off the battlefield); but not a card banned in Commander (Leovold) or a meld card's back
+    commander: (c) => !c.banned.has("commander") && canLead(c),
+    // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
+    // a legendary planeswalker, legal in Brawl
+    brawler: (c) => c.legal.has("brawl") && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
+    // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
+    // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
+    // Conspiracies aren't
+    spell: (c) => (["transform", "meld", "flip"].includes(c.layout) ? c.faceTypes.slice(0, 1) : c.faceTypes).some((t) =>
+        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
     permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/),
     historic: (c) => anyFace(c, /\b(legendary|artifact|saga)\b/),
     party: (c) => isCreature(c) && hasType(c, /\b(cleric|rogue|warrior|wizard)\b/),
     outlaw: (c) => hasType(c, /\b(assassin|mercenary|pirate|rogue|warlock)\b/),
     // the front face is a creature with no rules text at all
-    vanilla: (c) => /\bcreature\b/.test(c.faceTypes[0]) && !c.text[0]?.trim(),
-    frenchvanilla: (c) => isCreature(c) && c.text.some((t) => t.trim()) && c.text.every((t) => t.split("\n").every((line) => !line.trim() || line.split(/, ?/).every((part) => [...c.keywords].some((k) => part.toLowerCase().startsWith(k))))),
-    bear: (c) => c.mv === 2 && c.faceTypes.some((t, i) => /\bcreature\b/.test(t) && c.power[i] === "2" && c.toughness[i] === "2"),
-    // "Choose one —" and the like, and keywords that work the same way
-    modal: (c) => c.text.some((t) => /choose (one|two|three|four|five|any number|one or more|one or both|up to \w+)\b[^\n]*(—|\n•)/i.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
-    hybrid: (c) => c.manaCosts.some((cost) => [...manaSymbols(cost).keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2)),
-    phyrexian: (c) => symbolsOf(c).some((s) => s.split("/").includes("P")),
+    vanilla: (c) => /\bcreature\b/.test(c.faceTypes[0]) && !/\bland\b/.test(c.faceTypes[0]) && !c.text[0]?.trim(),
+    // every line starts with one of its keywords, then ends, or goes on with ", " (anything after it), a cost
+    // ("Prototype {2}{R} — 3/2" and "Swampcycling {2}, …" too, but not an activated one, "Waterbend {3}: …"),
+    // "—" or reminder text: "Protection from red", "Bushido 1", "Revolt — …", "Flying; banding" and a line of
+    // reminder text alone don't count, but "First strike, protection from white" does
+    frenchvanilla: (c) => {
+        if (!isCreature(c) || !c.keywords.size || !c.fullText.some((t) => t.trim())) return false;
+        const line = new RegExp(`^(?:${[...c.keywords].sort((a, b) => b.length - a.length).map(escapeRe).join("|")})(?:$|, | (?:\\{[^}]+\\})+(?:$|, | — | \\()|—| \\()`, "i");
+        // and no activated ability: "Waterbend {5}, {T}: …"
+        return c.fullText.every((t) => t.split("\n").every((l) => line.test(l) && !/^[^(—]*:/.test(l)));
+    },
+    // a 2/2 front face at mana value 2, Vehicles too (High-Speed Hoverbike): Scorned Villager // Moonscarred
+    // Werewolf isn't one by its 2/2 back
+    bear: (c) => c.mv === 2 && c.power[0] === "2" && c.toughness[0] === "2",
+    // a bulleted list of modes (Confluences, Sieges, "An opponent chooses one —"), Bloomburrow's Seasons ("{P}
+    // worth of modes") or a keyword that works the same way
+    modal: (c) => c.text.some((t) => /^•|\bworth of modes\b/m.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
+    // the front face's cost: Hallway Heckler // Vicious Verse isn't, by {B/R} on its prepared spell
+    hybrid: (c) => [...manaSymbols(c.manaCosts[0] ?? "").keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
+    // {W/P} and the like; not Bloomburrow's paw print {P}
+    phyrexian: (c) => symbolsOf(c).some((s) => /\/P$/.test(s)),
     reserved: (c) => c.reserved,
     gamechanger: (c) => c.gameChanger,
     // the ways two commanders pair up, and both halves of the pairs (Backgrounds, Doctors); "Partner with" a
@@ -532,8 +670,12 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     partner: (c) => /\blegendary\b/.test(c.faceTypes[0]) && (["partner", "partner with", "friends forever", "choose a background", "doctor's companion"].some((k) => c.keywords.has(k))
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
     companion: (c) => c.keywords.has("companion"),
-    // printed in one set only (two printings in one set still count)
-    unique: (c, data) => new Set(c.printings.filter((p) => !data.prints[p].extra).map((p) => data.prints[p].set)).size === 1,
+    meldpart: (c) => c.meld === "part",
+    meldresult: (c) => c.meld === "result",
+    funny: (c) => c.funny,
+    // printed in one set only (two printings in one set still count; an oversized one, like Gavi's in oc20,
+    // is another)
+    unique: (c, data) => new Set(c.printings.map((p) => data.prints[p].set)).size === 1,
 };
 // a reversible printing is double-faced even when the card isn't, so layouts are per printing
 const IS_PRINT: Record<string, (p: Printing) => boolean> = {
@@ -545,12 +687,11 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     leveler: (p) => p.layout === "leveler",
     adventure: (p) => p.layout === "adventure",
     mdfc: (p) => p.layout === "modal_dfc",
-    dfc: (p) => ["transform", "modal_dfc", "meld", "reversible_card"].includes(p.layout),
+    // two faces with a picture each: double-faced tokens and art cards too, but not meld cards
+    dfc: (p) => ["transform", "modal_dfc", "reversible_card", "double_faced_token", "art_series"].includes(p.layout),
     reprint: (p) => p.reprint,
     promo: (p) => p.promo,
     digital: (p) => p.digital,
-    // Un-sets, and acorn-stamped cards wherever they're printed
-    funny: (p) => p.setType === "funny" || p.stamp === "acorn",
     full: (p) => p.fullArt,
     textless: (p) => p.textless,
     spotlight: (p) => p.spotlight,
@@ -558,12 +699,32 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     foil: (p) => p.finishes.has("foil"),
     nonfoil: (p) => p.finishes.has("nonfoil"),
     etched: (p) => p.finishes.has("etched"),
-    glossy: (p) => p.finishes.has("glossy"),
     alchemy: (p) => p.setType === "alchemy" || p.promoTypes.has("rebalanced"),
     rebalanced: (p) => p.promoTypes.has("rebalanced"),
     universesbeyond: (p) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond"),
     ub: (p) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond"),
+    booster: (p) => p.booster,
+    hires: (p) => p.hires,
+    masterpiece: (p) => p.setType === "masterpiece",
+    colorshifted: (p) => p.frameEffects.has("colorshifted"),
 };
+
+// Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
+// are wider than the intropack and mediainsert promo types
+const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
+
+// the land groups (is:fetchland, is:shockland…): Scryfall keeps them by hand, so they're its own lists, kept in
+// land-cycles.json by npm run land-cycles. is:manland is is:creatureland
+const LAND_CYCLES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
+    JSON.parse(readFileSync(new URL("./land-cycles.json", import.meta.url), "utf8")) as Record<string, string[]>,
+).map(([cycle, names]) => [cycle, new Set(names)]));
+// and their other names, from Scryfall's syntax guide
+const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland: "bikeland", bicycleland: "bikeland", crowdland: "bondland", bbdland: "bondland",
+    battlebondland: "bondland", karoo: "bounceland", canland: "canopyland", snarl: "shadowland", battleland: "tangoland", trikeland: "tricycleland", triome: "tricycleland" };
+for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LAND_CYCLES[cycle];
+
+// every is: value this search knows, for scripts/test-keys.ts to check one by one
+export const isValues = (data: Cards) => [...new Set([...Object.keys(IS_CARD), ...Object.keys(IS_PRINT), ...Object.keys(LAND_CYCLES), ...Object.keys(PROMO_NAMES), ...data.promoTypes])].sort();
 
 // keys that change how results are shown, not which cards match
 const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "lang", "sort"]);
@@ -575,14 +736,11 @@ const print = (fn: (p: Printing, c: LocalCard) => boolean): Test => ({ level: "p
 function compile(t: Term, data: Cards): Test {
     const plainOrRegex = (op: string) => {
         if (op !== ":" && op !== "=") throw new Unsupported(`${t.key}${t.op}`);
-        if (t.regex) { const re = t.regex; return (list: string[]) => list.some((s) => re.test(s)); }
-        const v = t.value.toLowerCase();
-        // in plain text ~ is the card itself, by name or as "this land", "this creature"…
-        if (v.includes("~")) {
-            const re = new RegExp(v.split("~").map(escapeRe).join("(?:~|this [a-z]+)"), "i");
-            return (list: string[]) => list.some((s) => re.test(s));
-        }
-        return (list: string[]) => list.some((s) => s.toLowerCase().includes(v));
+        // both sides with their accents off (rules text already is): a:"zoltan boros" is Zoltán Boros
+        const plain = (s: string) => /[^\x00-\x7f]/.test(s) ? fold(s) : s;
+        if (t.regex) { const re = t.regex; return (list: string[]) => list.some((s) => re.test(plain(s))); }
+        const v = fold(t.value).toLowerCase();
+        return (list: string[]) => list.some((s) => plain(s).toLowerCase().includes(v));
     };
     const number = () => {
         const n = Number(t.value);
@@ -591,18 +749,21 @@ function compile(t: Term, data: Cards): Test {
     };
     const v = t.value.toLowerCase();
     switch (t.key) {
-        case "o": case "oracle": { const m = plainOrRegex(t.op); return card((c) => m(c.text)); }
-        case "fo": case "fulloracle": { const m = plainOrRegex(t.op); return card((c) => m(c.fullText)); }
-        case "t": case "type": { const m = plainOrRegex(t.op); return card((c) => m(c.faceTypes)); }
-        // the whole name, and a reversible printing's own ("Bolt // Bolt"); a face's name alone doesn't count
-        case "name": case "word": { const m = plainOrRegex(t.op); return print((p, c) => m([c.name, p.name])); }
+        // the text with the card's name as ~ only for a search with ~ in it (see cardText)
+        case "o": case "oracle": { const m = plainOrRegex(t.op), self = t.value.includes("~"); return card((c) => m(self ? c.text : c.printed)); }
+        case "fo": case "fulloracle": { const m = plainOrRegex(t.op), self = t.value.includes("~"); return card((c) => m(self ? c.fullText : c.fullPrinted)); }
+        // a regex reads the whole type line, "Front // Back", so t:/^land/ is a land in front only
+        case "t": case "type": { const m = plainOrRegex(t.op); return card((c) => m(t.regex ? [c.types] : c.faceTypes)); }
+        // the whole name, a reversible printing's own ("Bolt // Bolt") and, unless it's a regex, a printing's
+        // flavor name (name:"green dragon inn" is Homeward Path); a face's name alone doesn't count
+        case "name": case "word": { const m = plainOrRegex(t.op); return print((p, c) => m(t.regex ? [c.name, p.name] : [c.name, p.name, p.flavorName])); }
         case "!": return card((c) => c.name.toLowerCase() === v || c.faceNames.some((n) => n.toLowerCase() === v));
         case "c": case "color": { const m = colorTest(t.op, t.value, ">="); return card((c) => c.faceColors.some(m)); }
         case "id": case "identity": case "ci": case "commander": { const m = colorTest(t.op, t.value, "<="); return card((c) => m(c.identity)); }
         case "produces": { const m = colorTest(t.op, t.value, ">=", true); return card((c) => m(c.produced)); }
         case "has":
             if (v === "indicator") return card((c) => c.indicator);
-            if (v === "watermark") return print((p) => !!p.watermark);
+            if (v === "watermark") return print((p) => p.watermarks.size > 0);
             throw new Unsupported(`has:${v}`);
         case "f": case "format": case "legal": return card((c) => c.legal.has(v));
         case "banned": return card((c) => c.banned.has(v));
@@ -622,10 +783,11 @@ function compile(t: Term, data: Cards): Test {
             };
             // * counts as 0, so pow:* is pow=0
             if (v === "*") return card((c) => stat(c, t.key).some((a) => a !== undefined && compare(t.op, a, 0)));
-            // pow>tou compares two of a face's own stats
+            // pow>tou compares any face's stat with any face's: Dion // Bahamut is tou>pow, its back's 5
+            // toughness against its front's 3 power, though each face is square
             if (/^(pow|power|tou|toughness|loy|loyalty|pt|powtou|mv|cmc)$/.test(v)) return card((c) => {
-                const other = stat(c, v);
-                return stat(c, t.key).some((a, i) => a !== undefined && other[i] !== undefined && compare(t.op, a, other[i]!));
+                const other = stat(c, v).filter((b) => b !== undefined);
+                return stat(c, t.key).some((a) => a !== undefined && other.some((b) => compare(t.op, a, b!)));
             });
             const n = number();
             return card((c) => stat(c, t.key).some((a) => a !== undefined && compare(t.op, a, n)));
@@ -634,7 +796,7 @@ function compile(t: Term, data: Cards): Test {
         case "edhrec": case "edhrecrank": { const n = number(); return card((c) => c.edhrec !== undefined && compare(t.op, c.edhrec, n)); }
         case "otag": case "oracletag": case "function": {
             if (!data.tags.size) throw new Unsupported("otag without the tags file");
-            const cards = data.tags.get(v);
+            const cards = data.tags.get(v) ?? data.tags.get(tagKey(v));
             return card((c) => !!cards?.has(c.oracleId));
         }
         case "is": case "not": {
@@ -642,6 +804,11 @@ function compile(t: Term, data: Cards): Test {
             const onCard = IS_CARD[v], onPrint = IS_PRINT[v];
             if (onCard) return card((c) => onCard(c, data) !== negate);
             if (onPrint) return print((p) => onPrint(p) !== negate);
+            const lands = LAND_CYCLES[v];
+            if (lands) return card((c) => lands.has(c.name) !== negate);
+            // the kinds of promo, as the printings' promo types name them (is:prerelease, is:fnm…)
+            const promo = PROMO_NAMES[v] ?? v;
+            if (data.promoTypes.has(promo)) return print((p) => p.promoTypes.has(promo) !== negate);
             throw new Unsupported(`is:${v}`);
         }
         // the printing's own facts
@@ -659,14 +826,17 @@ function compile(t: Term, data: Cards): Test {
             return print((p) => compare(t.op === ":" ? "=" : t.op, rarityOf(p.rarity), want));
         }
         case "a": case "artist": { const m = plainOrRegex(t.op); return print((p) => m([p.artist])); }
-        case "ft": case "flavor": { const m = plainOrRegex(t.op); return print((p) => m(p.flavor)); }
-        case "wm": case "watermark": return print((p) => p.watermark === v);
+        // a regex reads the front face's only: Invasion of Dominaria's back face mentions Yawgmoth, but
+        // ft:/yawgmoth/ doesn't find it, where ft:yawgmoth does
+        case "ft": case "flavor": { const m = plainOrRegex(t.op); return print((p) => m(t.regex ? p.flavor.slice(0, 1) : p.flavor)); }
+        case "wm": case "watermark": return print((p) => p.watermarks.has(v));
         case "frame": return print((p) => p.frame === v || p.frameEffects.has(v));
         case "border": return print((p) => p.border === v);
         case "stamp": return print((p) => p.stamp === v);
         case "game": return print((p) => p.games.has(v));
         case "cn": case "number":
-            if (/^\d+$/.test(v)) { const n = Number(v); return print((p) => /^\d+$/.test(p.cn) && compare(t.op, Number(p.cn), n)); }
+            // by the number in it: cn:1 finds Combat Medic's 1a and Eager Cadet's S1
+            if (/^\d+$/.test(v)) { const n = Number(v); return print((p) => /\d/.test(p.cn) && compare(t.op, Number(p.cn.replace(/\D/g, "")), n)); }
             return print((p) => p.cn.toLowerCase() === v);
         case "year": { const n = number(); return print((p) => !!p.released && compare(t.op, Number(p.released.slice(0, 4)), n)); }
         case "date": {
@@ -674,16 +844,49 @@ function compile(t: Term, data: Cards): Test {
             if (!day) throw new Unsupported(`date ${v}`);
             return print((p) => !!p.released && compare(t.op, p.released < day ? -1 : p.released > day ? 1 : 0, 0));
         }
+        // permanents by how many of a color's mana symbols their cost has, a hybrid one counting for both of its
+        // colors: devotion:{G}{G}{G} is three or more, devotion:{G/U}{G/U} two or more that are green or blue
+        case "devotion": {
+            const want = [...manaSymbols(t.value)].flatMap(([sym, n]) => Array(n).fill(sym) as string[]);
+            const colors = new Set(want.flatMap((sym) => sym.split("/")).filter((l) => /^[WUBRG]$/.test(l)));
+            if (!colors.size) throw new Unsupported(`devotion:${t.value}`);
+            const op = t.op === ":" ? ">=" : t.op;
+            return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
+                [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
+        }
+        // a printing that's the first of its card with this rarity (promos aside), art, flavor text or frame
+        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Flavor text by its letters only:
+        // ". . ." is "...", and "Ætheric" "aetheric"
+        case "new": {
+            const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")), frame: (p) => p.frame };
+            const of = field[v];
+            if (!of) throw new Unsupported(`new:${v}`);
+            return print((p, c) => {
+                const earlier = c.printings.map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo));
+                return !!of(p) && !earlier.some((q) => of(q) === of(p));
+            });
+        }
+        // each card's cheapest printing in this currency
+        case "cheapest": {
+            if (!["usd", "eur", "tix"].includes(v)) throw new Unsupported(`cheapest:${v}`);
+            const key = v as "usd" | "eur" | "tix";
+            return print((p, c) => {
+                if (p[key] === undefined) return false;
+                return !c.printings.some((i) => { const q = data.prints[i]; return !q.extra && q[key] !== undefined && q[key]! < p[key]!; });
+            });
+        }
         case "usd": case "eur": case "tix": {
             const n = number(), key = t.key as "usd" | "eur" | "tix";
             return print((p) => p[key] !== undefined && compare(t.op, p[key]!, n));
         }
-        // ever printed in a set, set type, game or rarity
+        // ever printed in a set, set type, game or rarity (not counting masterpieces, Secret Lair and the like, or
+        // From the Vault, all mythic: in:mythic isn't Swords to Plowshares)
         case "in": {
             const st = setType(v), r = rarityOf(v);
             return card((c) => c.printings.some((i) => {
                 const p = data.prints[i];
-                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && p.setType !== "masterpiece" && p.setType !== "box" && rarityOf(p.rarity) === r) || p.lang === v;
+                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r) || p.lang === v;
             }));
         }
         case "prints": case "sets": case "paperprints": case "papersets": {
@@ -698,26 +901,60 @@ function compile(t: Term, data: Cards): Test {
     throw new Unsupported(`${t.key}${t.op}`);
 }
 
-// which printings Scryfall hides by default the search asks for: all of them for include:extras, naming their
-// set or type, or a name: search (not plain words); the "funny" ones for is:funny; otherwise none
-function revealed(node: Node, negated = false): "all" | "funny" | "" {
+// is: keys for printings that are hidden themselves, so asking for them shows them
+const PRINT_REVEALS = new Set(["playtest", "oversized", "thick", "surgefoil"]);
+
+// how much of what Scryfall hides by default the search asks for, as a level a hidden printing needs (NEEDS):
+// include:extras or naming a set shows everything; naming a hidden type, a name: regex, an artist, a
+// watermark, a border, is:dfc or is:funny shows the "extra" ones
+const NEEDS: Record<Printing["extra"], number> = { "": 0, extra: 1, setOnly: 2 };
+// Naming a set shows its hidden printings to its own part of the search only ("set"): (s:neo or t:sorcery)
+// doesn't show the hidden sorceries, s:neo t:dragon does show NEO's dragon tokens. Everything else shows them to
+// the whole search ("all"): r:uncommon or o:draw wm:phyrexian shows hidden uncommons too
+function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
     if ("term" in node) {
         const { key, value } = node.term;
-        if (key === "include" && value.toLowerCase() === "extras") return "all";
-        if (["s", "e", "set", "edition"].includes(key)) return "all";
-        // -name:dragon doesn't
-        if (key === "name" && !negated) return "all";
-        if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return "all";
-        if (key === "is" && value.toLowerCase() === "funny") return "funny";
-        return "";
+        // -s:tsp doesn't
+        if (["s", "e", "set", "edition"].includes(key)) return scope === "set" && !negated ? 2 : 0;
+        if (scope === "set") return 0;
+        if (key === "include" && value.toLowerCase() === "extras") return 2;
+        // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
+        // card, name:/^a/ Antoine Ruel Bio), but not name:lightning, and not -name:/dragon/
+        if (key === "name" && node.term.regex && !negated) return 2;
+        if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return 1;
+        // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
+        // is:transform doesn't
+        if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
+        // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
+        // (the surge-foil tokens), but not is:stamped or is:setpromo
+        if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
+        // and further: is:oversized finds the gold-bordered oversized cards, is:reserved the withdrawn ones
+        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
+        // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't
+        if (["banned", "restricted"].includes(key) && !negated) return 2;
+        // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
+        // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
+        // border:black or borderless, or -border:black)
+        // (left out, an artist shows everything, as include:extras does)
+        if (["a", "artist"].includes(key)) return negated ? 2 : 1;
+        if (["wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
+        if (key === "has" && value.toLowerCase() === "watermark") return 1;
+        // is:funny shows funny tokens too, like the Dragon
+        if (key === "is" && value.toLowerCase() === "funny" && !negated) return 1;
+        return 0;
     }
-    if ("not" in node) return revealed(node.not, !negated);
-    const each = ("and" in node ? node.and : node.or).map((part) => revealed(part, negated));
-    return each.includes("all") ? "all" : each.includes("funny") ? "funny" : "";
+    if ("not" in node) return revealed(node.not, !negated, scope);
+    // a set shows its printings to every part of an AND, but to an OR's other branches only if they name sets
+    // too (each branch shows more for itself, see evaluate)
+    const each = ("and" in node ? node.and : node.or).map((part) => revealed(part, negated, scope));
+    return "and" in node || scope === "all" ? Math.max(...each) : Math.min(...each);
 }
 
-// the printings among `prints` that match
-function evaluate(node: Node, data: Cards, prints: number[]): number[] {
+// the printings among `prints` that match. What Scryfall hides is left out part by part: `level` is what the
+// search around this part shows, and a part naming a set shows more for itself (see revealed)
+function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = false): number[] {
+    const shown = Math.max(level, revealed(node, negated, "set"));
+    const prints = all.filter((i) => NEEDS[data.prints[i].extra] <= shown);
     if ("term" in node) {
         const test = compile(node.term, data);
         if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card]));
@@ -731,26 +968,150 @@ function evaluate(node: Node, data: Cards, prints: number[]): number[] {
         });
     }
     // an AND only tests what's left after the parts before it, so a narrow part first saves the rest work
-    if ("and" in node) return node.and.reduce((left, part) => left.length ? evaluate(part, data, left) : left, prints);
+    if ("and" in node) return node.and.reduce((left, part) => left.length ? evaluate(part, data, left, shown, negated) : left, prints);
     if ("or" in node) {
         const hit = new Set<number>();
-        for (const part of node.or) for (const i of evaluate(part, data, prints)) hit.add(i);
-        return prints.filter((i) => hit.has(i));
+        for (const part of node.or) for (const i of evaluate(part, data, all, shown, negated)) hit.add(i);
+        return all.filter((i) => hit.has(i));
     }
-    const out = new Set(evaluate(node.not, data, prints));
-    return prints.filter((i) => !out.has(i));
+    // Scryfall's comparisons are its database's: a card without a power has no answer to tou>pow, and "not" of no
+    // answer is no answer either, so -(tou>pow or o:draw) leaves out every card without power and toughness
+    const out = new Set(evaluate(node.not, data, prints, shown, !negated));
+    const stats = statsIn(node.not);
+    return prints.filter((i) => !out.has(i) && stats.every((has) => has(data.cards[data.prints[i].card])));
+}
+
+// for each stat a search compares (pow, tou, loy, pt), whether a card has it
+function statsIn(node: Node): ((c: LocalCard) => boolean)[] {
+    if ("term" in node) {
+        const keys = [node.term.key, ...(/^(pow|power|tou|toughness|loy|loyalty|pt|powtou)$/.test(node.term.value.toLowerCase()) ? [node.term.value.toLowerCase()] : [])];
+        return keys.flatMap((k) => /^(pow|power|pt|powtou)$/.test(k) ? [(c: LocalCard) => c.power.some((v) => v !== undefined)]
+            : /^(tou|toughness)$/.test(k) ? [(c: LocalCard) => c.toughness.some((v) => v !== undefined)]
+            : /^(loy|loyalty)$/.test(k) ? [(c: LocalCard) => c.loyalty.some((v) => v !== undefined)] : []);
+    }
+    if ("not" in node) return statsIn(node.not);
+    return ("and" in node ? node.and : node.or).flatMap(statsIn);
 }
 
 // the cards (as indexes into `cards`) among `among` with a printing that matches the whole search
 export function search(node: Node, data: Cards, among?: number[]): number[] {
-    const shown = revealed(node);
-    const visible = (kind: Printing["extra"]) => !kind || shown === "all" || (kind === "funny" && shown === "funny");
-    const prints: number[] = [];
-    for (const c of among ?? data.cards.keys()) for (const p of data.cards[c].printings) if (visible(data.prints[p].extra)) prints.push(p);
     const seen = new Set<number>(), out: number[] = [];
-    for (const p of evaluate(node, data, prints)) {
+    for (const p of searchPrintings(node, data, among)) {
         const c = data.prints[p].card;
         if (!seen.has(c)) { seen.add(c); out.push(c); }
     }
     return out;
 }
+
+// the printings (as indexes into `prints`) that match the whole search, among those it shows
+export function searchPrintings(node: Node, data: Cards, among?: number[]): number[] {
+    const prints: number[] = [];
+    for (const c of among ?? data.cards.keys()) prints.push(...data.cards[c].printings);
+    return evaluate(node, data, prints, revealed(node));
+}
+
+// what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each
+// card's art once for unique:art. Returns the oracle id of each entry, in no particular order
+export function listed(node: Node, data: Cards): string[] {
+    const unique = findTerm(node, "unique")?.toLowerCase() ?? "cards";
+    if (unique === "cards") return search(node, data).map((c) => data.cards[c].oracleId);
+    const prints = searchPrintings(node, data);
+    if (unique === "prints") return prints.map((p) => data.cards[data.prints[p].card].oracleId);
+    if (unique !== "art") throw new Unsupported(`unique:${unique}`);
+    const arts = new Map<string, string>();
+    for (const p of prints) { const q = data.prints[p]; arts.set(`${q.card}|${q.art || p}`, data.cards[q.card].oracleId); }
+    return [...arts.values()];
+}
+
+// the value of a key anywhere in the search (order:, unique:…)
+function findTerm(node: Node, key: string): string | undefined {
+    if ("term" in node) return node.term.key === key ? node.term.value : undefined;
+    if ("not" in node) return findTerm(node.not, key);
+    for (const part of "and" in node ? node.and : node.or) { const v = findTerm(part, key); if (v !== undefined) return v; }
+    return undefined;
+}
+
+// ---- order ----
+
+// a card's name as Scryfall sorts it: letters only, accents and case aside
+const byName = new Intl.Collator("en", { sensitivity: "base", ignorePunctuation: true }).compare;
+const WUBRG = ["w", "u", "b", "r", "g"];
+// the printings of a card the search shows
+const shownPrints = (c: LocalCard, data: Cards) => c.printings.map((p) => data.prints[p]).filter((p) => !p.extra);
+const lowest = (list: (number | undefined)[]) => {
+    const known = list.filter((v): v is number => v !== undefined);
+    return known.length ? Math.min(...known) : undefined;
+};
+
+// each order: what a card sorts by, ascending as Scryfall's table puts it (released is newest first). Cards
+// without one (no price, no power) go last, or first for power and toughness, whichever the direction
+// `high` when direction:auto (the default) lists the highest first: the dearest, mythic first
+type Order = { key: (c: LocalCard, data: Cards) => number | string | undefined, missingFirst?: boolean, high?: boolean };
+const ORDERS: Record<string, Order> = {
+    name: { key: () => 0 },
+    cmc: { key: (c) => c.mv },
+    power: { key: (c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
+    toughness: { key: (c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
+    // WUBRG one color at a time, then multicolor (white-blue before black-red), then colorless
+    color: { key: (c) => {
+        const colors = WUBRG.map((l, i) => c.faceColors.some((f) => f.has(l)) ? String(i) : "").join("");
+        return colors.length === 0 ? "9" : colors.length > 1 ? `5${colors}` : colors;
+    } },
+    edhrec: { key: (c) => c.edhrec },
+    penny: { key: (c) => c.penny },
+    // its lowest known price, dearest first
+    usd: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.usd)), high: true },
+    eur: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.eur)), high: true },
+    tix: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.tix)), high: true },
+    // the rest by the printing a card is shown with (see shownPrinting)
+    // newest first: its date as a number that grows older
+    released: { key: (c, data) => -(Date.parse(shownPrinting(c, data)?.released ?? "") || 0) },
+    rarity: { key: (c, data) => rarityOf(shownPrinting(c, data)?.rarity ?? ""), high: true },
+    set: { key: (c, data) => { const p = shownPrinting(c, data); return p && `${p.set}/${p.cn.padStart(6, "0")}`; } },
+    artist: { key: (c, data) => shownPrinting(c, data)?.artist.toLowerCase() },
+};
+
+// the printing a card is shown with, as near as a rule gets (right for about 3 in 4, checked against what
+// Scryfall shows): the newest, lowest collector number first, but promos, special products (Secret Lair, The
+// List, Premium Decks, From the Vault, masterpieces) and Arena-only printings only when there's nothing else
+const SPECIAL_SETS = new Set(["box", "premium_deck", "alchemy", "from_the_vault", "masterpiece", "spellbook"]);
+function shownPrinting(c: LocalCard, data: Cards): Printing | undefined {
+    const special = (p: Printing) => p.promo || SPECIAL_SETS.has(p.setType) || p.set === "plst" || [...p.games].every((g) => g === "arena");
+    const cn = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
+    return shownPrints(c, data).sort((a, b) => Number(special(a)) - Number(special(b)) || b.released.localeCompare(a.released) || cn(a) - cn(b))[0];
+}
+ORDERS.mv = ORDERS.manavalue = ORDERS.cmc;
+ORDERS.pow = ORDERS.power;
+ORDERS.tou = ORDERS.toughness;
+
+// the order: and direction: in a search, wherever they are in it
+function orderTerms(node: Node): { order?: string, dir?: string } {
+    if ("term" in node) {
+        const { key, value } = node.term;
+        if (key === "order" || key === "sort") return { order: value.toLowerCase() };
+        if (key === "direction" || key === "dir") return { dir: value.toLowerCase() };
+        return {};
+    }
+    if ("not" in node) return orderTerms(node.not);
+    return Object.assign({}, ...("and" in node ? node.and : node.or).map(orderTerms));
+}
+
+// the cards (from search) in the order Scryfall lists them: order:<key> (by name if none) and direction:asc or
+// desc, ties by name
+export function sortCards(node: Node, data: Cards, cards: number[]): number[] {
+    const { order = "name", dir = "auto" } = orderTerms(node);
+    const how = ORDERS[order];
+    if (!how) throw new Unsupported(`order:${order}`);
+    const flip = dir === "desc" || (dir === "auto" && how.high) ? -1 : 1;
+    const keys = new Map(cards.map((i) => [i, how.key(data.cards[i], data)]));
+    return [...cards].sort((a, b) => {
+        const x = keys.get(a), y = keys.get(b);
+        if (x !== y) {
+            if (x === undefined) return how.missingFirst ? -flip : 1;
+            if (y === undefined) return how.missingFirst ? flip : -1;
+            return (x < y ? -1 : 1) * flip;
+        }
+        return byName(data.cards[a].name, data.cards[b].name) * (order === "name" ? flip : 1);
+    });
+}
+

@@ -14,6 +14,7 @@ import { querybox, chipId } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
 import { regexProblems } from './regexLimits'
+import { droppedTerms } from './droppedTerms'
 import { Arrow } from '../Arrow/Arrow'
 
 // the filters under their group headings, for the list "Add Search Filter" opens
@@ -165,9 +166,11 @@ export function QueryInput({ searched, skipped = [] }: { searched: string, skipp
     // a simpler search that finds the same cards, offered under the tray
     const query = buildQuery(snap.chips)
     const tidy = findRedundant(snap.chips)
-    // regexes Scryfall would drop without saying so, and what it did drop once the search has run
+    // regexes and terms Scryfall would drop without saying so, and what it did drop once the search has run
     const ran = query === searched && skipped.length > 0
-    const limits = [...regexProblems(query), ...(ran ? skipped : [])]
+    const dropped = droppedTerms(query)
+    // Scryfall's own "Invalid expression “-mv>=3”" says less than the note above it, so it's left out
+    const limits = [...regexProblems(query), ...dropped, ...(ran ? skipped.filter((w) => !(dropped.length && /^Invalid expression “-/.test(w))) : [])]
 
     function applyTidy() {
         if (!tidy) return
@@ -445,7 +448,7 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                         // Enter adds it like the other filters; Shift+Enter starts a new line
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDone() } }} />
                     {!isComplete(draft.text) ? <span className={styles.noteLine}>A bracket or quote is still open.</span> : null}
-                    {regexProblems(draft.text).map((p) => <span key={p} className={styles.noteLine}>{p}</span>)}
+                    {[...regexProblems(draft.text), ...droppedTerms(draft.text)].map((p) => <span key={p} className={styles.noteLine}>{p}</span>)}
                     <span className={styles.muted}>
                         Written in Scryfall's search syntax. <a href="/syntax" target="_blank">See the syntax guide</a>
                     </span>

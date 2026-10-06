@@ -64,7 +64,8 @@ for (const { kind, p } of pieces) {
     if (!hits.length) problems.push(`${kind} “${p.label}” finds no cards`);
 }
 
-// Scryfall fails a whole group with ~ in it when \b follows it: `untap (this|~)\b` matches nothing there
+// a group with ~ in it that \b follows: in Scryfall's text "this creature" is ~ and no \b follows a ~, so
+// `untap (this|~)\b` matches nothing there, not even "untap this creature"
 function tildeBeforeBoundary(re: string): boolean {
     const open: number[] = [];
     for (let i = 0; i < re.length; i++) {
@@ -72,8 +73,7 @@ function tildeBeforeBoundary(re: string): boolean {
         if (re[i] === "(") open.push(i);
         else if (re[i] === ")") {
             const start = open.pop() ?? 0;
-            const options = re.slice(start + 1, i).split("|");
-            if (options.includes("~") && re.startsWith("\\b", i + 1)) return true;
+            if (re.slice(start + 1, i).split("|").includes("~") && re.startsWith("\\b", i + 1)) return true;
         }
     }
     return false;
