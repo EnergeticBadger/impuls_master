@@ -34,6 +34,10 @@ o:"~" t:attraction
 o:"~ deals" t:room
 o:"sacrifice ~" t:case
 o:~ t:legendary t:creature mv=3
+o:/~/ t:creature mv=1 c:w
+o:/destroy ~/
+o:/(?=[^.]*~)[^.]*\bdestroy/ t:creature mv=3
+o:/untap (this|~)\b/
 
 # colours and identity
 c:r mv=1 t:instant
@@ -222,10 +226,31 @@ is:convention
 is:giftbox
 is:league
 is:brawler
-is:fetchland
-is:shockland
+# land groups: Scryfall's own lists, kept in land-cycles.json (npm run land-cycles)
+is:bikeland
+is:bondland
+is:bounceland
+is:canopyland
+is:checkland
+is:creatureland
 is:manland
+is:dual
 is:fastland
+is:fetchland
+is:filterland
+is:gainland
+is:painland
+is:pathway
+is:scryland
+is:shadowland
+is:shockland
+is:slowland
+is:storageland
+is:surveilland
+is:tangoland
+is:tricycleland
+is:triland
+-is:shockland t:land t:swamp t:forest
 
 # edhrec, tags
 edhrec<=100

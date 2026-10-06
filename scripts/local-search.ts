@@ -126,9 +126,35 @@ function extraKind(c: any): Printing["extra"] {
 
 const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 
+// ~ in a search, plain or regex, against text with the card's names as ~ (see cardText): the card by name, or
+// "this" and a card type or subtype the card calls itself by, but not "this turn", "this way", "this scheme",
+// "this Case" or "this Room". Oracle text now says "Destroy this enchantment" where it said "Destroy Aether
+// Storm", and o:/destroy ~/ finds both
+const THIS_WORDS = "creature|artifact|enchantment|land|planeswalker|battle|spell|card|permanent|token|aura|equipment|vehicle|saga|siege|class|contraption|attraction|spacecraft";
+const SELF = `(?:~|this (?:${THIS_WORDS})\\b)`;
+
+// Scryfall fails a whole group with ~ as one of its options when \b follows it: `untap (this|~)\b` matches
+// nothing there, not even "untap this creature". Returns the regex with each such group made to match nothing
+export function failTildeGroups(re: string): string {
+    const open: number[] = [];
+    for (let i = 0; i < re.length; i++) {
+        if (re[i] === "\\") { i++; continue; }
+        if (re[i] === "(") open.push(i);
+        else if (re[i] === ")") {
+            const start = open.pop() ?? 0;
+            if (re.slice(start + 1, i).split("|").includes("~") && re.startsWith("\\b", i + 1)) {
+                return failTildeGroups(re.slice(0, start) + "(?!)" + re.slice(i + 1));
+            }
+        }
+    }
+    return re;
+}
+
 // A Scryfall regex as JavaScript reads it. Scryfall's never cross a line break: . and [^…] don't match one,
-// and ^ $ match at each line, so `choose one —[^.]*exile` misses "choose one —\n• Exile" there
-export function scryfallRegex(body: string): RegExp {
+// and ^ $ match at each line, so `choose one —[^.]*exile` misses "choose one —\n• Exile" there. ~ is SELF,
+// and see failTildeGroups
+export function scryfallRegex(regex: string): RegExp {
+    const body = failTildeGroups(regex);
     let out = "", inClass = false;
     for (let i = 0; i < body.length; i++) {
         const ch = body[i];
@@ -141,7 +167,7 @@ export function scryfallRegex(body: string): RegExp {
             out += ch;
             continue;
         }
-        out += ch === "." ? "[^\\n]" : ch;
+        out += ch === "." ? "[^\\n]" : ch === "~" ? SELF : ch;
     }
     return new RegExp(out, "im");
 }
@@ -551,9 +577,6 @@ const symbolsOf = (c: LocalCard) => [...c.manaCosts, ...c.text].flatMap((t) => [
 // changelings are every creature type
 const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("changeling");
 
-// what plain ~ also matches after "this": a card type or subtype the card calls itself by, but not "this
-// turn", "this way", "this scheme", "this Case" or "this Room"
-const THIS_WORDS = "creature|artifact|enchantment|land|planeswalker|battle|spell|card|permanent|token|aura|equipment|vehicle|saga|siege|class|contraption|attraction|spacecraft";
 
 // the is: shortcuts, by what they look at
 const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
@@ -633,6 +656,13 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
 // is:brawler: those are wider than the intropack, mediainsert and brawldeck promo types
 const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 
+// the land groups (is:fetchland, is:shockland…): Scryfall keeps them by hand, so they're its own lists, kept in
+// land-cycles.json by npm run land-cycles. is:manland is is:creatureland
+const LAND_CYCLES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
+    JSON.parse(readFileSync(new URL("./land-cycles.json", import.meta.url), "utf8")) as Record<string, string[]>,
+).map(([cycle, names]) => [cycle, new Set(names)]));
+LAND_CYCLES.manland = LAND_CYCLES.creatureland;
+
 // keys that change how results are shown, not which cards match
 const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "lang", "sort"]);
 
@@ -645,9 +675,9 @@ function compile(t: Term, data: Cards): Test {
         if (op !== ":" && op !== "=") throw new Unsupported(`${t.key}${t.op}`);
         if (t.regex) { const re = t.regex; return (list: string[]) => list.some((s) => re.test(s)); }
         const v = t.value.toLowerCase();
-        // in plain text ~ is the card itself, by name or as "this creature", "this Aura"…
+        // in plain text too ~ is the card itself, by name or as "this creature", "this Aura"…
         if (v.includes("~")) {
-            const re = new RegExp(v.split("~").map(escapeRe).join(`(?:~|this (?:${THIS_WORDS})\\b)`), "i");
+            const re = new RegExp(v.split("~").map(escapeRe).join(SELF), "i");
             return (list: string[]) => list.some((s) => re.test(s));
         }
         return (list: string[]) => list.some((s) => s.toLowerCase().includes(v));
@@ -713,6 +743,8 @@ function compile(t: Term, data: Cards): Test {
             const onCard = IS_CARD[v], onPrint = IS_PRINT[v];
             if (onCard) return card((c) => onCard(c, data) !== negate);
             if (onPrint) return print((p) => onPrint(p) !== negate);
+            const lands = LAND_CYCLES[v];
+            if (lands) return card((c) => lands.has(c.name) !== negate);
             // the kinds of promo, as the printings' promo types name them (is:prerelease, is:fnm…)
             const promo = PROMO_NAMES[v] ?? v;
             if (data.promoTypes.has(promo)) return print((p) => p.promoTypes.has(promo) !== negate);
