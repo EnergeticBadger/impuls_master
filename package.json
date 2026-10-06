@@ -12,7 +12,8 @@
     "card-data": "node scripts/card-data.ts",
     "preview": "npm run build && wrangler dev",
     "cf-typegen": "wrangler types",
-    "fuzz-rules": "node scripts/fuzz-rules.ts"
+    "fuzz-rules": "node scripts/fuzz-rules.ts",
+    "test-rules": "node scripts/test-rules.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",

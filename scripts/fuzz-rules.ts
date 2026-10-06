@@ -1,4 +1,6 @@
 // Fuzz test for the "what does the card do" builder: npm run fuzz-rules -- [options]
+// It searches Scryfall itself, so it's slow (hours); npm run test-rules checks every block locally in under a
+// minute and is the one to run after changing a piece. This one is for what only Scryfall can show.
 // First every block the builder can make (and some made of awkward typed words, and searches of several blocks)
 // is checked against Scryfall's regex limits without searching. Then a sample is searched on Scryfall, the
 // heaviest first, to catch anything it drops, refuses or times out on, and to check the cards it finds match.
