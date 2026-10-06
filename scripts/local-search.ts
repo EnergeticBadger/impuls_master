@@ -99,6 +99,8 @@ export type Printing = {
     // a face each, "" where a face has none
     flavor: string[],
     stamp: string,
+    // the art, for new:art
+    art: string,
     // why it isn't shown unless asked for (see revealed): "setOnly" (only include:extras or its set shows it)
     // or "extra" (tokens, art cards, playtest cards…); "" is shown
     extra: "" | "setOnly" | "extra",
@@ -267,6 +269,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         watermark: (c.watermark ?? faces.find((f) => f.watermark)?.watermark ?? "").toLowerCase(),
         flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
+        art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
         extra: extraKind(c),
     };
 }
@@ -684,7 +687,10 @@ const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 const LAND_CYCLES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
     JSON.parse(readFileSync(new URL("./land-cycles.json", import.meta.url), "utf8")) as Record<string, string[]>,
 ).map(([cycle, names]) => [cycle, new Set(names)]));
-LAND_CYCLES.manland = LAND_CYCLES.creatureland;
+// and their other names, from Scryfall's syntax guide
+const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland: "bikeland", bicycleland: "bikeland", crowdland: "bondland", bbdland: "bondland",
+    battlebondland: "bondland", karoo: "bounceland", canland: "canopyland", snarl: "shadowland", battleland: "tangoland", trikeland: "tricycleland", triome: "tricycleland" };
+for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LAND_CYCLES[cycle];
 
 // every is: value this search knows, for scripts/test-keys.ts to check one by one
 export const isValues = (data: Cards) => [...new Set([...Object.keys(IS_CARD), ...Object.keys(IS_PRINT), ...Object.keys(LAND_CYCLES), ...Object.keys(PROMO_NAMES), ...data.promoTypes])].sort();
@@ -807,6 +813,38 @@ function compile(t: Term, data: Cards): Test {
             if (!day) throw new Unsupported(`date ${v}`);
             return print((p) => !!p.released && compare(t.op, p.released < day ? -1 : p.released > day ? 1 : 0, 0));
         }
+        // permanents by how many of a color's mana symbols their cost has, a hybrid one counting for both of its
+        // colors: devotion:{G}{G}{G} is three or more, devotion:{G/U}{G/U} two or more that are green or blue
+        case "devotion": {
+            const want = [...manaSymbols(t.value)].flatMap(([sym, n]) => Array(n).fill(sym) as string[]);
+            const colors = new Set(want.flatMap((sym) => sym.split("/")).filter((l) => /^[WUBRG]$/.test(l)));
+            if (!colors.size) throw new Unsupported(`devotion:${t.value}`);
+            const op = t.op === ":" ? ">=" : t.op;
+            return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
+                [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
+        }
+        // a printing that's the first of its card with this rarity (promos aside), art, flavor text or frame
+        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Flavor text by its letters only:
+        // ". . ." is "...", and "Ætheric" "aetheric"
+        case "new": {
+            const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")), frame: (p) => p.frame };
+            const of = field[v];
+            if (!of) throw new Unsupported(`new:${v}`);
+            return print((p, c) => {
+                const earlier = c.printings.map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo));
+                return !!of(p) && !earlier.some((q) => of(q) === of(p));
+            });
+        }
+        // each card's cheapest printing in this currency
+        case "cheapest": {
+            if (!["usd", "eur", "tix"].includes(v)) throw new Unsupported(`cheapest:${v}`);
+            const key = v as "usd" | "eur" | "tix";
+            return print((p, c) => {
+                if (p[key] === undefined) return false;
+                return !c.printings.some((i) => { const q = data.prints[i]; return !q.extra && q[key] !== undefined && q[key]! < p[key]!; });
+            });
+        }
         case "usd": case "eur": case "tix": {
             const n = number(), key = t.key as "usd" | "eur" | "tix";
             return print((p) => p[key] !== undefined && compare(t.op, p[key]!, n));
@@ -915,31 +953,40 @@ const lowest = (list: (number | undefined)[]) => {
 
 // each order: what a card sorts by, ascending as Scryfall's table puts it (released is newest first). Cards
 // without one (no price, no power) go last, or first for power and toughness, whichever the direction
-type Order = { key: (c: LocalCard, data: Cards) => number | string | undefined, missingFirst?: boolean };
+// `high` when direction:auto (the default) lists the highest first: the dearest, mythic first
+type Order = { key: (c: LocalCard, data: Cards) => number | string | undefined, missingFirst?: boolean, high?: boolean };
 const ORDERS: Record<string, Order> = {
     name: { key: () => 0 },
     cmc: { key: (c) => c.mv },
     power: { key: (c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
     toughness: { key: (c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
-    // WUBRG one color at a time, then multicolor, then colorless
-    color: { key: (c) => { const colors = new Set(c.faceColors.flatMap((f) => [...f])); return colors.size === 0 ? 6 : colors.size > 1 ? 5 : WUBRG.indexOf([...colors][0]); } },
+    // WUBRG one color at a time, then multicolor (white-blue before black-red), then colorless
+    color: { key: (c) => {
+        const colors = WUBRG.map((l, i) => c.faceColors.some((f) => f.has(l)) ? String(i) : "").join("");
+        return colors.length === 0 ? "9" : colors.length > 1 ? `5${colors}` : colors;
+    } },
     edhrec: { key: (c) => c.edhrec },
     penny: { key: (c) => c.penny },
-    usd: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.usd)) },
-    eur: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.eur)) },
-    tix: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.tix)) },
-    // newest first: the newest printing's date, as a number that grows older
-    released: { key: (c, data) => -Math.max(...shownPrints(c, data).map((p) => Date.parse(p.released) || 0)) },
-    rarity: { key: (c, data) => Math.min(...shownPrints(c, data).map((p) => rarityOf(p.rarity))) },
-    // by the printing a card is shown with
+    // its lowest known price, dearest first
+    usd: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.usd)), high: true },
+    eur: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.eur)), high: true },
+    tix: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.tix)), high: true },
+    // the rest by the printing a card is shown with (see shownPrinting)
+    // newest first: its date as a number that grows older
+    released: { key: (c, data) => -(Date.parse(shownPrinting(c, data)?.released ?? "") || 0) },
+    rarity: { key: (c, data) => rarityOf(shownPrinting(c, data)?.rarity ?? ""), high: true },
     set: { key: (c, data) => { const p = shownPrinting(c, data); return p && `${p.set}/${p.cn.padStart(6, "0")}`; } },
     artist: { key: (c, data) => shownPrinting(c, data)?.artist.toLowerCase() },
 };
 
-// the printing a card is shown with: the newest that isn't a promo or digital only, or the newest of any
+// the printing a card is shown with, as near as a rule gets (right for about 3 in 4, checked against what
+// Scryfall shows): the newest, lowest collector number first, but promos, special products (Secret Lair, The
+// List, Premium Decks, From the Vault, masterpieces) and Arena-only printings only when there's nothing else
+const SPECIAL_SETS = new Set(["box", "premium_deck", "alchemy", "from_the_vault", "masterpiece", "spellbook"]);
 function shownPrinting(c: LocalCard, data: Cards): Printing | undefined {
-    const prints = shownPrints(c, data).sort((a, b) => b.released.localeCompare(a.released));
-    return prints.find((p) => !p.promo && !p.digital) ?? prints[0];
+    const special = (p: Printing) => p.promo || SPECIAL_SETS.has(p.setType) || p.set === "plst" || [...p.games].every((g) => g === "arena");
+    const cn = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
+    return shownPrints(c, data).sort((a, b) => Number(special(a)) - Number(special(b)) || b.released.localeCompare(a.released) || cn(a) - cn(b))[0];
 }
 ORDERS.mv = ORDERS.manavalue = ORDERS.cmc;
 ORDERS.pow = ORDERS.power;
@@ -963,7 +1010,7 @@ export function sortCards(node: Node, data: Cards, cards: number[]): number[] {
     const { order = "name", dir = "auto" } = orderTerms(node);
     const how = ORDERS[order];
     if (!how) throw new Unsupported(`order:${order}`);
-    const flip = dir === "desc" ? -1 : 1;
+    const flip = dir === "desc" || (dir === "auto" && how.high) ? -1 : 1;
     const keys = new Map(cards.map((i) => [i, how.key(data.cards[i], data)]));
     return [...cards].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);

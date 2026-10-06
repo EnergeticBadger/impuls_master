@@ -9,6 +9,10 @@ bolt
 !"Lightning Bolt"
 name:/^[a-c].* dragon$/
 -name:dragon t:dragon r:mythic
+name:/lightning/
+name:treasure
+name:"green dragon inn"
+"green dragon inn"
 
 # types
 t:dragon t:legendary
@@ -25,6 +29,12 @@ o:"draw a card" t:instant mv=1 c:u
 o:~ o:"enters tapped" t:land -t:basic id:w
 fo:"you may cast it" t:sorcery mv<=2
 o:/^flying$/ t:creature mv=1
+o:/untap (this|that|~)\b/
+o:/untap this\b/
+o:"untap this creature"
+o:"untap ~"
+o:Æther
+o:/æther/
 kw:flying kw:lifelink t:angel
 o:"fire deals"
 o:/^banefire/
@@ -142,6 +152,11 @@ frame:showcase t:dragon
 frame:extendedart t:goblin
 border:borderless t:dragon
 border:white t:dragon
+border:silver
+st:box border:silver
+border:gold
+-border:black t:goblin
+!"goblin mime" r:rare
 stamp:acorn t:creature mv=1
 
 # prices
@@ -251,6 +266,23 @@ is:tangoland
 is:tricycleland
 is:triland
 -is:shockland t:land t:swamp t:forest
+is:karoo
+is:triome
+is:snarl
+is:battleland
+is:canland
+is:crowdland
+
+# devotion, new:, cheapest:
+devotion:{G}{G}{G} t:creature mv=3
+devotion:{G/U}{G/U} t:creature mv<=2
+devotion>={W}{W}{W}{W} t:enchantment
+new:rarity e:ima
+new:art e:tsr t:sliver
+new:flavor e:tsr
+new:frame e:mh2 t:creature mv=1
+cheapest:usd t:sliver usd>=1
+cheapest:usd e:sld t:dragon
 
 # edhrec, tags
 edhrec<=100
@@ -320,18 +352,3 @@ t:goblin r:mythic order:eur
 t:sliver order:tix
 t:sliver order:set
 t:sliver order:artist
-name:/lightning/
-name:treasure
-name:"green dragon inn"
-"green dragon inn"
-border:silver
-st:box border:silver
-border:gold
--border:black t:goblin
-!"goblin mime" r:rare
-o:/untap (this|that|~)\b/
-o:/untap this\b/
-o:"untap this creature"
-o:"untap ~"
-o:Æther
-o:/æther/
