@@ -13,6 +13,7 @@ import {
 import { querybox, chipId } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
 import { findRedundant } from './problems'
+import { regexProblems } from './regexLimits'
 import { Arrow } from '../Arrow/Arrow'
 
 // the filters under their group headings, for the list "Add Search Filter" opens
@@ -22,7 +23,8 @@ const FILTER_LIST = FILTER_GROUPS.map((label) => ({ label, filters: FILTERS.filt
 // to the search as a chip. Whatever the filters don't cover can be written as a Custom query in Scryfall's syntax.
 // There's no search button: the search follows the chips. A change in the tray searches straight away; changes
 // made with the filters panel open search once it closes. `searched` is the search on screen (or on its way).
-export function QueryInput({ searched }: { searched: string }) {
+// `skipped` is what Scryfall said it left out of the search on screen
+export function QueryInput({ searched, skipped = [] }: { searched: string, skipped?: readonly string[] }) {
     const snap = useSnapshot(querybox)
     const [open, setOpen] = useState(false)
     // the filter being filled in, and `chipId` the chip it's editing
@@ -57,6 +59,16 @@ export function QueryInput({ searched }: { searched: string }) {
         window.addEventListener('resize', set)
         set()
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
+    }, [open])
+
+    // on phones and tablets the panel takes the whole screen, so the page behind it stays put
+    // (the width matches QueryInput.module.css)
+    useEffect(() => {
+        if (!open || !matchMedia('(max-width: 1024px)').matches) return
+        const html = document.documentElement
+        const before = html.style.overflow
+        html.style.overflow = 'hidden'
+        return () => { html.style.overflow = before }
     }, [open])
 
     // clicking anywhere else, or Escape, closes the panel
@@ -153,6 +165,9 @@ export function QueryInput({ searched }: { searched: string }) {
     // a simpler search that finds the same cards, offered under the tray
     const query = buildQuery(snap.chips)
     const tidy = findRedundant(snap.chips)
+    // regexes Scryfall would drop without saying so, and what it did drop once the search has run
+    const ran = query === searched && skipped.length > 0
+    const limits = [...regexProblems(query), ...(ran ? skipped : [])]
 
     function applyTidy() {
         if (!tidy) return
@@ -221,6 +236,14 @@ export function QueryInput({ searched }: { searched: string }) {
                             <button type="button" className={styles.primary} onClick={applyTidy}>Simplify</button>
                         </span>
                     </div>
+                </div>
+            ) : null}
+
+            {limits.length ? (
+                <div className={styles.suggest} role="status">
+                    <strong>{ran ? 'Scryfall skipped part of this search' : 'Scryfall will skip part of this search'}</strong>
+                    <ul>{limits.map((l) => <li key={l}>{l}</li>)}</ul>
+                    {ran ? <span className={styles.muted}>The cards shown were found without it.</span> : null}
                 </div>
             ) : null}
 
@@ -422,6 +445,7 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                         // Enter adds it like the other filters; Shift+Enter starts a new line
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDone() } }} />
                     {!isComplete(draft.text) ? <span className={styles.noteLine}>A bracket or quote is still open.</span> : null}
+                    {regexProblems(draft.text).map((p) => <span key={p} className={styles.noteLine}>{p}</span>)}
                     <span className={styles.muted}>
                         Written in Scryfall's search syntax. <a href="/syntax" target="_blank">See the syntax guide</a>
                     </span>

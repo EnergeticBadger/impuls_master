@@ -14,3 +14,6 @@
 
 # Claude Code (local settings, hooks, worktrees)
 .claude/
+
+# rules builder fuzz runs (npm run fuzz-rules)
+/fuzz-results/

@@ -80,18 +80,14 @@ button.tokenLabel:hover,
 }
 
 /*
- * On a phone the filter panel is a sheet: the whole width and everything below the filters tray, so the chips
- * stay in view above it while the filters get the rest of the screen, with × to put it away. Its heading and
- * its Add buttons stay pinned while the middle scrolls, so the way out is always in view. --wrap-bottom is where
- * the tray ends (QueryInput).
+ * On phones and tablets the filter panel is a full-screen modal over the header and the page, with × to put it
+ * away (QueryInput also stops the page behind it scrolling). Its heading and its Add buttons stay pinned while
+ * the middle scrolls, so the way out is always in view.
  */
 .panel {
     position: fixed;
-    top: calc(var(--wrap-bottom, 8rem) + var(--space-2));
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: var(--z-header);
+    inset: 0;
+    z-index: var(--z-overlay);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -99,11 +95,10 @@ button.tokenLabel:hover,
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--space-4);
-    /* clear of the home bar on phones that have one */
+    /* clear of the notch and the home bar on phones that have them */
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
-    border: 1px solid var(--border-faint);
-    border-width: 1px 0 0;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border: 0 solid var(--border-faint);
     /* a neutral base; red is kept for what's selected and the main button */
     background-color: var(--raised-0);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
@@ -125,10 +120,11 @@ button.tokenLabel:hover,
 /* pinned to the top of the scrolling panel, edge to edge */
 .panel > .head {
     position: sticky;
-    top: calc(-1 * var(--space-4));
+    /* up over the panel's top padding, clear of the notch */
+    top: calc(-1 * var(--space-4) - env(safe-area-inset-top));
     z-index: 3;
-    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
-    padding: var(--space-4) calc(var(--space-4) + 44px) var(--space-2) var(--space-4);
+    margin: calc(-1 * var(--space-4) - env(safe-area-inset-top)) calc(-1 * var(--space-4)) 0;
+    padding: calc(var(--space-4) + env(safe-area-inset-top)) calc(var(--space-4) + 44px) var(--space-2) var(--space-4);
     background-color: var(--raised-0);
 }
 
@@ -352,7 +348,8 @@ button.option:focus-visible {
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
+    /* auto on top: in the full-screen panel it sits at the bottom of the screen even when there's little above it */
+    margin: auto calc(-1 * var(--space-4)) calc(-1 * var(--space-4) - env(safe-area-inset-bottom));
     padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-faint);
     background-color: var(--raised-0);
@@ -490,10 +487,10 @@ button.option:focus-visible {
     font-size: var(--text-sm);
 }
 
-/* the sheet's way out */
+/* the panel's way out */
 .sheetClose {
     position: absolute;
-    top: var(--space-2);
+    top: calc(var(--space-2) + env(safe-area-inset-top));
     right: var(--space-2);
     display: inline-flex;
     align-items: center;
@@ -615,14 +612,15 @@ button.option:focus-visible {
     background-color: var(--accent-hover);
 }
 
-/* Wider screens: the filters drop down under the tray instead of taking the screen, up to a comfortable reading
-   width, and reach no further than the bottom of the screen */
-@media screen and (min-width: 641px) {
+/* Desktop: the filters drop down under the tray instead of taking the screen, up to a comfortable reading
+   width, and reach no further than the bottom of the screen. --wrap-bottom is where the tray ends (QueryInput). */
+@media screen and (min-width: 1025px) {
     .panel {
         position: absolute;
         top: calc(100% + var(--space-2));
         right: auto;
         bottom: auto;
+        z-index: var(--z-header);
         width: min(100%, 1120px);
         max-height: max(16rem, calc(100dvh - var(--wrap-bottom, 8rem) - var(--space-2) - var(--space-4)));
         border-width: 1px;

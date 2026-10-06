@@ -2,6 +2,9 @@
 // Magic abilities are modular: a trigger ("When this enters"), an effect ("destroy"), and who or what it hits ("target artifact").
 // Each block is one ability; its pieces become a Scryfall regex like o:/when (~|this \w+) enters[^.]*destroy[^.]*target artifact/.
 
+// .ts so scripts/fuzz-rules.ts can load this file in plain Node too
+import { MAX_REGEX_CHARS, MAX_REGEXES } from './regexLimits.ts'
+
 // the most useful Tagger tags (otag:), shown as chips; every other tag is a search away. All checked to return cards.
 export const ROLES: { value: string, label: string }[] = [
     { value: 'removal', label: 'Removal' },
@@ -69,15 +72,20 @@ export function findTags(q: string, tags: readonly string[], limit = 8): string[
 // "this card" in Oracle text: older cards use ~ for the name, newer ones say "this creature", "this artifact"…
 const SELF = '(~|this \\w+)'
 
-// group sorts the pieces into headings in the dropdown; hint is extra words the search box matches
+// group sorts the pieces into headings in the dropdown; hint is extra words the search box matches.
+// re goes inside a bigger regex, so an alternation needs its own group, and groups may only nest two deep
+// (one deep in TARGETS, which sit inside a lookahead): Scryfall rejects or misreads `((a|(b))…)`
 export type Piece = { value: string, label: string, re: string, group: string, hint?: string }
 
 // when the ability happens
 export const TRIGGERS: Piece[] = [
     { group: 'This card', value: 'enters', label: 'When this enters', re: `when(ever)? ${SELF} enters`, hint: 'etb comes into play' },
     { group: 'This card', value: 'dies', label: 'When this dies', re: `when(ever)? ${SELF} dies`, hint: 'death' },
+    { group: 'This card', value: 'enters-dies', label: 'When this enters or dies (either one)', re: `when(ever)? ${SELF} (enters|dies)`, hint: 'etb death ltb' },
     { group: 'This card', value: 'leaves', label: 'When this leaves the battlefield', re: `when(ever)? ${SELF} leaves the battlefield`, hint: 'ltb' },
     { group: 'This card', value: 'attacks', label: 'Whenever this attacks', re: `whenever ${SELF} attacks`, hint: 'combat' },
+    { group: 'This card', value: 'enters-attacks', label: 'Whenever this enters or attacks', re: `whenever ${SELF} enters or attacks`, hint: 'etb combat' },
+    { group: 'This card', value: 'combat-any', label: 'Whenever this attacks, blocks or deals damage', re: `whenever ${SELF} (attacks|blocks|becomes blocked|deals (combat )?damage)`, hint: 'combat any' },
     { group: 'This card', value: 'blocks', label: 'Whenever this blocks', re: `whenever ${SELF} blocks`, hint: 'combat' },
     { group: 'This card', value: 'attacks-blocks', label: 'Whenever this attacks or blocks', re: `whenever ${SELF} attacks or blocks`, hint: 'combat' },
     { group: 'This card', value: 'blocked', label: 'Whenever this becomes blocked', re: `whenever ${SELF} becomes blocked`, hint: 'combat' },
@@ -90,6 +98,12 @@ export const TRIGGERS: Piece[] = [
     { group: 'This card', value: 'to-graveyard', label: 'When this is put into a graveyard from anywhere', re: `when ${SELF} is put into (a|your) graveyard`, hint: 'milled discarded' },
     { group: 'This card', value: 'transforms', label: 'When this transforms', re: `when(ever)? ${SELF} transforms( into)?`, hint: 'flip dfc' },
 
+    // equipment and auras trigger off the creature they're attached to, not themselves
+    { group: 'Equipped or enchanted creature', value: 'equipped-attacks', label: 'Whenever the equipped or enchanted creature attacks', re: 'whenever (equipped|enchanted) creature attacks', hint: 'equipment aura voltron combat' },
+    { group: 'Equipped or enchanted creature', value: 'equipped-combat-damage', label: 'Whenever the equipped or enchanted creature deals combat damage', re: 'whenever (equipped|enchanted) creature deals (combat )?damage', hint: 'equipment aura voltron sword hits connects' },
+    { group: 'Equipped or enchanted creature', value: 'equipped-dies', label: 'Whenever the equipped or enchanted creature dies', re: 'when(ever)? (equipped|enchanted) creature dies', hint: 'equipment aura death' },
+    { group: 'Equipped or enchanted creature', value: 'becomes-attached', label: 'Whenever this becomes attached (equip)', re: `whenever ${SELF} becomes attached`, hint: 'equipment aura equip' },
+
     { group: 'Other things happen', value: 'other-enters', label: 'Whenever another creature enters', re: 'whenever [^.,]*(another|a|one or more) [^.,]*creatures?[^.,]* enters?\\b', hint: 'etb' },
     { group: 'Other things happen', value: 'yours-enters', label: 'Whenever a creature you control enters', re: 'whenever (another|a|one or more) (other )?(nontoken )?creatures? you control enters?', hint: 'etb your side' },
     { group: 'Other things happen', value: 'token-enters', label: 'Whenever a token enters', re: 'whenever [^.,]*tokens?[^.,]* enters?\\b', hint: 'etb' },
@@ -99,7 +113,7 @@ export const TRIGGERS: Piece[] = [
     { group: 'Other things happen', value: 'landfall', label: 'Whenever a land enters (landfall)', re: 'whenever a land[^.,]* enters', hint: 'landfall' },
     { group: 'Other things happen', value: 'artifact-enters', label: 'Whenever an artifact enters', re: 'whenever [^.,]*artifacts?[^.,]* enters?\\b', hint: 'etb' },
     { group: 'Other things happen', value: 'enchantment-enters', label: 'Whenever an enchantment enters', re: 'whenever [^.,]*enchantments?[^.,]* enters?\\b', hint: 'constellation etb' },
-    { group: 'Other things happen', value: 'your-attack', label: 'Whenever you attack', re: 'whenever (you attack|a creature you control attacks|one or more creatures you control attack)', hint: 'combat' },
+    { group: 'Other things happen', value: 'your-attack', label: 'Whenever you attack', re: 'whenever (you attack|[^.,]*creatures? you control attacks?)', hint: 'combat' },
     { group: 'Other things happen', value: 'sacrifice', label: 'Whenever you sacrifice something', re: 'whenever you sacrifice', hint: 'sac' },
     { group: 'Other things happen', value: 'counters-put', label: 'Whenever counters are put on something', re: 'whenever (one or more )?[^.,]*counters? (is|are) put on', hint: '+1/+1' },
     { group: 'Other things happen', value: 'leaves-graveyard', label: 'Whenever a card leaves your graveyard', re: 'whenever [^.,]*cards? leaves? your graveyard', hint: 'recursion' },
@@ -135,8 +149,30 @@ export const TRIGGERS: Piece[] = [
     { group: 'Always on (static)', value: 'if-you-control', label: 'If you control…', re: 'if you control', hint: 'condition' },
 ]
 
-// what the ability does
+// equipment, auras and anthems say "has flying" or "have trample" where a one-shot effect says "gains"
+const GIVES = '(gains?|has|have)'
+const keywords = (...words: string[]) => `${GIVES} [^.]*\\b(${words.join('|')})`
+
+// what the ability does. The broad ones come first: one pick covers every way of doing something,
+// so people don't need a block per wording ("gets +2/+2", "+1/+1 counter", "has flying"…)
 export const EFFECTS: Piece[] = [
+    { group: 'Broad (any way of doing it)', value: 'any-bigger', label: 'make bigger: +N/+N or +N/+N counters (any number)', re: '\\+\\w+\\/\\+\\w+', hint: 'pump buff boost grow power toughness counters anthem equipment +1/+1 +2/+2 +X/+X' },
+    { group: 'Broad (any way of doing it)', value: 'any-smaller', label: 'make smaller: -N/-N or -N/-N counters (any number)', re: '-\\w+\\/-\\w+', hint: 'shrink wither weaken power toughness counters' },
+    { group: 'Broad (any way of doing it)', value: 'any-removal', label: 'remove it: destroy, exile, damage, bounce, edict…', re: "(\\bdestroy|\\bexile|deals? [^.]*damage|-\\w+\\/-\\w+|\\bfights?\\b|return[^.]*to (its|their) owner'?s'? hands?|sacrifices|into its owner's library)", hint: 'kill removal answer' },
+    { group: 'Broad (any way of doing it)', value: 'any-keyword', label: 'give a keyword: flying, trample, lifelink…', re: keywords('flying', 'first strike', 'double strike', 'deathtouch', 'haste', 'hexproof', 'indestructible', 'lifelink', 'menace', 'reach', 'trample', 'vigilance', 'ward', 'shroud', 'protection'), hint: 'keyword ability grant' },
+    { group: 'Broad (any way of doing it)', value: 'any-evasion', label: 'make it hard to block: flying, menace, unblockable…', re: `(${keywords('flying', 'menace', 'trample', 'shadow', 'fear', 'intimidate', 'skulk', 'horsemanship')}|can't be blocked)`, hint: 'evasion unblockable' },
+    { group: 'Broad (any way of doing it)', value: 'any-protection', label: 'protect it: hexproof, indestructible, ward, phasing…', re: `(${keywords('hexproof', 'shroud', 'indestructible', 'protection', 'ward')}|phases? out|\\bregenerate|prevent [^.]*damage)`, hint: 'protection save' },
+    { group: 'Broad (any way of doing it)', value: 'any-cards', label: 'get more cards: draw, or play cards from exile', re: '(\\bdraws? \\w+ cards?|exile the top[^.]*(\\. [^.]*)?you may (play|cast)|look at the top[^.]*into your hand)', hint: 'card advantage impulse' },
+    { group: 'Broad (any way of doing it)', value: 'any-graveyard', label: 'use a graveyard: return or cast cards from it', re: "(return|cast|play)[^.]*from (your|a|an opponent's) graveyard", hint: 'reanimate recursion flashback' },
+    { group: 'Broad (any way of doing it)', value: 'any-mana', label: 'get more mana: add mana, Treasure, lands, cheaper spells', re: '(add \\{|create[^.]*treasure|put [^.]*lands? cards?[^.]* onto the battlefield|play an additional land|costs? (\\{\\w\\} |\\w+ )?less)', hint: 'ramp fixing cost reducer' },
+    { group: 'Broad (any way of doing it)', value: 'any-hurt', label: 'hurt players: damage or life loss', re: '(loses? (\\w+ )?life|deals? [^.]*damage to [^.]*(player|opponent|any target))', hint: 'burn drain ping face' },
+    { group: 'Broad (any way of doing it)', value: 'any-counters', label: 'put counters of any kind', re: 'put[^.]*counters? on', hint: '+1/+1 loyalty charge proliferate' },
+    { group: 'Broad (any way of doing it)', value: 'any-copy', label: 'copy or clone: spells, creatures, token copies', re: '\\b(cop(y|ies)|populate|myriad|replicate|casualty|storm|embalm|eternalize|encore)\\b', hint: 'clone copy spell' },
+    { group: 'Broad (any way of doing it)', value: 'any-tutor', label: 'find a card in your library (pick its type under To who or what)', re: '(search your library|reveal cards from the top of your library until)', hint: 'tutor search dig' },
+    { group: 'Broad (any way of doing it)', value: 'any-untap', label: 'untap things: creatures, lands, permanents', re: '\\buntap (target|up to|another|each|all|it|them|those|that|this|~|x|two|three|four)\\b', hint: 'untap mana combo vigilance' },
+    { group: 'Broad (any way of doing it)', value: 'any-cheat', label: 'cheat into play: put onto the battlefield, or cast free', re: '(put [^.]*onto the battlefield|without paying (its|their) mana costs?)', hint: 'free sneak attack cheat' },
+    { group: 'Broad (any way of doing it)', value: 'any-lockdown', label: "lock it down: tap, can't attack, block or cast", re: "(\\btap (target|up to|another|each|all)|doesn't untap|can't (attack|block|cast|be cast|activate))", hint: 'stax tempo pacifism' },
+
     { group: 'Cards', value: 'draw', label: 'draw cards', re: '\\bdraws? \\w+ cards?', hint: 'card advantage' },
     { group: 'Cards', value: 'draw-then-discard', label: 'draw, then discard (loot)', re: 'draws? [^.]*then discards?', hint: 'loot rummage filter' },
     { group: 'Cards', value: 'look-top', label: 'look at the top cards of a library', re: 'look at the top', hint: 'dig' },
@@ -152,8 +188,8 @@ export const EFFECTS: Piece[] = [
     { group: 'Removal', value: 'destroy', label: 'destroy something', re: '\\bdestroy', hint: 'kill removal' },
     { group: 'Removal', value: 'exile', label: 'exile something', re: '\\bexile', hint: 'removal' },
     { group: 'Removal', value: 'damage', label: 'deal damage', re: 'deals? [^.]*damage', hint: 'burn ping' },
-    { group: 'Removal', value: 'shrink', label: 'give -X/-X', re: 'gets? -\\w+\\/-\\w+', hint: 'shrink kill' },
-    { group: 'Removal', value: 'minus-counters', label: 'put -1/-1 counters', re: '-1\\/-1 counters?', hint: 'wither' },
+    { group: 'Removal', value: 'shrink', label: 'give -N/-N', re: 'gets? -\\w+\\/-\\w+', hint: 'shrink kill' },
+    { group: 'Removal', value: 'minus-counters', label: 'put -N/-N counters (-1/-1 or any number)', re: '-\\w+\\/-\\w+ counters?', hint: 'wither infect' },
     { group: 'Removal', value: 'fight', label: 'make creatures fight', re: '\\bfights?\\b', hint: 'removal' },
     { group: 'Removal', value: 'bounce', label: "return something to its owner's hand", re: "return[^.]*to (its|their) owner'?s'? hands?", hint: 'bounce tempo' },
     { group: 'Removal', value: 'opp-sacrifice', label: 'make an opponent sacrifice', re: '(each opponent|target (player|opponent)|each player) sacrifices', hint: 'edict' },
@@ -161,13 +197,13 @@ export const EFFECTS: Piece[] = [
     { group: 'Removal', value: 'steal', label: 'gain control of something', re: 'gain control of', hint: 'steal threaten' },
     { group: 'Removal', value: 'tuck', label: "put something into its owner's library", re: "into its owner's library", hint: 'tuck' },
 
-    { group: 'Creatures & combat', value: 'counters', label: 'put +1/+1 counters', re: '\\+1\\/\\+1 counters?', hint: 'grow' },
-    { group: 'Creatures & combat', value: 'pump', label: 'give +X/+X until end of turn', re: 'gets? \\+\\w+\\/\\+\\w+', hint: 'pump buff anthem' },
-    { group: 'Creatures & combat', value: 'flying', label: 'give flying', re: 'gains? [^.]*flying', hint: 'evasion keyword' },
-    { group: 'Creatures & combat', value: 'trample', label: 'give trample', re: 'gains? [^.]*trample', hint: 'keyword' },
-    { group: 'Creatures & combat', value: 'haste', label: 'give haste', re: 'gains? [^.]*haste', hint: 'keyword' },
-    { group: 'Creatures & combat', value: 'indestructible', label: 'give indestructible', re: 'gains? [^.]*indestructible', hint: 'protection keyword' },
-    { group: 'Creatures & combat', value: 'hexproof', label: 'give hexproof or shroud', re: 'gains? [^.]*(hexproof|shroud)', hint: 'protection keyword' },
+    { group: 'Creatures & combat', value: 'counters', label: 'put +N/+N counters (+1/+1 or any number)', re: '\\+\\w+\\/\\+\\w+ counters?', hint: 'grow power toughness' },
+    { group: 'Creatures & combat', value: 'pump', label: 'give +N/+N (pump, equipment, anthem)', re: 'gets? \\+\\w+\\/\\+\\w+', hint: 'pump buff anthem power toughness' },
+    { group: 'Creatures & combat', value: 'flying', label: 'give flying', re: keywords('flying'), hint: 'evasion keyword' },
+    { group: 'Creatures & combat', value: 'trample', label: 'give trample', re: keywords('trample'), hint: 'keyword' },
+    { group: 'Creatures & combat', value: 'haste', label: 'give haste', re: keywords('haste'), hint: 'keyword' },
+    { group: 'Creatures & combat', value: 'indestructible', label: 'give indestructible', re: keywords('indestructible'), hint: 'protection keyword' },
+    { group: 'Creatures & combat', value: 'hexproof', label: 'give hexproof or shroud', re: keywords('hexproof', 'shroud'), hint: 'protection keyword' },
     { group: 'Creatures & combat', value: 'unblockable', label: "make something unblockable", re: "can't be blocked", hint: 'evasion' },
     { group: 'Creatures & combat', value: 'cant-block', label: "stop creatures from blocking", re: "can't block", hint: '' },
     { group: 'Creatures & combat', value: 'extra-combat', label: 'give an extra combat', re: 'additional combat phase', hint: '' },
@@ -182,7 +218,7 @@ export const EFFECTS: Piece[] = [
     { group: 'Tokens & copies', value: 'clue', label: 'create a Clue (investigate)', re: '(create[^.]*clue|investigate)', hint: 'token draw' },
     { group: 'Tokens & copies', value: 'copy', label: 'copy something', re: '\\bcopy', hint: 'clone' },
     { group: 'Tokens & copies', value: 'becomes-copy', label: 'become a copy of something', re: 'becomes? a copy', hint: 'clone' },
-    { group: 'Tokens & copies', value: 'double', label: 'double something', re: '\\bdoubles?\\b|twice that many', hint: 'doubling' },
+    { group: 'Tokens & copies', value: 'double', label: 'double something', re: '(\\bdoubles?\\b|twice that many)', hint: 'doubling' },
 
     { group: 'Life', value: 'gain-life', label: 'gain life', re: 'gains? \\w+ life', hint: 'lifegain' },
     { group: 'Life', value: 'lose-life', label: 'make someone lose life', re: 'loses? \\w+ life', hint: 'drain' },
@@ -210,13 +246,16 @@ export const EFFECTS: Piece[] = [
 export const TARGETS: Piece[] = [
     { group: 'Creatures', value: 'target creature', label: 'target creature', re: 'target creature', hint: 'single' },
     { group: 'Creatures', value: 'creature you control', label: 'a creature you control', re: 'creatures? you control', hint: 'your own' },
-    { group: 'Creatures', value: 'opponent creature', label: "a creature an opponent controls", re: '(creatures? (an opponent controls|your opponents control|you don\'t control))', hint: 'theirs' },
+    { group: 'Creatures', value: 'opponent creature', label: "a creature an opponent controls", re: 'creatures? (an opponent|your opponents|you don\'t) control', hint: 'theirs' },
     { group: 'Creatures', value: 'each creature', label: 'each or all creatures', re: '(each|all) (other )?creatures?', hint: 'sweeper wipe' },
     { group: 'Creatures', value: 'attacking creature', label: 'an attacking or blocking creature', re: '(attacking|blocking) creatures?', hint: 'combat' },
+    { group: 'Creatures', value: 'equipped creature', label: 'the equipped or enchanted creature', re: '(equipped|enchanted) creatures?', hint: 'equipment aura voltron' },
+    { group: 'Creatures', value: 'creature card', label: 'a creature card', re: 'creature cards?', hint: 'tutor graveyard reanimate' },
     { group: 'Creatures', value: 'token', label: 'a token', re: 'tokens?', hint: '' },
     { group: 'Other permanents', value: 'target artifact', label: 'an artifact', re: 'artifacts?', hint: '' },
     { group: 'Other permanents', value: 'target enchantment', label: 'an enchantment', re: 'enchantments?', hint: '' },
     { group: 'Other permanents', value: 'target land', label: 'a land', re: 'lands?', hint: '' },
+    { group: 'Zones', value: 'instant or sorcery', label: 'an instant or sorcery card', re: '(instant|sorcery)', hint: 'spellslinger tutor' },
     { group: 'Other permanents', value: 'target planeswalker', label: 'a planeswalker', re: 'planeswalkers?', hint: '' },
     { group: 'Other permanents', value: 'nonland permanent', label: 'a nonland permanent', re: 'nonland permanents?', hint: 'anything' },
     { group: 'Other permanents', value: 'permanent', label: 'any permanent', re: 'permanents?', hint: '' },
@@ -249,7 +288,8 @@ function parts(b: RuleBlock) {
 }
 
 // one block as Scryfall syntax; the pieces have to appear in one sentence, the trigger before the effect.
-// who/what can sit either side of the effect ("destroy target creature", "target player draws two cards")
+// who/what can sit before, after or inside the effect ("destroy target creature", "target player draws two cards",
+// "return target creature to its owner's hand"), so it goes in a lookahead: somewhere later in the same sentence
 export function blockToken(b: RuleBlock): string {
     const { trigger, effect, words, target } = parts(b)
     const what = target?.re ?? (words && escape(words.toLowerCase()))
@@ -259,8 +299,71 @@ export function blockToken(b: RuleBlock): string {
         if (!target) return /[\s()]/.test(words) ? `o:"${words.replace(/"/g, '')}"` : `o:${words.replace(/"/g, '')}`
         return `o:/${what}/`
     }
-    const does = effect && what ? `(${effect.re}[^.]*${what}|${what}[^.]*${effect.re})` : effect?.re ?? what
-    return `o:/${[trigger?.re, does].filter(Boolean).join('[^.]*')}/`
+    // the lookahead is a group of its own, so a target may only be one group deep: Scryfall rejects or
+    // misreads groups nested three deep
+    const regexes = (...pieces: (string | undefined)[]) => pack(fit(pieces.filter((p): p is string => !!p)))
+    const any = (list: string[]) => list.length > 1 ? `(${list.map((r) => `o:/${r}/`).join(' or ')})` : `o:/${list[0]}/`
+    const whole = regexes(trigger?.re, effect && what ? `(?=[^.]*${what})` : '', effect?.re ?? what)
+    if (whole.length <= MAX_BLOCK_REGEXES || !effect || !what) return any(whole)
+    // too long to keep who/what in the same sentence without running out of regexes: it only has to be on the card
+    return `(${any(regexes(trigger?.re, effect.re))} o:/${what}/)`
+}
+
+// a whole Scryfall query may only hold a few regexes, so one block keeps to half and leaves room for the others
+const MAX_BLOCK_REGEXES = MAX_REGEXES / 2
+
+// a long block is split into several regexes joined with `or`, each kept a little under Scryfall's limit
+const MAX_REGEX = MAX_REGEX_CHARS - 10
+
+// one sentence's pieces as regexes short enough for Scryfall: if they're too long together, the longest
+// piece's biggest alternation is halved and each half tried on its own. X(a|b)Y finds the same cards as X(a)Y or X(b)Y
+function fit(pieces: string[]): string[] {
+    const re = pieces.join('[^.]*')
+    if (re.length <= MAX_REGEX) return [re]
+    const i = pieces.reduce((longest, p, n) => p.length > pieces[longest].length ? n : longest, 0)
+    const halves = halve(pieces[i])
+    // nothing left to split: send it anyway and let Scryfall say so
+    if (!halves) return [re]
+    return halves.flatMap((h) => fit(pieces.map((p, n) => n === i ? h : p)))
+}
+
+// regexes that fit together go back into one, so the query stays as short as it can
+function pack(regexes: string[]): string[] {
+    const packed: string[] = []
+    for (const r of regexes) {
+        const last = packed.at(-1)
+        if (last !== undefined && last.length + 1 + r.length <= MAX_REGEX) packed[packed.length - 1] = `${last}|${r}`
+        else packed.push(r)
+    }
+    return packed
+}
+
+// the regex's biggest alternation cut in two: a(b|c|d) → a(b|c) and a(d); null when it has none.
+// A lookahead (?=b|c) splits the same way; a negative one wouldn't, so pieces don't use them
+function halve(re: string): [string, string] | null {
+    const open: { start: number, bars: number[] }[] = []
+    let best: { start: number, bars: number[], end: number } | undefined
+    let inClass = false
+    for (let i = 0; i < re.length; i++) {
+        const ch = re[i]
+        if (ch === '\\') i++
+        else if (inClass) inClass = ch !== ']'
+        else if (ch === '[') inClass = true
+        // a group's options start after any (?= or (?: at its front
+        else if (ch === '(') open.push({ start: i + (re.slice(i + 1).match(/^\?[=:]/)?.[0].length ?? 0), bars: [] })
+        else if (ch === '|') open.at(-1)?.bars.push(i)
+        else if (ch === ')') {
+            const group = open.pop()
+            if (group?.bars.length && group.bars.length > (best?.bars.length ?? 0)) best = { ...group, end: i }
+        }
+    }
+    if (!best) return null
+    const cuts = [best.start, ...best.bars, best.end]
+    const options = cuts.slice(1).map((cut, n) => re.slice(cuts[n] + 1, cut))
+    const half = Math.ceil(options.length / 2)
+    const { start, end } = best
+    const keep = (list: string[]) => `${re.slice(0, start + 1)}${list.join('|')}${re.slice(end)}`
+    return [keep(options.slice(0, half)), keep(options.slice(half))]
 }
 
 // one block as a sentence: "When this enters → destroy something → target creature"

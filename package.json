@@ -11,7 +11,8 @@
     "deploy": "npm run build && npm run card-data && wrangler deploy",
     "card-data": "node scripts/card-data.ts",
     "preview": "npm run build && wrangler dev",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "fuzz-rules": "node scripts/fuzz-rules.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
