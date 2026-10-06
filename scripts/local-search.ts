@@ -10,6 +10,7 @@
 // Counts come out within about 1% of Scryfall's. The gap left is mostly cards Scryfall hides that the bulk
 // file doesn't mark (Alchemy's specialize variants, some novelty promos), and a few regexes Scryfall reads
 // differently (it fails `(this|~)\b` outright); scripts/test-rules.ts compares the two and lists big gaps.
+// Like Scryfall's, a regex here never crosses a line break (see scryfallRegex).
 
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -43,9 +44,29 @@ const EXTRAS = new Set(["token", "double_faced_token", "emblem", "art_series", "
 
 const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 
-function toCard(c: any): LocalCard | null {
-    // playtest cards (Mystery Booster's, the Unknown Event's) are hidden from searches too
-    if (EXTRAS.has(c.layout) || c.promo_types?.includes("playtest")) return null;
+// A Scryfall regex as JavaScript reads it. Scryfall's never cross a line break: . and [^…] don't match one,
+// and ^ $ match at each line, so `choose one —[^.]*exile` misses "choose one —\n• Exile" there
+export function scryfallRegex(body: string): RegExp {
+    let out = "", inClass = false;
+    for (let i = 0; i < body.length; i++) {
+        const ch = body[i];
+        if (ch === "\\") { out += body.slice(i, i + 2); i++; continue; }
+        if (inClass) { if (ch === "]") inClass = false; out += ch; continue; }
+        if (ch === "[") {
+            inClass = true;
+            // a negated class leaves out line breaks too
+            if (body[i + 1] === "^") { out += "[^\\n"; i++; continue; }
+            out += ch;
+            continue;
+        }
+        out += ch === "." ? "[^\\n]" : ch;
+    }
+    return new RegExp(out, "im");
+}
+
+// a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept), with the
+// card's own name as ~. Takes a card as Scryfall's API and bulk files give it
+export function cardText(c: any): { text: string[], fullText: string[] } {
     const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
     const fullName: string = c.name;
     // the card's names, longest first, become ~: the whole name, each face's, and a legend's short name
@@ -57,12 +78,18 @@ function toCard(c: any): LocalCard | null {
     const self = names.length ? new RegExp(names.map(escapeRe).join("|"), "g") : null;
     const raw = faces.map((f) => (f.oracle_text ?? c.oracle_text ?? "") as string);
     const tilde = (t: string) => self ? t.replace(self, "~") : t;
+    return { text: raw.map((t) => tilde(t.replace(/ ?\([^)]*\)/g, ""))), fullText: raw.map(tilde) };
+}
+
+function toCard(c: any): LocalCard | null {
+    // playtest cards (Mystery Booster's, the Unknown Event's) are hidden from searches too
+    if (EXTRAS.has(c.layout) || c.promo_types?.includes("playtest")) return null;
+    const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
     const letters = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
     return {
         oracleId: c.oracle_id ?? faces[0]?.oracle_id,
-        name: fullName,
-        text: raw.map((t) => tilde(t.replace(/ ?\([^)]*\)/g, ""))),
-        fullText: raw.map(tilde),
+        name: c.name,
+        ...cardText(c),
         types: (c.type_line ?? faces.map((f) => f.type_line).join(" // ")).toLowerCase(),
         colors: letters(c.colors ?? faces.flatMap((f) => f.colors ?? [])),
         identity: letters(c.color_identity),
@@ -152,7 +179,7 @@ function tokenize(q: string): (string | Term)[] {
                 let end = j + 1;
                 while (end < q.length && q[end] !== "/") end += q[end] === "\\" ? 2 : 1;
                 const body = q.slice(j + 1, end);
-                try { regex = new RegExp(body, "i"); } catch (e) { throw new Unsupported(`regex doesn't compile here: ${(e as Error).message}`); }
+                try { regex = scryfallRegex(body); } catch (e) { throw new Unsupported(`regex doesn't compile here: ${(e as Error).message}`); }
                 value = body;
                 j = end + 1;
             } else if (q[j] === "\"") {
