@@ -1,4 +1,6 @@
 // Fuzz test for the "what does the card do" builder: npm run fuzz-rules -- [options]
+// It searches Scryfall itself, so it's slow (hours); npm run test-rules checks every block locally in under a
+// minute and is the one to run after changing a piece. This one is for what only Scryfall can show.
 // First every block the builder can make (and some made of awkward typed words, and searches of several blocks)
 // is checked against Scryfall's regex limits without searching. Then a sample is searched on Scryfall, the
 // heaviest first, to catch anything it drops, refuses or times out on, and to check the cards it finds match.
@@ -17,6 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve } from "node:path";
 import { EFFECTS, TARGETS, TRIGGERS, blockToken, type RuleBlock } from "../app/Components/Searchbar/rules.ts";
 import { MAX_REGEX_CHARS, MAX_REGEX_DEPTH, MAX_REGEXES, findRegexes, regexDepth } from "../app/Components/Searchbar/regexLimits.ts";
+import { cardText, scryfallRegex } from "./local-search.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-fuzz/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -135,16 +138,10 @@ async function search(c: Case): Promise<Result> {
 // Only for a single block, where any one regex matching is enough
 function mismatch(c: Case, cards: any[]): string | undefined {
     if (c.kind === "several" || c.query.includes(") o:/")) return undefined;
-    const regexes = findRegexes(c.query).map((re) => { try { return new RegExp(re, "i"); } catch { return null; } });
+    const regexes = findRegexes(c.query).map((re) => { try { return scryfallRegex(re); } catch { return null; } });
     if (regexes.includes(null)) return undefined;
-    for (const card of cards.slice(0, 5)) {
-        const texts = [card.oracle_text, ...(card.card_faces ?? []).map((f: any) => f.oracle_text)].filter(Boolean) as string[];
-        const name = String(card.name).split(" // ")[0];
-        // Scryfall matches the card's own name as ~ too, and a legend's short name ("Baxter" for "Baxter, Fly in the Ointment")
-        const short = name.split(",")[0];
-        const variants = texts.flatMap((t) => [t, t.split(name).join("~"), t.split(name).join("~").split(short).join("~")]);
-        if (!variants.some((t) => regexes.some((re) => re!.test(t)))) return card.name;
-    }
+    // the text as Scryfall searches it: the card's names as ~, reminder text left out (see scripts/local-search.ts)
+    for (const card of cards.slice(0, 5)) if (!cardText(card).text.some((t) => regexes.some((re) => re!.test(t)))) return card.name;
     return undefined;
 }
 

@@ -74,7 +74,9 @@ const SELF = '(~|this \\w+)'
 
 // group sorts the pieces into headings in the dropdown; hint is extra words the search box matches.
 // re goes inside a bigger regex, so an alternation needs its own group, and groups may only nest two deep
-// (one deep in TARGETS, which sit inside a lookahead): Scryfall rejects or misreads `((a|(b))…)`
+// (one deep in TARGETS, which sit inside a lookahead): Scryfall rejects or misreads `((a|(b))…)`.
+// Keep ~ out of a group that \b follows: Scryfall fails the whole group then, `(this|~)\b` matching nothing
+// (scripts/test-rules.ts checks for it)
 export type Piece = { value: string, label: string, re: string, group: string, hint?: string }
 
 // when the ability happens
@@ -169,7 +171,7 @@ export const EFFECTS: Piece[] = [
     { group: 'Broad (any way of doing it)', value: 'any-counters', label: 'put counters of any kind', re: 'put[^.]*counters? on', hint: '+1/+1 loyalty charge proliferate' },
     { group: 'Broad (any way of doing it)', value: 'any-copy', label: 'copy or clone: spells, creatures, token copies', re: '\\b(cop(y|ies)|populate|myriad|replicate|casualty|storm|embalm|eternalize|encore)\\b', hint: 'clone copy spell' },
     { group: 'Broad (any way of doing it)', value: 'any-tutor', label: 'find a card in your library (pick its type under To who or what)', re: '(search your library|reveal cards from the top of your library until)', hint: 'tutor search dig' },
-    { group: 'Broad (any way of doing it)', value: 'any-untap', label: 'untap things: creatures, lands, permanents', re: '\\buntap (target|up to|another|each|all|it|them|those|that|this|~|x|two|three|four)\\b', hint: 'untap mana combo vigilance' },
+    { group: 'Broad (any way of doing it)', value: 'any-untap', label: 'untap things: creatures, lands, permanents', re: '\\buntap ((target|up to|another|each|all|it|them|those|that|this|x|two|three|four)\\b|~)', hint: 'untap mana combo vigilance' },
     { group: 'Broad (any way of doing it)', value: 'any-cheat', label: 'cheat into play: put onto the battlefield, or cast free', re: '(put [^.]*onto the battlefield|without paying (its|their) mana costs?)', hint: 'free sneak attack cheat' },
     { group: 'Broad (any way of doing it)', value: 'any-lockdown', label: "lock it down: tap, can't attack, block or cast", re: "(\\btap (target|up to|another|each|all)|doesn't untap|can't (attack|block|cast|be cast|activate))", hint: 'stax tempo pacifism' },
 
