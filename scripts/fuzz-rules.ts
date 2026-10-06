@@ -11,6 +11,7 @@
 //   --out <dir>    where results go (default fuzz-results)
 // <out>/results.jsonl gets a line per search as it finishes, so a stopped run picks up where it left off;
 // <out>/summary.md lists everything that wasn't fine. Stop it any time with Ctrl+C; the summary is still written.
+// While it runs, a status line at the bottom shows how far it's got, time left, and the outcomes so far.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -115,12 +116,11 @@ async function search(c: Case): Promise<Result> {
         const ms = Date.now() - start;
         const base = { id: c.id, kind: c.kind, about: c.about, query: c.query, ms };
         if (status === 429) {
-            console.log("  Scryfall asked to slow down; waiting 90 seconds");
-            await sleep(90_000);
+            await wait(90_000, "Scryfall asked to slow down");
             continue;
         }
         if (!body || status >= 500) {
-            if (attempt < 3) { await sleep(30_000 * attempt); continue; }
+            if (attempt < 3) { await wait(30_000 * attempt, `no answer (HTTP ${status || "none"}), trying again`); continue; }
             return { ...base, outcome: "error", cards: 0, details: `HTTP ${status || "no answer"}` };
         }
         if (status === 404) return { ...base, outcome: "empty", cards: 0 };
@@ -148,8 +148,63 @@ function mismatch(c: Case, cards: any[]): string | undefined {
     return undefined;
 }
 
+// The run's progress: a status line kept at the bottom of the terminal, with each search printed above it.
+// Piped to a file there's no bottom to keep it at, so it's printed every 50 searches instead
+const live = !!process.stdout.isTTY;
+const progress = { done: 0, total: 0, started: Date.now(), waiting: "", results: [] as Result[] };
+
+const duration = (ms: number) => {
+    const m = Math.round(ms / 60_000);
+    return m < 1 ? "<1m" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+};
+
+function statusLine(): string {
+    const { done, total, started, waiting, results } = progress;
+    const share = total ? done / total : 1;
+    const width = 20;
+    const bar = "█".repeat(Math.round(share * width)).padEnd(width, "░");
+    const elapsed = Date.now() - started;
+    const left = done ? (elapsed / done) * (total - done) : NaN;
+    const count = (o: Outcome) => results.filter((r) => r.outcome === o).length;
+    const problems = results.filter((r) => !["cards", "empty"].includes(r.outcome) || r.mismatch).length;
+    const times = results.map((r) => r.ms).sort((a, b) => a - b);
+    const median = times[Math.floor(times.length / 2)] ?? 0;
+    return [
+        `${bar} ${Math.floor(share * 100)}% ${done.toLocaleString()}/${total.toLocaleString()}`,
+        `${duration(elapsed)} in${done >= total ? ", done" : done ? `, ~${duration(left)} left` : ""}`,
+        problems ? `⚠ ${problems} to look at` : "no problems yet",
+        `cards ${count("cards")} · empty ${count("empty")} · skipped ${count("skipped")} · ignored ${count("ignored")} · refused ${count("refused")} · error ${count("error")}`,
+        `median ${median} ms`,
+        ...(waiting ? [`waiting: ${waiting}`] : []),
+    ].join("  |  ");
+}
+
+// the status line, cut to the terminal's width: a line that wraps can't be redrawn in place
+function draw() {
+    if (!live) return;
+    const columns = process.stdout.columns || 120;
+    const line = statusLine();
+    process.stdout.write(`\r\x1b[2K${line.length > columns - 1 ? `${line.slice(0, columns - 2)}…` : line}`);
+}
+
+// a line of log above the status line
+function say(line: string) {
+    if (live) process.stdout.write(`\r\x1b[2K${line}\n`);
+    else console.log(line);
+    draw();
+}
+
+async function wait(ms: number, why: string) {
+    progress.waiting = `${why} (${Math.round(ms / 1000)}s)`;
+    if (live) draw(); else console.log(`  waiting ${Math.round(ms / 1000)}s: ${why}`);
+    await sleep(ms);
+    progress.waiting = "";
+    draw();
+}
+
 function summarise(cases: Case[], offline: Map<string, string[]>, results: Result[]) {
     const lines: string[] = [`# Rules builder fuzz run`, ``, `${new Date().toISOString()} · seed ${SEED} · ${cases.length.toLocaleString()} cases`, ``];
+    if (progress.total) lines.push(`Progress: ${statusLine()}`, ``);
     lines.push(`## Offline limits check`, ``);
     lines.push(offline.size ? `${offline.size} cases break a limit:` : `Every case is within the limits: regexes ≤ ${MAX_REGEX_CHARS} characters and ≤ ${MAX_REGEX_DEPTH} deep, ≤ ${MAX_REGEXES / 2} regexes a block, all compile.`, ``);
     for (const [id, problems] of [...offline].slice(0, 200)) lines.push(`- \`${id}\`: ${problems.join("; ")}`);
@@ -218,19 +273,28 @@ let stopping = false;
 process.on("SIGINT", () => {
     if (stopping) process.exit(1);
     stopping = true;
-    console.log("\nStopping after this search…");
+    say("Stopping after this search… (Ctrl+C again to quit now)");
 });
 
 const fresh: Result[] = [];
+// counts include searches from an earlier run this one picked up from; time left is this run's pace
+Object.assign(progress, { total: queue.length, started: Date.now(), results: [...kept] });
+draw();
 for (const [n, c] of queue.entries()) {
     if (stopping) break;
     const r = await search(c);
     fresh.push(r);
+    progress.results.push(r);
+    progress.done = n + 1;
     appendFileSync(resultsFile, JSON.stringify(r) + "\n");
     const flagged = r.outcome !== "cards" && r.outcome !== "empty" ? `  <-- ${r.outcome}: ${r.details ?? (r.warnings ?? []).join(" ")}` : r.mismatch ? `  <-- found ${r.mismatch}, which the regex doesn't match` : "";
-    console.log(`${String(n + 1).padStart(6)}/${queue.length} ${r.outcome.padEnd(7)} ${String(r.cards).padStart(6)}  ${c.about}${flagged}`);
+    say(`${String(n + 1).padStart(6)}/${queue.length} ${r.outcome.padEnd(7)} ${String(r.cards).padStart(6)} ${String(r.ms).padStart(6)} ms  ${c.about}${flagged}`);
+    if (!live && (n + 1) % 50 === 0) console.log(`\n${statusLine()}\n`);
     if ((n + 1) % 100 === 0) summarise(cases, offline, [...kept, ...fresh]);
     await sleep(DELAY);
 }
 summarise(cases, offline, [...kept, ...fresh]);
+// leave the last status on screen, then the summary's path under it
+if (live) process.stdout.write("\n");
+else if (queue.length) console.log(statusLine());
 console.log(`\nSummary: ${join(OUT, "summary.md")}`);
