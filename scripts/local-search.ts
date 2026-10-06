@@ -12,6 +12,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeF
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { join } from "node:path";
+import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -458,10 +459,9 @@ function tokenize(q: string): (string | Term)[] {
 
 // Scryfall reads the minus in -mv=2 as part of the key, an unknown one, and drops the whole term (it warns
 // "Invalid expression"): so -mv=2 t:sliver is every sliver, and -mv=2 or t:goblin only goblins. It does so for
-// these number keys; -mv:even, -(mv=2), mv!=2, -c=2 and -r>=rare are read as meant. And it keeps the term but
-// drops the minus for date: -date>=2020-01-01 is date>=2020-01-01
-const MINUS_DROPPED = new Set(["mv", "cmc", "manavalue", "pow", "power", "tou", "toughness", "loy", "loyalty", "pt", "powtou",
-    "usd", "eur", "tix", "year", "edhrec", "edhrecrank", "cn", "number", "prints", "sets", "paperprints", "papersets"]);
+// the number keys in MINUS_DROPPED (shared with the search box, which warns about them); -mv:even, -(mv=2),
+// mv!=2, -c=2 and -r>=rare are read as meant. And it keeps the term but drops the minus for date:
+// -date>=2020-01-01 is date>=2020-01-01
 
 export function parse(q: string): Node {
     const tokens = tokenize(q);
