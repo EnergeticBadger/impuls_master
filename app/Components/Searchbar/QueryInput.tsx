@@ -59,6 +59,16 @@ export function QueryInput({ searched }: { searched: string }) {
         return () => { observer.disconnect(); window.removeEventListener('resize', set) }
     }, [open])
 
+    // on phones and tablets the panel takes the whole screen, so the page behind it stays put
+    // (the width matches QueryInput.module.css)
+    useEffect(() => {
+        if (!open || !matchMedia('(max-width: 1024px)').matches) return
+        const html = document.documentElement
+        const before = html.style.overflow
+        html.style.overflow = 'hidden'
+        return () => { html.style.overflow = before }
+    }, [open])
+
     // clicking anywhere else, or Escape, closes the panel
     useEffect(() => {
         if (!open) return
