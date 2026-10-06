@@ -359,6 +359,13 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         }
         if (isFunnyPrinting(c)) funnyPrinting.add(card);
         cards[card].printings.push(prints.push(toPrinting(c, faces, card)) - 1);
+        // legal in a format if any printing is: Ancestral Recall's Alpha one is restricted in Old School, its
+        // 30th Anniversary one not legal
+        for (const [format, status] of Object.entries(c.legalities ?? {})) {
+            if (status === "legal" || status === "restricted") cards[card].legal.add(format);
+            if (status === "restricted") cards[card].restricted.add(format);
+            if (status === "banned") cards[card].banned.add(format);
+        }
         const first = setDates.get(c.set);
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
@@ -601,14 +608,25 @@ const isCreature = (c: LocalCard) => anyFace(c, /\bcreature\b/);
 // mana symbols anywhere on the card: its costs, and in its rules text ({W/P} in an ability)
 const symbolsOf = (c: LocalCard) => [...c.manaCosts, ...c.text].flatMap((t) => [...t.matchAll(/\{([^}]+)\}/g)].map((m) => m[1].toUpperCase()));
 // changelings are every creature type
-const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("changeling");
+// and so are the types a card's text gives it: "Burakos is also a Cleric, Rogue, Warrior, and Wizard"
+const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("changeling")
+    || c.text.some((t) => [...t.matchAll(/\bis also an? ([^.]*)/gi)].some((m) => re.test(m[1].toLowerCase())));
 
 
 // the is: shortcuts, by what they look at
 const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a legendary creature or a Background, or the card says so
-    commander: (c) => /\blegendary\b/.test(c.faceTypes[0]) && /\b(creature|background)\b/.test(c.faceTypes[0]) || c.text.some((t) => /can be your commander/i.test(t)),
-    spell: (c) => !/\bland\b/.test(c.faceTypes[0]),
+    // the front face is a legendary creature or Background, or a legendary Vehicle or Spacecraft with power and
+    // toughness (The Falcon, Airship Restored), or the card says so ("can be your commander", Grist's "it's a 1/1
+    // Insect creature" off the battlefield); but not a card banned in Commander (Leovold) or a meld card's back
+    commander: (c) => !c.banned.has("commander") && c.meld !== "result" && (
+        /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
+        || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t))),
+    // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
+    // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
+    // Conspiracies aren't
+    spell: (c) => (["transform", "meld", "flip"].includes(c.layout) ? c.faceTypes.slice(0, 1) : c.faceTypes).some((t) =>
+        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
     permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/),
     historic: (c) => anyFace(c, /\b(legendary|artifact|saga)\b/),
     party: (c) => isCreature(c) && hasType(c, /\b(cleric|rogue|warrior|wizard)\b/),
@@ -622,15 +640,19 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     frenchvanilla: (c) => {
         if (!isCreature(c) || !c.keywords.size || !c.fullText.some((t) => t.trim())) return false;
         const line = new RegExp(`^(?:${[...c.keywords].sort((a, b) => b.length - a.length).map(escapeRe).join("|")})(?:$|, | (?:\\{[^}]+\\})+(?:$|, | — | \\()|—| \\()`, "i");
-        return c.fullText.every((t) => t.split("\n").every((l) => line.test(l)));
+        // and no activated ability: "Waterbend {5}, {T}: …"
+        return c.fullText.every((t) => t.split("\n").every((l) => line.test(l) && !/^[^(—]*:/.test(l)));
     },
-    // the front face: Scorned Villager // Moonscarred Werewolf isn't one by its 2/2 back
-    bear: (c) => c.mv === 2 && /\bcreature\b/.test(c.faceTypes[0]) && c.power[0] === "2" && c.toughness[0] === "2",
-    // "Choose one —" and the like, and keywords that work the same way
-    modal: (c) => c.text.some((t) => /choose (one|two|three|four|five|any number|one or more|one or both|up to \w+)\b[^\n]*(—|\n•)/i.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
+    // a 2/2 front face at mana value 2, Vehicles too (High-Speed Hoverbike): Scorned Villager // Moonscarred
+    // Werewolf isn't one by its 2/2 back
+    bear: (c) => c.mv === 2 && c.power[0] === "2" && c.toughness[0] === "2",
+    // a bulleted list of modes (Confluences, Sieges, "An opponent chooses one —"), Bloomburrow's Seasons ("{P}
+    // worth of modes") or a keyword that works the same way
+    modal: (c) => c.text.some((t) => /^•|\bworth of modes\b/m.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
     // the front face's cost: Hallway Heckler // Vicious Verse isn't, by {B/R} on its prepared spell
     hybrid: (c) => [...manaSymbols(c.manaCosts[0] ?? "").keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
-    phyrexian: (c) => symbolsOf(c).some((s) => s.split("/").includes("P")),
+    // {W/P} and the like; not Bloomburrow's paw print {P}
+    phyrexian: (c) => symbolsOf(c).some((s) => /\/P$/.test(s)),
     reserved: (c) => c.reserved,
     gamechanger: (c) => c.gameChanger,
     // the ways two commanders pair up, and both halves of the pairs (Backgrounds, Doctors); "Partner with" a
@@ -667,7 +689,6 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     foil: (p) => p.finishes.has("foil"),
     nonfoil: (p) => p.finishes.has("nonfoil"),
     etched: (p) => p.finishes.has("etched"),
-    glossy: (p) => p.finishes.has("glossy"),
     alchemy: (p) => p.setType === "alchemy" || p.promoTypes.has("rebalanced"),
     rebalanced: (p) => p.promoTypes.has("rebalanced"),
     universesbeyond: (p) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond"),
@@ -870,6 +891,9 @@ function compile(t: Term, data: Cards): Test {
     throw new Unsupported(`${t.key}${t.op}`);
 }
 
+// is: keys for printings that are hidden themselves, so asking for them shows them
+const PRINT_REVEALS = new Set(["playtest", "oversized", "thick", "surgefoil"]);
+
 // how much of what Scryfall hides by default the search asks for, as a level a hidden printing needs (NEEDS):
 // include:extras or naming a set shows everything; naming a hidden type, a name: regex, an artist, a
 // watermark, a border, is:dfc or is:funny shows the "extra" ones
@@ -886,11 +910,17 @@ function revealed(node: Node, negated = false): number {
         if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return 1;
         // is:dfc shows double-faced tokens, art cards and playtest cards; is:transform doesn't
         if (key === "is" && value.toLowerCase() === "dfc" && !negated) return 1;
+        // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
+        // (the surge-foil tokens), but not is:stamped or is:setpromo
+        if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
+        // and further: is:oversized finds the gold-bordered oversized cards, is:reserved the withdrawn ones
+        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
+        // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't
+        if (["banned", "restricted"].includes(key) && !negated) return 2;
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
-        // Goblin one, and -wm:set t:sliver every sliver token; and a border, but not left out: border:silver
-        // finds the silver tokens, -border:black t:goblin no Goblin token. border:gold finds nothing at all, not
-        // even the gold-bordered playtest planes that is:funny shows
-        if (["a", "artist", "wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() !== "gold")) return 1;
+        // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
+        // border:black or borderless, or -border:black)
+        if (["a", "artist", "wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
         if (key === "has" && value.toLowerCase() === "watermark") return 1;
         // is:funny shows funny tokens too, like the Dragon
         if (key === "is" && value.toLowerCase() === "funny" && !negated) return 1;
