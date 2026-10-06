@@ -15,7 +15,12 @@ body {
     background-attachment: fixed; /* the lighting stays put like a lamp over the table while cards scroll */
     color: var(--text);
     line-height: var(--leading);
+    /* the page and then the footer, filling at least the window: a short page (no cards yet, or only a few) keeps its
+       footer at the bottom of the screen; a long one pushes it down under the cards */
+    display: flex;
+    flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 input,
