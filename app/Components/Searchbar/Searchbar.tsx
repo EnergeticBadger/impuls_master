@@ -52,6 +52,8 @@ const PAGE_SIZE = 175
 // page data by query+page, shared by real searches and prefetches so Next reuses an in-flight prefetch
 const pageData = new Map<string, Promise<PageData>>()
 const MAX_PAGE_DATA = 20
+// what Scryfall left out of each search, by query
+const skippedBy = new Map<string, string[]>()
 
 // the same search sorted another way is a different set of pages
 const resultKey = (query: string, by: Sort, page: number) => pageKey(`${query}\u0001${sortKey(by)}`, page)
@@ -69,6 +71,9 @@ function loadPage(query: string, page: number, by: Sort): Promise<PageData> {
 
             const cards: CardProps[] = validCards
                 .map(c => { return { name: c.name, image_uri: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal, card_uri: c.uri, card:c } }).filter((card): card is CardProps => !!card?.image_uri);
+            // Scryfall still finds cards when it drops part of a search (a regex too long, say), and says so here
+            skippedBy.set(query, Array.isArray(res.warnings) ? res.warnings : [])
+            if (skippedBy.size > MAX_PAGE_DATA) skippedBy.delete(skippedBy.keys().next().value!)
             const total_cards = res.total_cards ?? cards.length
             const total_pages = Math.max(1, Math.ceil(total_cards / PAGE_SIZE))
             return { cards, has_more: !!res.has_more, total_pages, total_cards }
@@ -357,7 +362,7 @@ export function Searchbar() {
                     <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
                 </button>
                 <div className={styles.searchArea}>
-                    <QueryInput searched={query} />
+                    <QueryInput searched={query} skipped={skippedBy.get(query)} />
                 </div>
                 <div className={styles.viewOptions}>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />

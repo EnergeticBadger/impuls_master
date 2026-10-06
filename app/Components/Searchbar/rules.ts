@@ -2,6 +2,9 @@
 // Magic abilities are modular: a trigger ("When this enters"), an effect ("destroy"), and who or what it hits ("target artifact").
 // Each block is one ability; its pieces become a Scryfall regex like o:/when (~|this \w+) enters[^.]*destroy[^.]*target artifact/.
 
+// .ts so scripts/fuzz-rules.ts can load this file in plain Node too
+import { MAX_REGEX_CHARS, MAX_REGEXES } from './regexLimits.ts'
+
 // the most useful Tagger tags (otag:), shown as chips; every other tag is a search away. All checked to return cards.
 export const ROLES: { value: string, label: string }[] = [
     { value: 'removal', label: 'Removal' },
@@ -306,12 +309,11 @@ export function blockToken(b: RuleBlock): string {
     return `(${any(regexes(trigger?.re, effect.re))} o:/${what}/)`
 }
 
-// a whole Scryfall query may only hold 6 regexes, so one block keeps to a few and leaves room for the others
-const MAX_BLOCK_REGEXES = 3
+// a whole Scryfall query may only hold a few regexes, so one block keeps to half and leaves room for the others
+const MAX_BLOCK_REGEXES = MAX_REGEXES / 2
 
-// Scryfall ignores a regex much past this (somewhere around 245–250 characters, depending on what's in it),
-// so a long block is split into several, joined with `or`. A whole query may only hold 6 regexes
-const MAX_REGEX = 230
+// a long block is split into several regexes joined with `or`, each kept a little under Scryfall's limit
+const MAX_REGEX = MAX_REGEX_CHARS - 10
 
 // one sentence's pieces as regexes short enough for Scryfall: if they're too long together, the longest
 // piece's biggest alternation is halved and each half tried on its own. X(a|b)Y finds the same cards as X(a)Y or X(b)Y
