@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { EFFECTS, TARGETS, TRIGGERS, blockToken, type Piece, type RuleBlock } from "../app/Components/Searchbar/rules.ts";
-import { Unsupported, bulkFile, failTildeGroups, loadCards, parse, search, type Cards } from "./local-search.ts";
+import { Unsupported, bulkFile, loadCards, parse, search, type Cards } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -64,8 +64,21 @@ for (const { kind, p } of pieces) {
     if (!hits.length) problems.push(`${kind} “${p.label}” finds no cards`);
 }
 
-// Scryfall fails a whole group with ~ in it when \b follows it: `untap (this|~)\b` matches nothing there
-for (const { kind, p } of pieces) if (failTildeGroups(p.re) !== p.re) problems.push(`${kind} “${p.label}” has ~ in a group followed by \\b, which Scryfall fails outright`);
+// a group with ~ in it that \b follows: in Scryfall's text "this creature" is ~ and no \b follows a ~, so
+// `untap (this|~)\b` matches nothing there, not even "untap this creature"
+function tildeBeforeBoundary(re: string): boolean {
+    const open: number[] = [];
+    for (let i = 0; i < re.length; i++) {
+        if (re[i] === "\\") { i++; continue; }
+        if (re[i] === "(") open.push(i);
+        else if (re[i] === ")") {
+            const start = open.pop() ?? 0;
+            if (re.slice(start + 1, i).split("|").includes("~") && re.startsWith("\\b", i + 1)) return true;
+        }
+    }
+    return false;
+}
+for (const { kind, p } of pieces) if (tildeBeforeBoundary(p.re)) problems.push(`${kind} “${p.label}” has ~ in a group followed by \\b, which Scryfall fails outright`);
 
 // ---- every block ----
 
