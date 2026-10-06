@@ -927,16 +927,42 @@ function evaluate(node: Node, data: Cards, prints: number[]): number[] {
 
 // the cards (as indexes into `cards`) among `among` with a printing that matches the whole search
 export function search(node: Node, data: Cards, among?: number[]): number[] {
-    const shown = revealed(node);
-    const visible = (kind: Printing["extra"]) => NEEDS[kind] <= shown;
-    const prints: number[] = [];
-    for (const c of among ?? data.cards.keys()) for (const p of data.cards[c].printings) if (visible(data.prints[p].extra)) prints.push(p);
     const seen = new Set<number>(), out: number[] = [];
-    for (const p of evaluate(node, data, prints)) {
+    for (const p of searchPrintings(node, data, among)) {
         const c = data.prints[p].card;
         if (!seen.has(c)) { seen.add(c); out.push(c); }
     }
     return out;
+}
+
+// the printings (as indexes into `prints`) that match the whole search, among those it shows
+export function searchPrintings(node: Node, data: Cards, among?: number[]): number[] {
+    const shown = revealed(node);
+    const visible = (kind: Printing["extra"]) => NEEDS[kind] <= shown;
+    const prints: number[] = [];
+    for (const c of among ?? data.cards.keys()) for (const p of data.cards[c].printings) if (visible(data.prints[p].extra)) prints.push(p);
+    return evaluate(node, data, prints);
+}
+
+// what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each
+// card's art once for unique:art. Returns the oracle id of each entry, in no particular order
+export function listed(node: Node, data: Cards): string[] {
+    const unique = findTerm(node, "unique")?.toLowerCase() ?? "cards";
+    if (unique === "cards") return search(node, data).map((c) => data.cards[c].oracleId);
+    const prints = searchPrintings(node, data);
+    if (unique === "prints") return prints.map((p) => data.cards[data.prints[p].card].oracleId);
+    if (unique !== "art") throw new Unsupported(`unique:${unique}`);
+    const arts = new Map<string, string>();
+    for (const p of prints) { const q = data.prints[p]; arts.set(`${q.card}|${q.art || p}`, data.cards[q.card].oracleId); }
+    return [...arts.values()];
+}
+
+// the value of a key anywhere in the search (order:, unique:…)
+function findTerm(node: Node, key: string): string | undefined {
+    if ("term" in node) return node.term.key === key ? node.term.value : undefined;
+    if ("not" in node) return findTerm(node.not, key);
+    for (const part of "and" in node ? node.and : node.or) { const v = findTerm(part, key); if (v !== undefined) return v; }
+    return undefined;
 }
 
 // ---- order ----

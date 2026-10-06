@@ -336,6 +336,12 @@ c:2 t:goblin mv=2
 keyword:"first strike" t:goblin
 o:draw o:discard t:creature mv=2 c:r
 
+# unique: printings or arts instead of cards
+!"Lightning Bolt" unique:prints
+!"Lightning Bolt" unique:art
+t:sliver unique:prints r:mythic
+t:sliver unique:art e:tsr
+
 # order: Scryfall's list in its order, not only the same cards
 t:sliver order:cmc
 t:goblin r:mythic order:power

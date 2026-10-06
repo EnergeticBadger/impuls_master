@@ -10,7 +10,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Answers } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, loadCards, parse, search, setsFile, sortCards } from "./local-search.ts";
+import { Unsupported, bulkFile, listed, loadCards, parse, search, setsFile, sortCards } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -52,8 +52,18 @@ for (const q of cases) {
     try {
         const node = parse(q);
         const found = search(node, data);
-        row.local = found.length;
-        if (theirs.cards) {
+        // a card each, or a printing or an art each for unique:prints and unique:art
+        const entries = listed(node, data);
+        row.local = entries.length;
+        const byCard = entries.length === found.length;
+        if (theirs.cards && !byCard) {
+            // printings: the cards whose number of entries differs
+            const count = (ids: string[]) => ids.reduce((m, id) => m.set(id, (m.get(id) ?? 0) + 1), new Map<string, number>());
+            const here = count(entries), there = count(theirs.cards.map(([id]) => id));
+            const name = new Map([...theirs.cards.map(([id, n]) => [id, n] as const), ...found.map((i) => [data.cards[i].oracleId, data.cards[i].name] as const)]);
+            row.onlyHere = [...here].filter(([id, n]) => n > (there.get(id) ?? 0)).map(([id]) => name.get(id)!);
+            row.onlyThere = [...there].filter(([id, n]) => n > (here.get(id) ?? 0)).map(([id]) => name.get(id)!);
+        } else if (theirs.cards) {
             const there = new Set(theirs.cards.map(([id]) => id));
             const here = new Set(found.map((i) => data.cards[i].oracleId));
             row.onlyHere = found.filter((i) => !there.has(data.cards[i].oracleId)).map((i) => data.cards[i].name);
