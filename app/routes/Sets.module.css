@@ -1,0 +1,229 @@
+/* The list of sets (/sets) and a set's cards (/sets/<code>) */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-7);
+}
+
+.title {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.intro {
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.header_link,
+.jump a,
+.search_link,
+.pager a {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--ease);
+}
+
+.header_link:hover,
+.jump a:hover,
+.search_link:hover,
+.pager a:hover {
+  background-color: var(--raised-hover);
+}
+
+/* ---- /sets ---- */
+
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.group {
+  scroll-margin-top: calc(64px + var(--space-4)); /* under the sticky header */
+}
+
+.sets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+  list-style: none;
+}
+
+/* the symbol, with the name over its code, year and card count */
+.set {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--ease);
+}
+
+.set:hover {
+  background-color: var(--surface-hover-0);
+}
+
+/* the set symbols are black; lighten them for the dark page */
+.set img,
+.set_icon {
+  display: block;
+  filter: invert(1);
+  opacity: 0.85;
+}
+
+.set img,
+.no_icon {
+  grid-row: 1 / 3;
+  width: 20px;
+}
+
+.set_name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set_meta {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* promos and the like: just the names, run together */
+.compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.compact a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.compact a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ---- /sets/<code> ---- */
+
+.set_head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.set_icon {
+  flex: none;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.count {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pager a[aria-current="page"] {
+  background-color: var(--accent-tint);
+  border-color: var(--accent-line);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
+  gap: var(--space-5) var(--space-3);
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--ease);
+}
+
+.card:hover {
+  background-color: var(--surface-hover-0);
+}
+
+.card img,
+.no_image {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 146 / 204;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-card);
+}
+
+.no_image {
+  background-color: var(--raised-1);
+}
+
+.card_name {
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+
+.card_meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+@media screen and (max-width: 760px) {
+  .page {
+    padding-top: var(--space-5);
+  }
+
+  .title {
+    font-size: 1.6rem;
+  }
+
+  .cards {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+}

@@ -3,18 +3,22 @@
 // and before deploying. It writes:
 //   /data/cards/<bucket>.json  one record per card, packed (see app/lib/carddata.ts for the layout)
 //   /data/cards/renamed.json   the few pages whose slug is longer than the card's name
-//   /sitemap.xml, /sitemaps/*  one entry per card, as static files
+//   /data/sets.json, /data/sets/<code>.json  the list of sets, and each set's cards
+//   /data/browse.json          the footer's links
+//   /sitemap.xml, /sitemaps/*  one entry per card, set and page, as static files
 // The bulk files come from data.scryfall.io, which has no rate limit; this makes one API call, for the
-// file list. Set SCRYFALL_BULK_DIR to a folder holding default_cards.jsonl.gz and rulings.jsonl.gz to
-// build from files already downloaded instead.
+// file list, and one for the list of sets (for their icons). Set SCRYFALL_BULK_DIR to a folder holding
+// default_cards.jsonl.gz, rulings.jsonl.gz and sets.json (api.scryfall.com/sets) to build from files already
+// downloaded instead.
 import { createGunzip } from "node:zlib";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
-import { createReadStream, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
-    DATA_DIR, LINK_TEMPLATES, SITE_URL, bucketOf, imageUris, oracleOf, paths, slug, templateLink,
-    type BucketEntry, type CardFaceText, type CardRecord, type LinkKey, type Printing, type Renamed,
+    DATA_DIR, LINK_TEMPLATES, SET_PAGE, SITE_URL, bucketOf, imageUris, oracleOf, paths, setPath, slug, templateLink,
+    type Browse, type BucketEntry, type CardFaceText, type CardRecord, type LinkKey, type Printing, type RelatedCard, type Renamed,
+    type SetCard, type SetFile, type SetSummary,
 } from "../app/lib/carddata.ts";
 import type { Ruling } from "../app/types.ts";
 
@@ -46,6 +50,20 @@ function bulkUrl(type: string) {
         if (!file?.jsonl_download_uri) throw new Error(`no ${type} bulk file`);
         return file.jsonl_download_uri;
     };
+}
+
+// Scryfall's list of sets, for their icons and release dates; the sets still get pages without it
+type ApiSet = { code: string, released_at?: string, icon_svg_uri?: string };
+async function apiSets(): Promise<Map<string, ApiSet>> {
+    try {
+        const list: ApiSet[] = localDir
+            ? JSON.parse(readFileSync(join(localDir, "sets.json"), "utf8")).data
+            : (await (await fetch("https://api.scryfall.com/sets", { headers: HEADERS })).json() as { data: ApiSet[] }).data;
+        return new Map(list.map((s) => [s.code, s]));
+    } catch (err) {
+        console.warn("No set list, so no set icons:", err);
+        return new Map();
+    }
 }
 
 let files = 0;
@@ -96,6 +114,12 @@ const byNewest = (a: Printing, b: Printing) =>
 
 type Building = { record: Omit<CardRecord, "slug" | "rulings" | "main">, facts: Map<string, Facts>, seen: Map<string, number> };
 const cards = new Map<string, Building>();
+// for the related cards: which card each printing is, and the printings each card names or makes (Scryfall's
+// all_parts: tokens, meld halves, cards named in its text)
+const printingOracle = new Map<string, string>();
+const parts = new Map<string, Set<string>>();
+// each set's name and kind, as its cards give them
+const setInfo = new Map<string, { name: string, type: string, digital: boolean }>();
 let linkExceptions = 0;
 let imageMismatches = 0;
 const mismatchExamples: string[] = [];
@@ -153,6 +177,14 @@ for await (const line of await lines("default_cards", bulkUrl("default_cards")))
     const c = JSON.parse(line);
     const oracle = oracleOf(c);
     if (c.object !== "card" || typeof c.id !== "string" || !oracle) continue;
+
+    printingOracle.set(c.id, oracle);
+    if (Array.isArray(c.all_parts)) {
+        let named = parts.get(oracle);
+        if (!named) parts.set(oracle, named = new Set());
+        for (const part of c.all_parts) if (typeof part?.id === "string") named.add(part.id);
+    }
+    if (!setInfo.has(c.set)) setInfo.set(c.set, { name: c.set_name, type: c.set_type, digital: !!c.digital });
 
     let b = cards.get(oracle);
     if (!b) {
@@ -240,6 +272,125 @@ for (const [name, group] of byName) {
     });
 }
 
+// ---- related cards: the cards a card names or makes, then the cards most like it ----
+// These links are also how search engines get from one card's page to the next.
+
+// the cards with pages people search for (the sitemap's list); the others don't get related cards
+const listed = records
+    .filter((r) => !(r.layout in NOT_CARDS) && r.prints.some((p) => p.released <= today))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+
+const RELATED = 12;
+const bySlug = new Map(records.map((r) => [r.slug, r]));
+const byOracle = new Map(records.map((r) => [r.oracle_id, r]));
+const SUPERTYPES = new Set(["Legendary", "Basic", "Snow", "World", "Ongoing", "Host", "Elite", "Token"]);
+
+type Traits = {
+    subtypes: string[], types: string, colors: string, keywords: string[], sentences: string[], cmc: number, rank: number, real: boolean,
+};
+// the rules text as sentences, the card's own name as ~ and reminder text left out, so "Chain Lightning deals 3
+// damage to any target." and Lightning Bolt's own text match
+function sentences(r: CardRecord): string[] {
+    const texts = r.faces?.length ? r.faces.map((f) => [f.name, f.oracle_text ?? ""]) : [[r.name, r.oracle_text ?? ""]];
+    const out = new Set<string>();
+    for (const [name, text] of texts) {
+        const plain = text.replace(/\([^)]*\)/g, "").split(name).join("~").toLowerCase();
+        for (const s of plain.split(/(?<=\.)\s+|\n/)) if (s.trim().length > 12) out.add(s.trim());
+    }
+    return [...out];
+}
+function traits(r: CardRecord): Traits {
+    const subtypes = new Set<string>();
+    const types = new Set<string>();
+    for (const face of r.type_line.split(" // ")) {
+        const [left, right = ""] = face.split(" — ");
+        for (const t of left.split(" ")) if (t && !SUPERTYPES.has(t)) types.add(t);
+        for (const t of right.split(" ")) if (t) subtypes.add(t);
+    }
+    return {
+        subtypes: [...subtypes], types: [...types].sort().join(" "), colors: [...r.color_identity].sort().join(""),
+        keywords: r.keywords, sentences: sentences(r), cmc: r.cmc, rank: r.edhrec_rank ?? Infinity,
+        // legal somewhere, so Un-cards and the like are only matched with each other
+        real: Object.values(r.legalities).some((v) => v !== "not_legal"),
+    };
+}
+const all = listed.map(traits);
+// who to compare each card with: the cards sharing a subtype or a sentence of rules text, and the cards of the
+// same types and colors
+const bySubtype = new Map<string, number[]>();
+const bySentence = new Map<string, number[]>();
+const byKind = new Map<string, number[]>();
+const add = (index: Map<string, number[]>, key: string, i: number) => {
+    let list = index.get(key);
+    if (!list) index.set(key, list = []);
+    list.push(i);
+};
+all.forEach((t, i) => {
+    for (const s of t.subtypes) add(bySubtype, s, i);
+    for (const s of t.sentences) add(bySentence, s, i);
+    add(byKind, `${t.types}|${t.colors}`, i);
+});
+// a sentence on hundreds of cards ("~ can't block.", a land's mana ability) says little about either card
+for (const [s, list] of bySentence) if (list.length > 300) bySentence.delete(s);
+
+const shared = (a: string[], b: string[]) => a.reduce((n, x) => n + (b.includes(x) ? 1 : 0), 0);
+function likeness(a: Traits, b: Traits) {
+    let score = 3 * shared(a.subtypes, b.subtypes) + 2 * shared(a.keywords, b.keywords)
+        + 4 * a.sentences.reduce((n, s) => n + (bySentence.has(s) && b.sentences.includes(s) ? 1 : 0), 0);
+    if (a.colors === b.colors) score += 2;
+    else if ([...a.colors].some((c) => b.colors.includes(c))) score += 1;
+    if (a.types === b.types) score += 1;
+    if (Math.abs(a.cmc - b.cmc) <= 1) score += 1;
+    return score;
+}
+
+const related = (r: CardRecord): RelatedCard => {
+    const p = r.prints[r.main];
+    return p.img ? [r.slug, r.name, p.id, p.img] : [r.slug, r.name, p.id];
+};
+const seenStamp = new Int32Array(listed.length).fill(-1);
+let relatedLinks = 0;
+listed.forEach((r, i) => {
+    const out: CardRecord[] = [];
+    const taken = new Set([r.slug, r.name]);
+    // what it names or makes, in Scryfall's order
+    for (const id of parts.get(r.oracle_id) ?? []) {
+        const other = byOracle.get(printingOracle.get(id) ?? "");
+        if (!other || taken.has(other.slug) || taken.has(other.name)) continue;
+        taken.add(other.slug).add(other.name);
+        out.push(other);
+        if (out.length === RELATED) break;
+    }
+    // then the closest matches, the most played first among equals
+    const me = all[i];
+    const best: { j: number, score: number }[] = [];
+    const consider = (j: number) => {
+        if (seenStamp[j] === i) return;
+        seenStamp[j] = i;
+        const other = all[j];
+        if (j === i || other.real !== me.real || taken.has(listed[j].name)) return;
+        const score = likeness(me, other);
+        if (score < 3) return;
+        const worse = (k: number) => best[k].score < score || (best[k].score === score && all[best[k].j].rank > other.rank);
+        if (best.length === RELATED && !worse(RELATED - 1)) return;
+        let at = best.length;
+        while (at > 0 && worse(at - 1)) at--;
+        best.splice(at, 0, { j, score });
+        if (best.length > RELATED) best.pop();
+    };
+    for (const s of me.sentences) for (const j of bySentence.get(s) ?? []) consider(j);
+    for (const s of me.subtypes) for (const j of bySubtype.get(s)!) consider(j);
+    for (const j of byKind.get(`${me.types}|${me.colors}`)!) consider(j);
+    for (const { j } of best) {
+        if (out.length === RELATED) break;
+        out.push(listed[j]);
+    }
+    if (out.length) {
+        r.related = out.map(related);
+        relatedLinks += out.length;
+    }
+});
+
 // ---- write the bucket files ----
 
 rmSync(join(out, DATA_DIR), { recursive: true, force: true });
@@ -272,6 +423,49 @@ for (const [bucket, list] of buckets) {
     write(paths.bucket(bucket), body);
 }
 write(paths.renamed(), JSON.stringify(renamed));
+
+// ---- sets: a page per set listing its cards, linked from the footer and each card's page ----
+
+const setCards = new Map<string, SetCard[]>();
+for (const r of listed) {
+    r.prints.forEach((p, i) => {
+        if (p.released > today) return;
+        let list = setCards.get(p.set);
+        if (!list) setCards.set(p.set, list = []);
+        const usd = p.prices?.usd ?? p.prices?.usd_foil ?? p.prices?.usd_etched;
+        const entry: SetCard = [r.slug, r.name, p.number, p.rarity, p.id, p.img, usd ?? undefined, i === r.main ? 1 : undefined];
+        // no trailing empty fields
+        while (entry.length && entry[entry.length - 1] === undefined) entry.pop();
+        list.push(entry);
+    });
+}
+const known = await apiSets();
+const setPages: SetSummary[] = [];
+for (const [code, list] of setCards) {
+    const info = setInfo.get(code)!;
+    const api = known.get(code);
+    list.sort((a, b) => collator.compare(a[2], b[2]) || a[1].localeCompare(b[1]));
+    const summary: SetSummary = clean({
+        code, name: info.name, type: info.type, count: list.length,
+        released: api?.released_at ?? list.reduce((d, c) => {
+            const p = bySlug.get(c[0])!.prints.find((p) => p.id === c[4])!;
+            return p.released < d ? p.released : d;
+        }, "9999"),
+        icon: api?.icon_svg_uri, digital: info.digital || undefined,
+    }) as SetSummary;
+    setPages.push(summary);
+    write(paths.set(code), JSON.stringify({ ...summary, cards: list } satisfies SetFile));
+}
+setPages.sort((a, b) => b.released.localeCompare(a.released) || a.name.localeCompare(b.name));
+write(paths.sets(), JSON.stringify(setPages));
+
+// the footer: the newest main sets, and the most played cards (EDHREC's ranking)
+const FOOTER_SETS = new Set(["expansion", "core", "masters", "draft_innovation", "commander", "eternal"]);
+const browse: Browse = {
+    latest: setPages.filter((s) => FOOTER_SETS.has(s.type) && !s.digital).slice(0, 8),
+    popular: listed.filter((r) => r.edhrec_rank).sort((a, b) => a.edhrec_rank! - b.edhrec_rank!).slice(0, 30).map((r) => [r.slug, r.name]),
+};
+write(paths.browse(), JSON.stringify(browse));
 const dataFiles = files;
 const dataBytes = bytes;
 
@@ -279,11 +473,12 @@ const dataBytes = bytes;
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const PER_SITEMAP = 10_000;
-const listed = records
-    .filter((r) => !(r.layout in NOT_CARDS) && r.prints.some((p) => p.released <= today))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
 const sitemaps: string[] = ["sitemaps/home.xml"];
-write("sitemaps/home.xml", urlSet([`<url><loc>${SITE_URL}/</loc></url>`]));
+write("sitemaps/home.xml", urlSet([
+    `${SITE_URL}/`, `${SITE_URL}/syntax`, `${SITE_URL}/sets`,
+    ...setPages.map((s) => `${SITE_URL}${setPath(s.code, 1)}`),
+    ...setPages.flatMap((s) => Array.from({ length: Math.ceil(s.count / SET_PAGE) - 1 }, (_, i) => `${SITE_URL}${setPath(s.code, i + 2)}`)),
+].map((url) => `<url><loc>${escape(url)}</loc></url>`)));
 for (let i = 0; i * PER_SITEMAP < listed.length; i++) {
     const path = `sitemaps/cards-${i + 1}.xml`;
     sitemaps.push(path);
@@ -310,5 +505,6 @@ ${urls.join("\n")}
 const printCount = records.reduce((n, r) => n + r.prints.length, 0);
 console.log(`${records.length} cards (${Object.keys(renamed).length} with a longer slug), ${printCount} printings, ${rulingCount} rulings`);
 console.log(`${dataFiles} data files, ${(dataBytes / 1024 / 1024).toFixed(1)} MB; biggest file ${(biggestFile / 1024).toFixed(0)} KB, biggest card ${biggestRecord.name} ${(biggestRecord.size / 1024).toFixed(0)} KB`);
+console.log(`${relatedLinks} related card links; ${setPages.length} sets`);
 console.log(`sitemaps: ${listed.length} cards in ${sitemaps.length - 1} files; ${files} files written to ${out}`);
 console.log(`${linkExceptions} store/Gatherer links kept as-is; ${imageMismatches} images not at the usual address${mismatchExamples.length ? `, e.g. ${mismatchExamples.join(" ")}` : ""}`);

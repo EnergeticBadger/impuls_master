@@ -8,6 +8,8 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { browseLinks } from "./lib/carddata.server";
+import { SiteFooter } from "./Components/Site/SiteFooter";
 import "./app.css";
 
 // Font is Tahoma (system font, see --font-body in theme.css), so nothing to load.
@@ -35,8 +37,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+// the footer's links, from the card data files (null without them)
+export async function loader({ context }: Route.LoaderArgs) {
+  return { browse: (await browseLinks(context.cloudflare.env)) ?? null };
+}
+
+// they only change with a deploy, so moving between pages doesn't fetch them again
+export const shouldRevalidate = () => false;
+
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <>
+      <Outlet />
+      <SiteFooter browse={loaderData.browse} />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

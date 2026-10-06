@@ -1,7 +1,10 @@
 // Reads the card data files that ship with the site (see ./carddata.ts). Each answer is undefined when
 // the files don't have it: they aren't there (local dev, or a deploy without scripts/card-data.ts) or the
 // card is newer than the last refresh. Callers then ask Scryfall.
-import { bucketHeader, bucketOf, paths, readRecord, type BucketEntry, type CardRecord, type Renamed } from "./carddata";
+import {
+    bucketHeader, bucketOf, paths, readRecord,
+    type Browse, type BucketEntry, type CardRecord, type Renamed, type SetFile, type SetSummary,
+} from "./carddata";
 
 // Files read by this isolate, most recently used last. Reading a file is I/O, which doesn't count toward
 // the Worker's CPU time; parsing does, so only the header is parsed here and each record on its own.
@@ -77,4 +80,34 @@ export async function sameName(env: Env, record: CardRecord): Promise<CardRecord
     if (!b || !names) return [];
     const others = b.header.entries.filter((e: BucketEntry) => e[0] !== record.slug && (e[0] === name || names[e[0]] === name));
     return others.map((e) => readRecord(b.bytes, b.header, e));
+}
+
+// ---- sets and the footer ----
+
+// small files, parsed once per isolate
+const parsed = new Map<string, Promise<unknown>>();
+async function parsedFile<T>(env: Env, path: string): Promise<T | undefined> {
+    let hit = parsed.get(path);
+    if (!hit) {
+        hit = quietly(readFile(env, path)).then((bytes) => bytes && JSON.parse(new TextDecoder().decode(bytes)));
+        parsed.set(path, hit);
+    }
+    const value = await hit;
+    if (!value) parsed.delete(path);
+    return value as T | undefined;
+}
+
+// every set with a page, newest first; undefined without the card data files
+export const allSets = (env: Env) => parsedFile<SetSummary[]>(env, paths.sets());
+
+// the footer's links; undefined without the card data files
+export const browseLinks = (env: Env) => parsedFile<Browse>(env, paths.browse());
+
+// undefined: no card data files at all; null: no set has this code
+export async function findSet(env: Env, code: string): Promise<SetFile | null | undefined> {
+    const sets = await allSets(env);
+    if (!sets) return undefined;
+    if (!sets.some((s) => s.code === code)) return null;
+    const bytes = await quietly(readFile(env, paths.set(code)));
+    return bytes && JSON.parse(new TextDecoder().decode(bytes));
 }

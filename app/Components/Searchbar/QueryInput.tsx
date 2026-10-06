@@ -423,7 +423,7 @@ function Editor({ filter, draft, update, onDone }: { filter: Filter, draft: Draf
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDone() } }} />
                     {!isComplete(draft.text) ? <span className={styles.noteLine}>A bracket or quote is still open.</span> : null}
                     <span className={styles.muted}>
-                        Written in Scryfall's search syntax. <a href="https://scryfall.com/docs/syntax" target="_blank" rel="noreferrer">See the syntax guide</a>
+                        Written in Scryfall's search syntax. <a href="/syntax" target="_blank">See the syntax guide</a>
                     </span>
                 </>
             )
