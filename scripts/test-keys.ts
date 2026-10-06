@@ -69,7 +69,7 @@ const keys: string[] = [
 const MV = ["mv=0", "mv=1", "mv=2", "mv=3", "mv=4", "mv=5", "mv=6", "mv>=7"];
 const COLOR = ["c=c", "c=w", "c=u", "c=b", "c=r", "c=g", "c:m"];
 
-type Part = { q: string, local: number, scryfall: number, onlyHere: string[], onlyThere: string[], listed: boolean };
+type Part = { q: string, local: number, scryfall: number, onlyHere: string[], onlyThere: string[], listed: boolean, error?: string, warnings?: string[] };
 type Row = { key: string, local?: number, scryfall: number, error?: string, warnings?: string[], why?: string, parts: Part[] };
 
 const localCards = (q: string) => search(parse(q), data);
@@ -78,7 +78,7 @@ const localCards = (q: string) => search(parse(q), data);
 async function compare(q: string, pages: number): Promise<Part> {
     const here = localCards(q);
     const theirs = await answers.ask(q, pages, REFRESH);
-    const part: Part = { q, local: here.length, scryfall: theirs.total, onlyHere: [], onlyThere: [], listed: !!theirs.cards };
+    const part: Part = { q, local: here.length, scryfall: theirs.total, onlyHere: [], onlyThere: [], listed: !!theirs.cards, error: theirs.error, warnings: theirs.warnings };
     if (theirs.cards) {
         const there = new Set(theirs.cards.map(([id]) => id));
         const ids = new Set(here.map((i) => data.cards[i].oracleId));
@@ -111,11 +111,10 @@ for (const [n, key] of keys.entries()) {
     const row: Row = { key, scryfall: 0, parts: [] };
     try {
         const whole = await compare(key, 0);
-        const theirs = (await answers.ask(key, 0))!;
         row.local = whole.local;
         row.scryfall = whole.scryfall;
-        row.error = theirs.error;
-        row.warnings = theirs.warnings;
+        row.error = whole.error;
+        row.warnings = whole.warnings;
         if (!row.error && differs(whole)) row.parts = whole.scryfall <= PAGES * PAGE ? [await compare(key, PAGES)] : await narrow(key);
     } catch (e) {
         if (!(e instanceof Unsupported)) throw e;
