@@ -34,7 +34,7 @@ function status(label: string, done: number, total: number, started: number) {
 const endStatus = () => { if (live) process.stdout.write("\n"); };
 
 const started = Date.now();
-const cardsPath = await bulkFile("oracle_cards", join(OUT, "bulk"));
+const cardsPath = await bulkFile("default_cards", join(OUT, "bulk"));
 const tagsPath = await bulkFile("oracle_tags", join(OUT, "bulk")).catch(() => undefined);
 const data: Cards = await loadCards(cardsPath, tagsPath);
 console.log(`${data.cards.length.toLocaleString()} cards and ${data.tags.size.toLocaleString()} tags loaded in ${((Date.now() - started) / 1000).toFixed(1)}s`);

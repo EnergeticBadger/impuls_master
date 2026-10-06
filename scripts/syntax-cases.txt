@@ -1,0 +1,188 @@
+# Searches npm run test-syntax runs both locally and on Scryfall, to compare card by card.
+# One search a line; # starts a comment. Kept narrow where possible, so Scryfall's whole list fits in a few
+# pages and the two can be compared card by card rather than only by count.
+# Grouped roughly by what the filter panel writes first, then the rest of the syntax guide.
+
+# names
+bolt
+"lightning bolt"
+!"Lightning Bolt"
+name:/^[a-c].* dragon$/
+-name:dragon t:dragon r:mythic
+
+# types
+t:dragon t:legendary
+t:legend t:goblin
+t:sorc mv=7
+t:/^legendary artifact creature/ c:u
+t:kindred
+t:battle
+
+# text
+o:"draw a card" t:instant mv=1 c:u
+o:~ o:"enters tapped" t:land -t:basic id:w
+fo:"you may cast it" t:sorcery mv<=2
+o:/^flying$/ t:creature mv=1
+kw:flying kw:lifelink t:angel
+
+# colours and identity
+c:r mv=1 t:instant
+c=r mv=1 t:instant
+c<=r mv=1 t:instant
+c>=rg t:creature mv=2
+c:rg mv=2 t:creature
+c:m mv=1
+c:c t:creature mv=2
+c=c t:artifact mv=0
+c>=3 t:creature mv<=3
+c=2 t:instant mv=1
+c:azorius t:creature mv=1
+c:esper t:creature
+id:jund t:legendary t:creature mv=3
+id<=bg t:legendary t:creature mv=2
+id=wubrg t:legendary
+id:c t:legendary t:creature
+c:quandrix t:instant
+has:indicator
+produces=wu t:land
+produces:c t:artifact mv=2
+
+# mana value and mana cost
+mv=0 t:creature
+mv>=10
+mv:odd t:dragon r:mythic
+mv:even t:sphinx
+m:{R/P}
+m:{2/W}
+m:WWW t:creature mv=3
+m=1R t:instant
+m>3WU
+m:XX
+is:hybrid t:creature mv=1
+is:phyrexian t:creature
+
+# power, toughness, loyalty
+pow>=10
+pow=0 tou>=7
+pow>tou t:wall
+tou>pow t:dragon
+pt=10 t:creature mv=3
+loy=7
+loy>=6 t:planeswalker
+pow:* t:creature mv=1
+
+# rarity, sets and printings
+r:mythic t:goblin
+r>=rare t:squirrel
+r<uncommon t:dragon
+r:special
+r:bonus
+s:lea t:creature
+e:m21 r:mythic
+set:dmu t:legendary t:creature
+st:masters t:dragon r:mythic
+st:funny t:creature mv=1
+b:ktk r:mythic
+in:lea t:instant
+in:arena t:goblin r:mythic
+-in:paper t:creature mv=1
+in:mythic t:goblin
+cn>=300 e:neo
+cn:1 st:core
+game:arena t:sliver
+game:mtgo -game:paper t:creature mv=1
+year<=1994 t:artifact mv=4
+year=2020 t:sliver
+date>=2024-01-01 t:wall
+date<lea
+date>=mh3 t:elf r:mythic
+prints=1 t:dragon r:mythic
+sets>=30
+paperprints>=40
+lang:en t:ninja r:mythic
+
+# artist, flavor, watermark, frame, border
+a:"rebecca guay" t:enchantment
+artist:proce t:land
+ft:"never" t:dragon
+flavor:/\byawgmoth\b/
+wm:phyrexian t:creature mv=2
+has:watermark t:goblin
+frame:1993 t:creature mv=1
+frame:future
+frame:showcase t:dragon
+frame:extendedart t:goblin
+border:borderless t:dragon
+border:white t:dragon
+stamp:acorn t:creature mv=1
+
+# prices
+usd>=500
+usd<=0.1 t:dragon r:mythic
+eur>=300
+tix>=50
+
+# formats
+f:standard t:dragon
+f:pauper t:creature mv=1 c:b
+banned:modern
+restricted:vintage
+f:commander -f:legacy t:creature mv=1
+f:brawl t:legendary t:creature mv=2
+
+# is: shortcuts
+is:commander c:r mv=2
+is:commander t:background
+is:spell mv=0 t:creature
+is:permanent t:instant
+is:historic t:goblin mv=1
+is:party mv=1
+is:outlaw mv=1
+is:vanilla mv=1
+is:frenchvanilla mv=1 c:w
+is:bear c:g
+is:modal t:instant mv=2
+is:split
+is:flip
+is:transform t:creature mv=1
+is:meld
+is:leveler
+is:adventure c:g
+is:mdfc t:land
+is:dfc mv=1
+is:reserved t:creature
+is:gamechanger
+is:partner
+is:companion
+is:unique t:dragon r:mythic
+is:reprint t:dragon r:mythic
+is:promo t:dragon r:mythic
+is:digital t:dragon
+is:funny t:dragon
+is:full t:land -t:basic
+is:spotlight t:dragon
+is:foil -is:nonfoil t:dragon
+is:etched t:dragon r:mythic
+is:alchemy t:dragon
+is:rebalanced t:goblin
+is:universesbeyond t:dragon
+not:reprint t:dragon r:mythic
+is:fetchland
+is:shockland
+is:manland
+is:fastland
+
+# edhrec, tags
+edhrec<=100
+otag:removal t:instant mv=1 c:w
+function:ramp t:creature mv=2 c:g
+otag:tutor t:sorcery mv=1
+
+# combining
+t:goblin (o:haste or o:menace) mv=1
+t:goblin -o:haste mv=1 c:r
+(t:dragon or t:demon) r:mythic mv=7
+t:sliver or t:shapeshifter -c:c mv=1
+-t:creature -t:land -t:instant -t:sorcery -t:artifact -t:enchantment -t:planeswalker -t:battle -t:kindred
+include:extras t:dragon t:token
+t:token
