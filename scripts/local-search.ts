@@ -96,7 +96,8 @@ export type Printing = {
     booster: boolean,
     hires: boolean,
     finishes: Set<string>,
-    watermark: string,
+    // a face each where they differ: Breaking // Entering is Dimir and Rakdos
+    watermarks: Set<string>,
     // a face each, "" where a face has none
     flavor: string[],
     stamp: string,
@@ -139,9 +140,10 @@ function extraKind(c: any): Printing["extra"] {
 const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 
 // what becomes ~ in a card's text besides its names (see cardText): "this" and a card type or subtype the card
-// calls itself by, but not "this turn", "this way", "this scheme", "this Case" or "this Room". Oracle text now
-// says "Destroy this enchantment" where it said "Destroy Aether Storm", and o:/destroy ~/ finds both
-const THIS_WORDS = "creature|artifact|enchantment|land|planeswalker|battle|spell|card|permanent|token|aura|equipment|vehicle|saga|siege|class|contraption|attraction|spacecraft";
+// calls itself by, but not "this turn", "this way", "this scheme", "this Case", "this Room" or "this
+// planeswalker" (Sanctum Lurker's "This planeswalker deals" is another card). Oracle text now says "Destroy
+// this enchantment" where it said "Destroy Aether Storm", and o:/destroy ~/ finds both
+const THIS_WORDS = "creature|artifact|enchantment|land|battle|spell|card|permanent|token|aura|equipment|vehicle|saga|siege|class|contraption|attraction|spacecraft";
 const THIS = new RegExp(`\\bthis (?:${THIS_WORDS})\\b`, "gi");
 
 // text with its accents off and Æ as Ae, as Scryfall compares it: o:Æther, o:aether and o:/æther/ are the same
@@ -267,7 +269,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         booster: !!c.booster,
         hires: !!c.highres_image,
         finishes: lower(c.finishes),
-        watermark: (c.watermark ?? faces.find((f) => f.watermark)?.watermark ?? "").toLowerCase(),
+        watermarks: lower([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
         flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
         art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
@@ -496,6 +498,8 @@ export function parse(q: string): Node {
             const next = tokens[at];
             if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) { at++; return null; }
             if (typeof next === "object" && next.key === "date") return one();
+            // which cards have printings in other languages needs every language's (the all_cards bulk file)
+            if (typeof next === "object" && (next.key === "lang" || next.key === "language")) throw new Unsupported("-lang: needs every language's printings");
             const inner = one();
             return inner && { not: inner };
         }
@@ -632,7 +636,7 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     party: (c) => isCreature(c) && hasType(c, /\b(cleric|rogue|warrior|wizard)\b/),
     outlaw: (c) => hasType(c, /\b(assassin|mercenary|pirate|rogue|warlock)\b/),
     // the front face is a creature with no rules text at all
-    vanilla: (c) => /\bcreature\b/.test(c.faceTypes[0]) && !c.text[0]?.trim(),
+    vanilla: (c) => /\bcreature\b/.test(c.faceTypes[0]) && !/\bland\b/.test(c.faceTypes[0]) && !c.text[0]?.trim(),
     // every line starts with one of its keywords, then ends, or goes on with ", " (anything after it), a cost
     // ("Prototype {2}{R} — 3/2" and "Swampcycling {2}, …" too, but not an activated one, "Waterbend {3}: …"),
     // "—" or reminder text: "Protection from red", "Bushido 1", "Revolt — …", "Flying; banding" and a line of
@@ -753,7 +757,7 @@ function compile(t: Term, data: Cards): Test {
         case "produces": { const m = colorTest(t.op, t.value, ">=", true); return card((c) => m(c.produced)); }
         case "has":
             if (v === "indicator") return card((c) => c.indicator);
-            if (v === "watermark") return print((p) => !!p.watermark);
+            if (v === "watermark") return print((p) => p.watermarks.size > 0);
             throw new Unsupported(`has:${v}`);
         case "f": case "format": case "legal": return card((c) => c.legal.has(v));
         case "banned": return card((c) => c.banned.has(v));
@@ -819,7 +823,7 @@ function compile(t: Term, data: Cards): Test {
         // a regex reads the front face's only: Invasion of Dominaria's back face mentions Yawgmoth, but
         // ft:/yawgmoth/ doesn't find it, where ft:yawgmoth does
         case "ft": case "flavor": { const m = plainOrRegex(t.op); return print((p) => m(t.regex ? p.flavor.slice(0, 1) : p.flavor)); }
-        case "wm": case "watermark": return print((p) => p.watermark === v);
+        case "wm": case "watermark": return print((p) => p.watermarks.has(v));
         case "frame": return print((p) => p.frame === v || p.frameEffects.has(v));
         case "border": return print((p) => p.border === v);
         case "stamp": return print((p) => p.stamp === v);
@@ -898,18 +902,23 @@ const PRINT_REVEALS = new Set(["playtest", "oversized", "thick", "surgefoil"]);
 // include:extras or naming a set shows everything; naming a hidden type, a name: regex, an artist, a
 // watermark, a border, is:dfc or is:funny shows the "extra" ones
 const NEEDS: Record<Printing["extra"], number> = { "": 0, extra: 1, setOnly: 2 };
-function revealed(node: Node, negated = false): number {
+// Naming a set shows its hidden printings to its own part of the search only ("set"): (s:neo or t:sorcery)
+// doesn't show the hidden sorceries, s:neo t:dragon does show NEO's dragon tokens. Everything else shows them to
+// the whole search ("all"): r:uncommon or o:draw wm:phyrexian shows hidden uncommons too
+function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
     if ("term" in node) {
         const { key, value } = node.term;
-        if (key === "include" && value.toLowerCase() === "extras") return 2;
         // -s:tsp doesn't
-        if (["s", "e", "set", "edition"].includes(key) && !negated) return 2;
-        // a name: regex does (name:/lightning/ finds the Lightning Bolt art card), but not name:lightning, and
-        // not -name:/dragon/
-        if (key === "name" && node.term.regex && !negated) return 1;
+        if (["s", "e", "set", "edition"].includes(key)) return scope === "set" && !negated ? 2 : 0;
+        if (scope === "set") return 0;
+        if (key === "include" && value.toLowerCase() === "extras") return 2;
+        // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
+        // card, name:/^a/ Antoine Ruel Bio), but not name:lightning, and not -name:/dragon/
+        if (key === "name" && node.term.regex && !negated) return 2;
         if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return 1;
-        // is:dfc shows double-faced tokens, art cards and playtest cards; is:transform doesn't
-        if (key === "is" && value.toLowerCase() === "dfc" && !negated) return 1;
+        // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
+        // is:transform doesn't
+        if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
         // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
         // (the surge-foil tokens), but not is:stamped or is:setpromo
         if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
@@ -920,18 +929,26 @@ function revealed(node: Node, negated = false): number {
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
         // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
         // border:black or borderless, or -border:black)
-        if (["a", "artist", "wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
+        // (left out, an artist shows everything, as include:extras does)
+        if (["a", "artist"].includes(key)) return negated ? 2 : 1;
+        if (["wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
         if (key === "has" && value.toLowerCase() === "watermark") return 1;
         // is:funny shows funny tokens too, like the Dragon
         if (key === "is" && value.toLowerCase() === "funny" && !negated) return 1;
         return 0;
     }
-    if ("not" in node) return revealed(node.not, !negated);
-    return Math.max(...("and" in node ? node.and : node.or).map((part) => revealed(part, negated)));
+    if ("not" in node) return revealed(node.not, !negated, scope);
+    // a set shows its printings to every part of an AND, but to an OR's other branches only if they name sets
+    // too (each branch shows more for itself, see evaluate)
+    const each = ("and" in node ? node.and : node.or).map((part) => revealed(part, negated, scope));
+    return "and" in node || scope === "all" ? Math.max(...each) : Math.min(...each);
 }
 
-// the printings among `prints` that match
-function evaluate(node: Node, data: Cards, prints: number[]): number[] {
+// the printings among `prints` that match. What Scryfall hides is left out part by part: `level` is what the
+// search around this part shows, and a part naming a set shows more for itself (see revealed)
+function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = false): number[] {
+    const shown = Math.max(level, revealed(node, negated, "set"));
+    const prints = all.filter((i) => NEEDS[data.prints[i].extra] <= shown);
     if ("term" in node) {
         const test = compile(node.term, data);
         if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card]));
@@ -945,14 +962,29 @@ function evaluate(node: Node, data: Cards, prints: number[]): number[] {
         });
     }
     // an AND only tests what's left after the parts before it, so a narrow part first saves the rest work
-    if ("and" in node) return node.and.reduce((left, part) => left.length ? evaluate(part, data, left) : left, prints);
+    if ("and" in node) return node.and.reduce((left, part) => left.length ? evaluate(part, data, left, shown, negated) : left, prints);
     if ("or" in node) {
         const hit = new Set<number>();
-        for (const part of node.or) for (const i of evaluate(part, data, prints)) hit.add(i);
-        return prints.filter((i) => hit.has(i));
+        for (const part of node.or) for (const i of evaluate(part, data, all, shown, negated)) hit.add(i);
+        return all.filter((i) => hit.has(i));
     }
-    const out = new Set(evaluate(node.not, data, prints));
-    return prints.filter((i) => !out.has(i));
+    // Scryfall's comparisons are its database's: a card without a power has no answer to tou>pow, and "not" of no
+    // answer is no answer either, so -(tou>pow or o:draw) leaves out every card without power and toughness
+    const out = new Set(evaluate(node.not, data, prints, shown, !negated));
+    const stats = statsIn(node.not);
+    return prints.filter((i) => !out.has(i) && stats.every((has) => has(data.cards[data.prints[i].card])));
+}
+
+// for each stat a search compares (pow, tou, loy, pt), whether a card has it
+function statsIn(node: Node): ((c: LocalCard) => boolean)[] {
+    if ("term" in node) {
+        const keys = [node.term.key, ...(/^(pow|power|tou|toughness|loy|loyalty|pt|powtou)$/.test(node.term.value.toLowerCase()) ? [node.term.value.toLowerCase()] : [])];
+        return keys.flatMap((k) => /^(pow|power|pt|powtou)$/.test(k) ? [(c: LocalCard) => c.power.some((v) => v !== undefined)]
+            : /^(tou|toughness)$/.test(k) ? [(c: LocalCard) => c.toughness.some((v) => v !== undefined)]
+            : /^(loy|loyalty)$/.test(k) ? [(c: LocalCard) => c.loyalty.some((v) => v !== undefined)] : []);
+    }
+    if ("not" in node) return statsIn(node.not);
+    return ("and" in node ? node.and : node.or).flatMap(statsIn);
 }
 
 // the cards (as indexes into `cards`) among `among` with a printing that matches the whole search
@@ -967,11 +999,9 @@ export function search(node: Node, data: Cards, among?: number[]): number[] {
 
 // the printings (as indexes into `prints`) that match the whole search, among those it shows
 export function searchPrintings(node: Node, data: Cards, among?: number[]): number[] {
-    const shown = revealed(node);
-    const visible = (kind: Printing["extra"]) => NEEDS[kind] <= shown;
     const prints: number[] = [];
-    for (const c of among ?? data.cards.keys()) for (const p of data.cards[c].printings) if (visible(data.prints[p].extra)) prints.push(p);
-    return evaluate(node, data, prints);
+    for (const c of among ?? data.cards.keys()) prints.push(...data.cards[c].printings);
+    return evaluate(node, data, prints, revealed(node));
 }
 
 // what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each

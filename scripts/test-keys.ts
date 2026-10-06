@@ -61,7 +61,7 @@ const keys: string[] = [
     ...values(data, (i) => printsOf(i).map((p) => p.border), 1).map((v) => `border:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [p.frame, ...p.frameEffects]), 1).map((v) => `frame:${v}`),
     ...values(data, (i) => printsOf(i).map((p) => p.stamp), 1).map((v) => `stamp:${v}`),
-    ...values(data, (i) => printsOf(i).map((p) => p.watermark)).map((v) => `wm:${quote(v)}`),
+    ...values(data, (i) => printsOf(i).flatMap((p) => [...p.watermarks])).map((v) => `wm:${quote(v)}`),
     ...[...data.tags].filter(([, cards]) => cards.size >= MIN_CARDS).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `otag:${t}`),
 ].filter((k) => k.includes(ONLY));
 
