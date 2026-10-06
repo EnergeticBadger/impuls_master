@@ -46,6 +46,8 @@ export type ScryfallCardSearchResponse = {
     has_more: boolean
     next_page?: string
     data: ScryfallCard[]
+    // parts of the search Scryfall couldn't use and searched without
+    warnings?: string[]
 }
 
 export type ScryfallCard = {
