@@ -17,6 +17,8 @@ t:sorc mv=7
 t:/^legendary artifact creature/ c:u
 t:kindred
 t:battle
+t:/^land/ is:mdfc
+t:/^creature — human$/ is:transform
 
 # text
 o:"draw a card" t:instant mv=1 c:u
@@ -24,6 +26,18 @@ o:~ o:"enters tapped" t:land -t:basic id:w
 fo:"you may cast it" t:sorcery mv<=2
 o:/^flying$/ t:creature mv=1
 kw:flying kw:lifelink t:angel
+o:"fire deals"
+o:/^banefire/
+o:"vicious verse"
+o:"~ deals" t:enchantment -t:creature
+o:"~" t:attraction
+o:"~ deals" t:room
+o:"sacrifice ~" t:case
+o:~ t:legendary t:creature mv=3
+o:/~/ t:creature mv=1 c:w
+o:/destroy ~/
+o:/(?=[^.]*~)[^.]*\bdestroy/ t:creature mv=3
+o:/untap (this|~)\b/
 
 # colours and identity
 c:r mv=1 t:instant
@@ -57,6 +71,8 @@ m:{2/W}
 m:WWW t:creature mv=3
 m=1R t:instant
 m>3WU
+m:RU is:split
+m:RG is:split
 m:XX
 is:hybrid t:creature mv=1
 is:phyrexian t:creature
@@ -66,6 +82,9 @@ pow>=10
 pow=0 tou>=7
 pow>tou t:wall
 tou>pow t:dragon
+tou>pow is:transform
+pow>tou is:flip
+tou>pow is:mdfc
 pt=10 t:creature mv=3
 loy=7
 loy>=6 t:planeswalker
@@ -87,8 +106,10 @@ in:lea t:instant
 in:arena t:goblin r:mythic
 -in:paper t:creature mv=1
 in:mythic t:goblin
+in:mythic t:instant
 cn>=300 e:neo
 cn:1 st:core
+cn:1 t:soldier
 game:arena t:sliver
 game:mtgo -game:paper t:creature mv=1
 year<=1994 t:artifact mv=4
@@ -106,8 +127,15 @@ a:"rebecca guay" t:enchantment
 artist:proce t:land
 ft:"never" t:dragon
 flavor:/\byawgmoth\b/
+ft:yawgmoth
+ft:the is:mdfc
+ft:/the/ is:mdfc
+ft:the is:transform t:creature mv<=2
 wm:phyrexian t:creature mv=2
 has:watermark t:goblin
+has:watermark t:elemental
+wm:izzet t:creature
+a:"svetlin velinov" t:soldier
 frame:1993 t:creature mv=1
 frame:future
 frame:showcase t:dragon
@@ -140,7 +168,10 @@ is:party mv=1
 is:outlaw mv=1
 is:vanilla mv=1
 is:frenchvanilla mv=1 c:w
+is:frenchvanilla mv=2
+is:frenchvanilla mv>=5
 is:bear c:g
+is:bear is:dfc
 is:modal t:instant mv=2
 is:split
 is:flip
@@ -150,15 +181,23 @@ is:leveler
 is:adventure c:g
 is:mdfc t:land
 is:dfc mv=1
+is:dfc t:token
+e:arn t:creature mv=1
+t:dungeon
+is:dfc is:meld
 is:reserved t:creature
 is:gamechanger
 is:partner
 is:companion
 is:unique t:dragon r:mythic
+is:unique t:legendary mv=5
 is:reprint t:dragon r:mythic
 is:promo t:dragon r:mythic
 is:digital t:dragon
 is:funny t:dragon
+is:funny t:goblin
+is:funny mv=0 -t:land
+-is:funny st:funny t:creature
 is:full t:land -t:basic
 is:spotlight t:dragon
 is:foil -is:nonfoil t:dragon
@@ -167,10 +206,51 @@ is:alchemy t:dragon
 is:rebalanced t:goblin
 is:universesbeyond t:dragon
 not:reprint t:dragon r:mythic
-is:fetchland
-is:shockland
+is:meldpart
+is:meldresult
+is:booster t:dragon r:mythic
+is:hires t:dragon r:mythic
+is:masterpiece t:creature mv=3
+is:colorshifted
+is:datestamped t:dragon
+is:prerelease t:dragon r:mythic
+is:judge
+is:fnm t:creature
+is:intro
+is:media t:dragon
+is:buyabox
+is:gameday
+is:release
+is:instore
+is:convention
+is:giftbox
+is:league
+is:brawler
+# land groups: Scryfall's own lists, kept in land-cycles.json (npm run land-cycles)
+is:bikeland
+is:bondland
+is:bounceland
+is:canopyland
+is:checkland
+is:creatureland
 is:manland
+is:dual
 is:fastland
+is:fetchland
+is:filterland
+is:gainland
+is:painland
+is:pathway
+is:scryland
+is:shadowland
+is:shockland
+is:slowland
+is:storageland
+is:surveilland
+is:tangoland
+is:tricycleland
+is:triland
+-is:shockland t:land t:swamp t:forest
 
 # edhrec, tags
 edhrec<=100

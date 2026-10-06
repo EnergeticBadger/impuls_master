@@ -140,8 +140,12 @@ function mismatch(c: Case, cards: any[]): string | undefined {
     if (c.kind === "several" || c.query.includes(") o:/")) return undefined;
     const regexes = findRegexes(c.query).map((re) => { try { return scryfallRegex(re); } catch { return null; } });
     if (regexes.includes(null)) return undefined;
-    // the text as Scryfall searches it: the card's names as ~, reminder text left out (see scripts/local-search.ts)
-    for (const card of cards.slice(0, 5)) if (!cardText(card).text.some((t) => regexes.some((re) => re!.test(t)))) return card.name;
+    // the text as Scryfall searches it: reminder text left out, and the card's names as ~ for a regex with ~ in
+    // it (see cardText in scripts/local-search.ts)
+    for (const card of cards.slice(0, 5)) {
+        const text = cardText(card);
+        if (!regexes.some((re) => (re!.source.includes("~") ? text.text : text.printed).some((t) => re!.test(t)))) return card.name;
+    }
     return undefined;
 }
 
