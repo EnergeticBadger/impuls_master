@@ -48,10 +48,12 @@
 
 /* ---- Footer (every page) ---- */
 
+/* margin-top: auto takes up whatever room the page leaves, so the footer sits at the bottom of the window (see body) */
 .footer {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  margin-top: auto;
   padding: var(--space-7) var(--gutter) var(--space-6);
   border-top: 1px solid var(--border-faint);
   background-color: var(--raised-0);
