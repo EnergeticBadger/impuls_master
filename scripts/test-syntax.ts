@@ -1,16 +1,17 @@
 // Checks the local search (scripts/local-search.ts) against Scryfall, search by search: npm run test-syntax
-// The searches are scripts/syntax-cases.txt. Each is run on Scryfall once and remembered in
-// <out>/scryfall-syntax.json (a week, or until --refresh), so a run after the first is offline and quick.
+// The searches are scripts/syntax-cases.txt and scripts/panel-cases.txt (what the filter panel writes). Each is
+// run on Scryfall once and remembered in <out>/scryfall-syntax.json (a week, or until --refresh), so a run after
+// the first is offline and quick.
 // Where Scryfall's whole answer fits in a few pages the two are compared card by card, and the cards only one
 // side found are listed, which usually says exactly what's different.
 //   --out <dir>   default fuzz-results      --refresh   ask Scryfall again      --only <text>   cases containing it
 // <out>/syntax-summary.md starts with what differs; exit code 1 if anything does.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Unsupported, bulkFile, loadCards, parse, search, setsFile } from "./local-search.ts";
+import { Answers } from "./scryfall-answers.ts";
+import { Unsupported, bulkFile, listed, loadCards, parse, search, setsFile, sortCards } from "./local-search.ts";
 
-const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
     const i = args.indexOf(`--${name}`);
@@ -21,43 +22,20 @@ const ONLY = option("only", "");
 const REFRESH = args.includes("--refresh");
 // Scryfall's answer is kept whole up to this many pages (175 cards each); past it, only the count
 const PAGES = 5;
-const WEEK = 7 * 24 * 3600_000;
 
-const cases = readFileSync(new URL("./syntax-cases.txt", import.meta.url), "utf8").split("\n")
-    .map((l) => l.trim()).filter((l) => l && !l.startsWith("#") && l.includes(ONLY));
+// the hand-written cases, then the ones the filter panel writes (npm run panel-cases)
+const cases = [...new Set(["./syntax-cases.txt", "./panel-cases.txt"].flatMap((file) => readFileSync(new URL(file, import.meta.url), "utf8").split("\n"))
+    .map((l) => l.trim()).filter((l) => l && !l.startsWith("#") && l.includes(ONLY)))];
 
-type Answer = { at: number, total: number, cards?: [string, string][], error?: string };
-mkdirSync(OUT, { recursive: true });
-const cacheFile = join(OUT, "scryfall-syntax.json");
-const cache: Record<string, Answer> = existsSync(cacheFile) ? JSON.parse(readFileSync(cacheFile, "utf8")) : {};
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const live = !!process.stdout.isTTY;
 const say = (line: string) => live ? process.stdout.write(`\r\x1b[2K${line}`) : console.log(line);
-
-async function scryfall(q: string): Promise<Answer> {
-    const cards: [string, string][] = [];
-    let url: string | undefined = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}`;
-    let total = 0;
-    for (let page = 0; url && page < PAGES; page++) {
-        const r = await fetch(url, { headers: HEADERS });
-        if (r.status === 429) { say("Scryfall asked to slow down; waiting 90s"); await sleep(90_000); page--; continue; }
-        const j: any = await r.json().catch(() => ({ details: `HTTP ${r.status}` }));
-        if (r.status === 404) return { at: Date.now(), total: 0, cards: [] };
-        if (!j.data) return { at: Date.now(), total: 0, error: j.details ?? `HTTP ${r.status}` };
-        total = j.total_cards;
-        for (const c of j.data) cards.push([c.oracle_id ?? c.card_faces?.[0]?.oracle_id, c.name]);
-        url = j.has_more ? j.next_page : undefined;
-        await sleep(1500);
-    }
-    return { at: Date.now(), total, cards: cards.length === total ? cards : undefined };
-}
+const answers = new Answers(join(OUT, "scryfall-syntax.json"), say);
 
 // Scryfall's answers first, so the comparison below runs in one go
-const missing = cases.filter((q) => REFRESH || !cache[q] || Date.now() - cache[q].at > WEEK);
+const missing = cases.filter((q) => REFRESH || !answers.known(q, PAGES));
 for (const [n, q] of missing.entries()) {
     say(`asking Scryfall ${n + 1}/${missing.length}: ${q}`);
-    cache[q] = await scryfall(q);
-    writeFileSync(cacheFile, JSON.stringify(cache));
+    await answers.ask(q, PAGES, REFRESH);
 }
 if (missing.length) say(`asked Scryfall ${missing.length} searches\n`);
 
@@ -65,19 +43,36 @@ const started = Date.now();
 const data = await loadCards(await bulkFile("default_cards", join(OUT, "bulk")), await bulkFile("oracle_tags", join(OUT, "bulk")).catch(() => undefined), await setsFile(join(OUT, "bulk")).catch(() => undefined));
 console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
-type Row = { q: string, local?: number, scryfall: number, onlyHere: string[], onlyThere: string[], why?: string, error?: string };
+// `order` is where the two lists first part, when they hold the same cards: Scryfall's card and ours there
+type Row = { q: string, local?: number, scryfall: number, onlyHere: string[], onlyThere: string[], why?: string, error?: string, warnings?: string[], order?: { at: number, theirs: string, ours: string } };
 const rows: Row[] = [];
 for (const q of cases) {
-    const theirs = cache[q];
-    const row: Row = { q, scryfall: theirs.total, onlyHere: [], onlyThere: [], error: theirs.error };
+    const theirs = (await answers.ask(q, PAGES))!;
+    const row: Row = { q, scryfall: theirs.total, onlyHere: [], onlyThere: [], error: theirs.error, warnings: theirs.warnings };
     try {
-        const found = search(parse(q), data);
-        row.local = found.length;
-        if (theirs.cards) {
+        const node = parse(q);
+        const found = search(node, data);
+        // a card each, or a printing or an art each for unique:prints and unique:art
+        const entries = listed(node, data);
+        row.local = entries.length;
+        const byCard = entries.length === found.length;
+        if (theirs.cards && !byCard) {
+            // printings: the cards whose number of entries differs
+            const count = (ids: string[]) => ids.reduce((m, id) => m.set(id, (m.get(id) ?? 0) + 1), new Map<string, number>());
+            const here = count(entries), there = count(theirs.cards.map(([id]) => id));
+            const name = new Map([...theirs.cards.map(([id, n]) => [id, n] as const), ...found.map((i) => [data.cards[i].oracleId, data.cards[i].name] as const)]);
+            row.onlyHere = [...here].filter(([id, n]) => n > (there.get(id) ?? 0)).map(([id]) => name.get(id)!);
+            row.onlyThere = [...there].filter(([id, n]) => n > (here.get(id) ?? 0)).map(([id]) => name.get(id)!);
+        } else if (theirs.cards) {
             const there = new Set(theirs.cards.map(([id]) => id));
             const here = new Set(found.map((i) => data.cards[i].oracleId));
             row.onlyHere = found.filter((i) => !there.has(data.cards[i].oracleId)).map((i) => data.cards[i].name);
             row.onlyThere = theirs.cards.filter(([id]) => !here.has(id)).map(([, name]) => name);
+            if (!row.onlyHere.length && !row.onlyThere.length) {
+                const ours = sortCards(node, data, found);
+                const at = theirs.cards.findIndex(([id], i) => data.cards[ours[i]].oracleId !== id);
+                if (at >= 0) row.order = { at, theirs: theirs.cards[at][1], ours: data.cards[ours[at]].name };
+            }
         }
     } catch (e) {
         if (!(e instanceof Unsupported)) throw e;
@@ -91,6 +86,7 @@ const differ = rows.filter((r) => !r.error && r.local !== undefined && !exact.in
     .sort((a, b) => Math.abs(b.local! - b.scryfall) - Math.abs(a.local! - a.scryfall));
 const unsupported = rows.filter((r) => r.why !== undefined);
 const errors = rows.filter((r) => r.error);
+const inOrder = exact.filter((r) => !r.order);
 const names = (list: string[]) => list.slice(0, 6).join(", ") + (list.length > 6 ? ` +${list.length - 6} more` : "");
 
 const lines = [
@@ -102,9 +98,14 @@ const lines = [
         ...(r.onlyHere.length ? [`  only here: ${names(r.onlyHere)}`] : []),
         ...(r.onlyThere.length ? [`  only Scryfall: ${names(r.onlyThere)}`] : []),
     ]) : ["None."]), ``,
+    // the same cards in a different order: sorting, by name unless the search says otherwise
+    `## Same cards, different order (${inOrder.length} of ${exact.length} exact searches in Scryfall's order)`, ``,
+    ...(exact.length > inOrder.length ? exact.filter((r) => r.order).map((r) => `- \`${r.q}\`: from card ${r.order!.at + 1}, Scryfall has ${r.order!.theirs}, here ${r.order!.ours}`) : ["None."]), ``,
     `## Not supported here yet`, ``,
     ...(unsupported.length ? unsupported.map((r) => `- \`${r.q}\`: ${r.why}`) : ["None."]), ``,
     ...(errors.length ? [`## Scryfall errors`, ``, ...errors.map((r) => `- \`${r.q}\`: ${r.error}`), ``] : []),
+    // Scryfall answers with the rest of the search when it ignores a term, where the local search refuses it
+    ...(rows.some((r) => r.warnings) ? [`## Scryfall ignored part of the search`, ``, ...rows.filter((r) => r.warnings).map((r) => `- \`${r.q}\`: ${r.warnings!.join(" ")}`), ``] : []),
     `## Exact`, ``, exact.map((r) => `\`${r.q}\` (${r.scryfall})`).join(" · "), ``,
 ];
 writeFileSync(join(OUT, "syntax-summary.md"), lines.join("\n"));

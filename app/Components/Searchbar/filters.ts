@@ -96,6 +96,9 @@ export const COLOR_MODES: Record<'c' | 'id', { value: Compare, label: string }[]
 
 export const COLOR_COUNTS = ['0', '1', '2', '3', '4', '5']
 
+// each comparison's opposite, for a number filter that's left out
+const OPPOSITE: Record<Compare, string> = { '=': '!=', '>=': '<', '<=': '>', '>': '<=', '<': '>=' }
+
 const opts = (...values: string[]): Option[] =>
     values.map((v) => ({ label: v[0].toUpperCase() + v.slice(1), value: v }))
 
@@ -261,7 +264,11 @@ export function buildToken(filter: Filter, d: Draft): string {
             else if (d.values.length) token = `${filter.key}${d.compare}${d.values.join('')}`
             break
         case 'number':
-            if (d.text.trim() !== '') token = `${filter.key}${d.compare}${d.text.trim()}`
+            if (d.text.trim() === '') break
+            // left out, it's the opposite comparison: Scryfall drops -mv>=3 as an unknown key "-mv", so the
+            // filter would do nothing
+            if (d.exclude) return `${filter.key}${OPPOSITE[d.compare]}${d.text.trim()}`
+            token = `${filter.key}${d.compare}${d.text.trim()}`
             break
         case 'text':
             if (d.text.trim()) token = `${filter.key}:${quote(d.text.trim())}`

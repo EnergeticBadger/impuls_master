@@ -9,6 +9,10 @@ bolt
 !"Lightning Bolt"
 name:/^[a-c].* dragon$/
 -name:dragon t:dragon r:mythic
+name:/lightning/
+name:treasure
+name:"green dragon inn"
+"green dragon inn"
 
 # types
 t:dragon t:legendary
@@ -25,6 +29,12 @@ o:"draw a card" t:instant mv=1 c:u
 o:~ o:"enters tapped" t:land -t:basic id:w
 fo:"you may cast it" t:sorcery mv<=2
 o:/^flying$/ t:creature mv=1
+o:/untap (this|that|~)\b/
+o:/untap this\b/
+o:"untap this creature"
+o:"untap ~"
+o:Æther
+o:/æther/
 kw:flying kw:lifelink t:angel
 o:"fire deals"
 o:/^banefire/
@@ -142,6 +152,11 @@ frame:showcase t:dragon
 frame:extendedart t:goblin
 border:borderless t:dragon
 border:white t:dragon
+border:silver
+st:box border:silver
+border:gold
+-border:black t:goblin
+!"goblin mime" r:rare
 stamp:acorn t:creature mv=1
 
 # prices
@@ -225,7 +240,8 @@ is:instore
 is:convention
 is:giftbox
 is:league
-is:brawler
+is:brawler mv=3
+is:brawler t:planeswalker
 # land groups: Scryfall's own lists, kept in land-cycles.json (npm run land-cycles)
 is:bikeland
 is:bondland
@@ -251,6 +267,23 @@ is:tangoland
 is:tricycleland
 is:triland
 -is:shockland t:land t:swamp t:forest
+is:karoo
+is:triome
+is:snarl
+is:battleland
+is:canland
+is:crowdland
+
+# devotion, new:, cheapest:
+devotion:{G}{G}{G} t:creature mv=3
+devotion:{G/U}{G/U} t:creature mv<=2
+devotion>={W}{W}{W}{W} t:enchantment
+new:rarity e:ima
+new:art e:tsr t:sliver
+new:flavor e:tsr
+new:frame e:mh2 t:creature mv=1
+cheapest:usd t:sliver usd>=1
+cheapest:usd e:sld t:dragon
 
 # edhrec, tags
 edhrec<=100
@@ -266,3 +299,63 @@ t:sliver or t:shapeshifter -c:c mv=1
 -t:creature -t:land -t:instant -t:sorcery -t:artifact -t:enchantment -t:planeswalker -t:battle -t:kindred
 include:extras t:dragon t:token
 t:token
+
+# parser: how the syntax itself is read
+t:goblin OR t:elf mv=1
+t:goblin AND mv=1 c:r
+-(t:goblin or t:elf) t:creature mv=1 c:r
+(t:goblin or t:elf) (mv=1 or mv=2) c:r
+t:goblin (c:r or c:b) -mv>2
+-(-t:goblin) mv=1
+t:creature -t:creature
+t:goblin t:goblin mv=1
+name:"lightning"
+!"Fire // Ice"
+!fire
+urza's t:land
+"urza's" t:artifact
+"draw a card" t:instant
+t:"legendary creature" t:goblin
+o:/\+1\/\+1 counter/ t:goblin mv=2
+mv!=3 t:sliver
+r!=common t:goblin mv=1
+c!=r t:goblin mv=1
+pow!=1 t:goblin mv=1
+foo:bar t:sliver
+c:rg or c:wu t:creature mv=1
+-c:w -c:u t:creature mv=1 r:mythic
+cmc=3 t:sliver
+manavalue>=6 t:goblin
+power=5 t:elf
+toughness>=7 t:dragon
+loyalty=4 t:planeswalker c:g
+edition:neo t:creature mv=2
+year:2020 t:sliver
+mv:3 t:sliver
+r:m t:goblin
+c:2 t:goblin mv=2
+keyword:"first strike" t:goblin
+o:draw o:discard t:creature mv=2 c:r
+
+# unique: printings or arts instead of cards
+!"Lightning Bolt" unique:prints
+!"Lightning Bolt" unique:art
+t:sliver unique:prints r:mythic
+t:sliver unique:art e:tsr
+
+# order: Scryfall's list in its order, not only the same cards
+t:sliver order:cmc
+t:goblin r:mythic order:power
+t:dragon r:mythic order:toughness
+t:sliver order:color
+t:dragon r:mythic order:usd
+t:sliver order:released
+t:sliver order:rarity
+t:goblin mv=1 order:edhrec
+t:sliver order:cmc direction:desc
+t:goblin mv=1 c:r direction:desc
+t:wall order:name
+t:goblin r:mythic order:eur
+t:sliver order:tix
+t:sliver order:set
+t:sliver order:artist
