@@ -1,15 +1,20 @@
 // Checks the local search (scripts/local-search.ts) against Scryfall, search by search: npm run test-syntax
-// The searches are scripts/syntax-cases.txt and scripts/panel-cases.txt (what the filter panel writes). Each is
-// run on Scryfall once and remembered in <out>/scryfall-syntax.json (a week, or until --refresh), so a run after
-// the first is offline and quick.
+// The searches are scripts/syntax-cases.txt and scripts/panel-cases.txt (what the filter panel writes), or with
+// --cases combo, scripts/combo-cases.txt ("What it does" with the other filters: npm run test-combos). Each is
+// run on Scryfall once and remembered in <out>/scryfall-syntax.json, or scryfall-<names>.json (a week, or until
+// --refresh), so a run after the first is offline and quick.
 // Where Scryfall's whole answer fits in a few pages the two are compared card by card, and the cards only one
 // side found are listed, which usually says exactly what's different.
 //   --out <dir>   default fuzz-results      --refresh   ask Scryfall again      --only <text>   cases containing it
-// <out>/syntax-summary.md starts with what differs; exit code 1 if anything does.
+//   --cases <names>   which <name>-cases.txt files, default syntax,panel
+//   --delay <ms>   wait after each Scryfall request, default 1200
+//   --stop-on-429   stop when Scryfall asks to slow down, rather than wait and go on: for sharing Scryfall with
+//                   another run (a long fuzz-rules). What was asked is kept, so running again carries on
+// <out>/syntax-summary.md (or <names>-summary.md) starts with what differs; exit code 1 if anything does.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Answers } from "./scryfall-answers.ts";
+import { Answers, SlowDown } from "./scryfall-answers.ts";
 import { Unsupported, bulkFile, listed, loadCards, parse, search, setsFile, sortCards } from "./local-search.ts";
 
 const args = process.argv.slice(2);
@@ -23,19 +28,29 @@ const REFRESH = args.includes("--refresh");
 // Scryfall's answer is kept whole up to this many pages (175 cards each); past it, only the count
 const PAGES = 5;
 
-// the hand-written cases, then the ones the filter panel writes (npm run panel-cases)
-const cases = [...new Set(["./syntax-cases.txt", "./panel-cases.txt"].flatMap((file) => readFileSync(new URL(file, import.meta.url), "utf8").split("\n"))
+// the hand-written cases, then the ones the filter panel writes (npm run panel-cases), unless --cases says
+const SETS = option("cases", "syntax,panel").split(",");
+// each set of cases has its own answers and summary, so two of these can run at once without losing answers
+const NAME = SETS.join() === "syntax,panel" ? "syntax" : SETS.join("-");
+const SUMMARY = `${NAME}-summary.md`;
+const cases = [...new Set(SETS.flatMap((set) => readFileSync(new URL(`./${set}-cases.txt`, import.meta.url), "utf8").split("\n"))
     .map((l) => l.trim()).filter((l) => l && !l.startsWith("#") && l.includes(ONLY)))];
 
 const live = !!process.stdout.isTTY;
 const say = (line: string) => live ? process.stdout.write(`\r\x1b[2K${line}`) : console.log(line);
-const answers = new Answers(join(OUT, "scryfall-syntax.json"), say);
+const answers = new Answers(join(OUT, `scryfall-${NAME}.json`), say, { delay: Number(option("delay", "1200")), stopOnLimit: args.includes("--stop-on-429") });
 
 // Scryfall's answers first, so the comparison below runs in one go
 const missing = cases.filter((q) => REFRESH || !answers.known(q, PAGES));
 for (const [n, q] of missing.entries()) {
     say(`asking Scryfall ${n + 1}/${missing.length}: ${q}`);
-    await answers.ask(q, PAGES, REFRESH);
+    try {
+        await answers.ask(q, PAGES, REFRESH);
+    } catch (e) {
+        if (!(e instanceof SlowDown)) throw e;
+        say(`Scryfall asked to slow down after ${n} of ${missing.length} searches; stopped. They're kept: run again later to carry on.\n`);
+        process.exit(2);
+    }
 }
 if (missing.length) say(`asked Scryfall ${missing.length} searches\n`);
 
@@ -108,7 +123,7 @@ const lines = [
     ...(rows.some((r) => r.warnings) ? [`## Scryfall ignored part of the search`, ``, ...rows.filter((r) => r.warnings).map((r) => `- \`${r.q}\`: ${r.warnings!.join(" ")}`), ``] : []),
     `## Exact`, ``, exact.map((r) => `\`${r.q}\` (${r.scryfall})`).join(" · "), ``,
 ];
-writeFileSync(join(OUT, "syntax-summary.md"), lines.join("\n"));
+writeFileSync(join(OUT, SUMMARY), lines.join("\n"));
 console.log(`${rows.length} searches: ${exact.length} exact, ${differ.length} differ, ${unsupported.length} not supported here, ${errors.length} Scryfall errors`);
-console.log(`Summary: ${join(OUT, "syntax-summary.md")}`);
+console.log(`Summary: ${join(OUT, SUMMARY)}`);
 process.exitCode = differ.length || unsupported.length ? 1 : 0;

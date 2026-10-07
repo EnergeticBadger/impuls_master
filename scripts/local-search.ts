@@ -173,6 +173,8 @@ export function scryfallRegex(regex: string): RegExp {
 
 // the legends whose short names Scryfall picks differently from cardText's rule, kept by npm run short-names
 const SHORT_NAMES: Record<string, string[]> = JSON.parse(readFileSync(new URL("./short-names.json", import.meta.url), "utf8"));
+// every type word, lower case, from Scryfall's catalogs (types.json, by npm run types)
+const TYPES = new Set<string>(JSON.parse(readFileSync(new URL("./types.json", import.meta.url), "utf8")));
 
 // a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept): as printed,
 // and with the card itself as ~, by its names and as "this creature", "this Aura"…. Scryfall matches a search
@@ -193,7 +195,9 @@ export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[],
     const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 1 && !n.includes(".")).sort((a, b) => b.length - a.length);
     // as whole words, so Khaaaaaaaaaaaannn!'s name, ending in "!", stays as it is
     const self = names.length ? new RegExp(`\\b(?:${names.map((n) => escapeRe(fold(n))).join("|")})\\b`, "g") : null;
-    const raw = faces.map((f) => fold((f.oracle_text ?? c.oracle_text ?? "") as string));
+    // a card with more than two faces has no text Scryfall searches: o: and fo: never find Who // What // When //
+    // Where // Why, Smelt // Herd // Saw or There // They're // Their, whatever the words
+    const raw = faces.length > 2 ? [] : faces.map((f) => fold((f.oracle_text ?? c.oracle_text ?? "") as string));
     const tilde = (t: string) => (self ? t.replace(self, "~") : t).replace(THIS, "~");
     const printed = raw.map((t) => t.replace(/ ?\([^)]*\)/g, ""));
     return { printed, text: printed.map(tilde), fullPrinted: raw, fullText: raw.map(tilde) };
@@ -340,6 +344,14 @@ export async function setsFile(cache: string): Promise<string> {
 // a Tagger tag's name with only its letters and digits, as Scryfall matches a tag's aliases
 const tagKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// where Scryfall's search is behind Tagger's tree in the bulk file: a tag new to the tree finds nothing there yet
+// (otag:protects-self), and the tags moved under it still count under their old parent (otag:protection finds
+// gains-hexproof's cards). Found by asking Scryfall, 7 Oct 2026; drop an entry once Scryfall has caught up
+const TAG_LAG = {
+    unknown: ["protects-self"],
+    parents: { "gains-hexproof": "protection", "gains-shroud": "protection", "gains-protection": "protection" } as Record<string, string>,
+};
+
 // every card and printing (default_cards), each Tagger tag's cards (a tag's cards include its child tags', as
 // on Scryfall), and the sets' blocks
 export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string): Promise<Cards> {
@@ -378,6 +390,11 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         for await (const t of jsonLines(tagsPath)) {
             byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g.oracle_id) });
         }
+        const idOf = new Map([...byId].map(([id, t]) => [t.slug, id]));
+        for (const [child, parent] of Object.entries(TAG_LAG.parents)) {
+            const c = idOf.get(child), p = byId.get(idOf.get(parent) ?? "");
+            if (c && p && !p.children.includes(c)) p.children.push(c);
+        }
         const gather = (id: string, into: Set<string>, seen: Set<string>) => {
             if (seen.has(id)) return;
             seen.add(id);
@@ -388,7 +405,7 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         };
         for (const [id, t] of byId) {
             const into = new Set<string>();
-            gather(id, into, new Set());
+            if (!TAG_LAG.unknown.includes(t.slug)) gather(id, into, new Set());
             tags.set(t.slug, into);
             // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
             for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
@@ -753,7 +770,17 @@ function compile(t: Term, data: Cards): Test {
         case "o": case "oracle": { const m = plainOrRegex(t.op), self = t.value.includes("~"); return card((c) => m(self ? c.text : c.printed)); }
         case "fo": case "fulloracle": { const m = plainOrRegex(t.op), self = t.value.includes("~"); return card((c) => m(self ? c.fullText : c.fullPrinted)); }
         // a regex reads the whole type line, "Front // Back", so t:/^land/ is a land in front only
-        case "t": case "type": { const m = plainOrRegex(t.op); return card((c) => m(t.regex ? [c.types] : c.faceTypes)); }
+        case "t": case "type": {
+            // a type's own name is a whole word (t:human isn't Inhuman, t:ape isn't Shapeshifter); anything else
+            // is part of the type line (t:uman, t:art)
+            const v = t.value.toLowerCase();
+            if (!t.regex && (t.op === ":" || t.op === "=") && TYPES.has(v)) {
+                const re = new RegExp(`(^|[^a-z])${escapeRe(v)}($|[^a-z])`);
+                return card((c) => c.faceTypes.some((s) => re.test(s)));
+            }
+            const m = plainOrRegex(t.op);
+            return card((c) => m(t.regex ? [c.types] : c.faceTypes));
+        }
         // the whole name, a reversible printing's own ("Bolt // Bolt") and, unless it's a regex, a printing's
         // flavor name (name:"green dragon inn" is Homeward Path); a face's name alone doesn't count
         case "name": case "word": { const m = plainOrRegex(t.op); return print((p, c) => m(t.regex ? [c.name, p.name] : [c.name, p.name, p.flavorName])); }
