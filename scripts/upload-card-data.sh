@@ -9,7 +9,7 @@
 set -euo pipefail
 
 dir="${1:-card-data}"
-bucket="${CARD_DATA_BUCKET:-impulsecaster-card-data}"
+bucket="${CARD_DATA_BUCKET:-impulsecaster-cards-data}"
 keep=3
 
 [ -f "$dir/sitemap.xml" ] || { echo "No card data in $dir: run npm run card-data first" >&2; exit 1; }

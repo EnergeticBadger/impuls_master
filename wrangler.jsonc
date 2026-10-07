@@ -9,7 +9,7 @@
   // the card data (scripts/card-data.ts), kept apart from the deploy and uploaded each night by
   // scripts/upload-card-data.sh. Locally it's an empty stand-in, so pages ask Scryfall instead.
   "r2_buckets": [
-    { "binding": "CARD_DATA", "bucket_name": "impulsecaster-card-data" }
+    { "binding": "CARD_DATA", "bucket_name": "impulsecaster-cards-data" }
   ],
   // the deploy's version, so saved card pages are only served by the deploy that made them (workers/app.ts)
   "version_metadata": {
