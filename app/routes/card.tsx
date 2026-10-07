@@ -89,7 +89,7 @@ async function fromScryfall(pageSlug: string, want: string | null, get: (path: s
 }
 
 // One page per card, at /card/<name>. Every printing is shown on it: ?print=<set>-<number> picks one.
-// Everything comes from the card data files that ship with the site (scripts/card-data.ts), so the page
+// Everything comes from the site's card data files (scripts/card-data.ts), so the page
 // only parses its own card's record.
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const { ctx, env } = context.cloudflare

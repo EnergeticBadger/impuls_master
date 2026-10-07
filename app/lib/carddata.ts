@@ -1,4 +1,4 @@
-// Card data from Scryfall's daily bulk files, packed into files that ship with the site
+// Card data from Scryfall's daily bulk files, packed into files the site serves from an R2 bucket
 // (scripts/card-data.ts writes them), so card pages and the quick view don't need the API.
 // Shared by that script and the app, so both agree on where each card lives. No runtime imports here:
 // the script runs this file directly with Node.
