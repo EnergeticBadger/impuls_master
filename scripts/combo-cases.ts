@@ -12,10 +12,11 @@
 
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { FILTERS, buildQuery, buildToken, emptyDraft, type Draft, type Join } from "../app/Components/Searchbar/filters.ts";
+import { buildQuery, type Draft } from "../app/Components/Searchbar/filters.ts";
 import { EFFECTS, ROLES, TARGETS, TRIGGERS, blockToken, type RuleBlock } from "../app/Components/Searchbar/rules.ts";
 import { regexProblems } from "../app/Components/Searchbar/regexLimits.ts";
 import { Unsupported, bulkFile, loadCards, parse, search, setsFile } from "./local-search.ts";
+import { OTHERS, chip, rules, type Chip, type Spec } from "./panel-chips.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -36,71 +37,6 @@ const started = Date.now();
 const data = await loadCards(await bulkFile("default_cards", join(OUT, "bulk")), await bulkFile("oracle_tags", join(OUT, "bulk")).catch(() => undefined), await setsFile(join(OUT, "bulk")).catch(() => undefined));
 console.log(`${data.cards.length.toLocaleString()} cards loaded in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
-// ---- chips, as the panel makes them ----
-
-type Spec = { id: string, d: Partial<Draft> };
-type Chip = { token: string, join: Join };
-const byId = (id: string) => FILTERS.find((f) => f.id === id)!;
-const chip = (s: Spec, join: Join = "and"): Chip => {
-    const f = byId(s.id);
-    return { token: buildToken(f, { ...emptyDraft(f), ...s.d }), join };
-};
-
-// every other filter, a few ways each: what goes beside "What it does"
-const OTHERS: Spec[] = [
-    ...["creature", "instant", "sorcery", "artifact", "enchantment", "land", "planeswalker", "equipment", "aura", "vehicle"].map((v) => ({ id: "type", d: { values: [v] } })),
-    { id: "type", d: { values: ["instant", "sorcery"], match: "any" } },
-    { id: "type", d: { values: ["artifact", "creature"], match: "all" } },
-    { id: "type", d: { values: ["creature"], exclude: true } },
-    ...["elf", "goblin", "zombie", "human", "dragon", "wizard", "soldier", "spirit"].map((v) => ({ id: "creature", d: { values: [v] } })),
-    { id: "creature", d: { values: ["elf", "goblin"], match: "any" } },
-    { id: "creature", d: { values: ["human"], exclude: true } },
-    { id: "legendary", d: { values: ["legendary"] } },
-    { id: "legendary", d: { values: ["legendary creature"] } },
-    { id: "legendary", d: { values: ["commander"] } },
-    { id: "legendary", d: { values: ["legendary"], exclude: true } },
-    ...["w", "u", "b", "r", "g"].map((c) => ({ id: "color", d: { values: [c] } })),
-    { id: "color", d: { values: ["r", "g"], compare: "=" } },
-    { id: "color", d: { values: ["u", "b"], compare: "<=" } },
-    { id: "color", d: { values: ["c"] } },
-    { id: "color", d: { colorBy: "count", compare: ">=", text: "2" } },
-    { id: "color", d: { values: ["g"], exclude: true } },
-    ...["w", "u", "b", "r", "g"].map((c) => ({ id: "identity", d: { values: [c], compare: "=" } })),
-    { id: "identity", d: { values: ["b", "g"] } },
-    { id: "identity", d: { values: ["w", "u", "r"] } },
-    { id: "identity", d: { values: ["c"], compare: "=" } },
-    { id: "identity", d: { colorBy: "count", compare: "=", text: "3" } },
-    ...["flying", "trample", "haste", "flash", "lifelink", "deathtouch", "cycling", "flashback", "landfall", "ward"].map((v) => ({ id: "keyword", d: { values: [v] } })),
-    { id: "keyword", d: { values: ["flying", "vigilance"], match: "all" } },
-    { id: "keyword", d: { values: ["flying"], exclude: true } },
-    ...["0", "1", "2", "3", "4", "6"].map((v) => ({ id: "mv", d: { compare: "=", text: v } })),
-    { id: "mv", d: { compare: "<=", text: "2" } },
-    { id: "mv", d: { compare: ">=", text: "5" } },
-    { id: "mv", d: { compare: ">=", text: "4", exclude: true } },
-    { id: "power", d: { compare: ">=", text: "4" } },
-    { id: "power", d: { compare: "<=", text: "1" } },
-    { id: "power", d: { compare: "=", text: "2" } },
-    { id: "toughness", d: { compare: ">=", text: "5" } },
-    { id: "toughness", d: { compare: "<", text: "2" } },
-    { id: "loyalty", d: { compare: "<=", text: "4" } },
-    ...["common", "uncommon", "rare", "mythic"].map((v) => ({ id: "rarity", d: { values: [v] } })),
-    { id: "rarity", d: { values: ["rare", "mythic"], match: "any" } },
-    { id: "rarity", d: { values: ["common"], exclude: true } },
-    ...["commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "brawl", "historic", "timeless"].map((v) => ({ id: "format", d: { values: [v] } })),
-    { id: "format", d: { values: ["modern"], exclude: true } },
-    { id: "price", d: { compare: "<", text: "1" } },
-    { id: "price", d: { compare: ">=", text: "10" } },
-    { id: "year", d: { compare: ">=", text: "2022" } },
-    { id: "year", d: { compare: "<=", text: "2003" } },
-    { id: "year", d: { compare: "=", text: "2015" } },
-    { id: "year", d: { compare: ">=", text: "2010", exclude: true } },
-    ...["neo", "mh3", "dmu", "m21", "eld", "c20", "lea", "cmr"].map((v) => ({ id: "set", d: { text: v } })),
-    ...["john avon", "rebecca guay", "seb mckinnon", "guay"].map((v) => ({ id: "artist", d: { text: v } })),
-    ...["dragon", "of the", "angel"].map((v) => ({ id: "name", d: { text: v } })),
-    { id: "name", d: { text: "the", exclude: true } },
-];
-
-const rules = (d: Partial<Draft>): Spec => ({ id: "oracle", d: { blocks: [], ...d } });
 const block = (b: Partial<RuleBlock>): RuleBlock => ({ trigger: "", effect: "", words: "", ...b });
 
 // ---- narrowing ----
@@ -197,6 +133,11 @@ for (let i = 0; i < 12; i++) {
 }
 // filters before and after "what it does": the local search narrows an AND as it goes
 for (let i = 0; i < 10; i++) shapes(i ? "" : "Filters on both sides", 1, () => rules({ blocks: [effect()] }), { lead: [pick(OTHERS)] });
+// an AND after an OR: chips read left to right, so everything before it is bracketed, `(a or b) c`
+for (let i = 0; i < 10; i++) {
+    const s = pick(small), after = pick(OTHERS);
+    shapes(i ? "" : "Or another filter, then and", 1, () => i % 2 ? rules({ values: roles(1) }) : rules({ blocks: [effect()] }), { tail: [chip(s, "or"), chip(after)], limit: 600 });
+}
 
 const out = [
     "# Generated by npm run combo-cases from the filter panel's own code (scripts/combo-cases.ts); don't edit by hand.",

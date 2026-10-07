@@ -319,3 +319,15 @@ name:"of the" o:/(each opponent|target (player|opponent)|each player) sacrifices
 name:angel id=b o:/loses? \w+ life and you gain/
 usd>=10 o:/search your library/ id=r
 mv=1 id=g o:/return[^.]*from (your|a|an opponent's) graveyard/
+
+# Or another filter, then and
+((o:/(gains?|has|have) [^.]*\b(flying)/ id<=bg) or a:"john avon") name:angel
+((id<=wur otag:reanimate) or loy<=4) t:creature
+((o:/(each opponent|target (player|opponent)|each player) sacrifices/ id=c) or a:"seb mckinnon") -f:modern
+((id=3 otag:extra-turn) or kw:landfall) s:cmr
+((o:/return[^.]*from (your|a|an opponent's) graveyard/ kw:flying) or a:guay) kw:flash
+((kw:trample otag:protection) or (kw:flying kw:vigilance)) usd>=10
+((o:/put[^.]*counters? on/ kw:haste) or (kw:flying kw:vigilance)) c<=ub
+((kw:flash otag:evasion) or kw:flashback) year>=2022
+((o:/((gains?|has|have) [^.]*\b(flying|menace|trample|shadow|fear|intimidate|skulk|horsemanship)|can't be blocked)/ kw:lifelink) or a:"rebecca guay") mv=6
+((kw:deathtouch otag:repeatable-token-generator) or loy<=4) f:timeless
