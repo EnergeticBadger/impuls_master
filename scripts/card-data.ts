@@ -1,11 +1,11 @@
 // Builds the site's card data from Scryfall's daily bulk files: node scripts/card-data.ts [out dir]
-// Run it after `npm run build` (it writes into build/client by default, next to the other static files)
-// and before deploying. It writes:
+// It writes into card-data/ by default; scripts/upload-card-data.sh then puts that in the R2 bucket the
+// site reads it from, apart from the deploy. Paths below are as the site serves them. It writes:
 //   /data/cards/<bucket>.json  one record per card, packed (see app/lib/carddata.ts for the layout)
 //   /data/cards/renamed.json   the few pages whose slug is longer than the card's name
 //   /data/sets.json, /data/sets/<code>.json  the list of sets, and each set's cards
 //   /data/browse.json          the footer's links
-//   /sitemap.xml, /sitemaps/*  one entry per card, set and page, as static files
+//   /sitemap.xml, /sitemaps/*  one entry per card, set and page
 // The bulk files come from data.scryfall.io, which has no rate limit; this makes one API call, for the
 // file list, and one for the list of sets (for their icons). Set SCRYFALL_BULK_DIR to a folder holding
 // default_cards.jsonl.gz, rulings.jsonl.gz and sets.json (api.scryfall.com/sets) to build from files already
@@ -23,7 +23,7 @@ import {
 import type { Ruling } from "../app/types.ts";
 
 const HEADERS = { "User-Agent": "impuls_master/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
-const out = resolve(process.argv[2] ?? "build/client");
+const out = resolve(process.argv[2] ?? "card-data");
 const localDir = process.env.SCRYFALL_BULK_DIR;
 
 type BulkFile = { type: string, jsonl_download_uri?: string, updated_at: string };

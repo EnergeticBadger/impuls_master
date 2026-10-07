@@ -17,3 +17,6 @@
 
 # rules builder fuzz runs (npm run fuzz-rules)
 /fuzz-results/
+
+# card data made by npm run card-data, uploaded to R2 by npm run card-data:upload
+/card-data/
