@@ -22,7 +22,8 @@
     "fuzz-syntax": "node scripts/fuzz-syntax.ts",
     "short-names": "node scripts/short-names.ts",
     "combo-cases": "node --import ./scripts/app-paths.ts scripts/combo-cases.ts",
-    "test-combos": "node scripts/test-syntax.ts --cases combo --delay 3000 --stop-on-429"
+    "test-combos": "node scripts/test-syntax.ts --cases combo --delay 3000 --stop-on-429",
+    "types": "node scripts/types.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
