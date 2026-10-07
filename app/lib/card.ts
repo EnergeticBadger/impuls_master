@@ -40,7 +40,7 @@ export async function shareLink(path: string, name: string): Promise<"shared" | 
 const MAX_FILES = 16
 const dataFiles = new Map<string, Promise<Uint8Array | undefined>>()
 
-// one of the card data files that ship with the site; undefined when the site doesn't have it
+// one of the site's card data files; undefined when the site doesn't have it
 // (local dev, or it couldn't be fetched), so the caller asks Scryfall instead
 function dataFile(path: string): Promise<Uint8Array | undefined> {
     let file = dataFiles.get(path)

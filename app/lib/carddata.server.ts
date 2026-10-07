@@ -1,35 +1,56 @@
-// Reads the card data files that ship with the site (see ./carddata.ts). Each answer is undefined when
-// the files don't have it: they aren't there (local dev, or a deploy without scripts/card-data.ts) or the
-// card is newer than the last refresh. Callers then ask Scryfall.
+// Reads the card data files (see ./carddata.ts) from the R2 bucket they live in, apart from the deploy, so
+// deploying never takes them away. Each answer is undefined when the files don't have it: the bucket has no
+// card data (local dev) or can't be read, or the card is newer than the last refresh. Callers then ask Scryfall.
 import {
     bucketHeader, bucketOf, paths, readRecord,
     type Browse, type BucketEntry, type CardRecord, type Renamed, type SetFile, type SetSummary,
 } from "./carddata";
 
-// Files read by this isolate, most recently used last. Reading a file is I/O, which doesn't count toward
-// the Worker's CPU time; parsing does, so only the header is parsed here and each record on its own.
-// The files only change with a deploy, which starts new isolates.
+// Each refresh (scripts/upload-card-data.sh) uploads a whole new copy under v/<version>/ and only then points
+// `current` at it, so a page never mixes two days' files. An isolate asks which version is current at most
+// once a minute; the upload keeps the copies before it, so one still on the old version can finish.
+const CURRENT = "current";
+const VERSION_TTL = 60_000;
+let version: { checked: number, value: Promise<string | undefined> } | undefined;
+
+// the version of the card data being served; undefined when there's none
+export function dataVersion(env: Env): Promise<string | undefined> {
+    if (!version || Date.now() - version.checked > VERSION_TTL) {
+        version = {
+            checked: Date.now(),
+            value: quietly(env.CARD_DATA.get(CURRENT).then((obj) => obj?.text())).then((v) => v?.trim() || undefined),
+        };
+    }
+    return version.value;
+}
+
+const keyOf = (v: string, path: string) => `v/${v}/${path}`;
+
+// Files read by this isolate, by their key (so a new version means new files), most recently used last.
+// Reading a file is I/O, which doesn't count toward the Worker's CPU time; parsing does, so only the header is
+// parsed here and each record on its own.
 const MAX_FILES = 64;
 type Bucket = { bytes: Uint8Array, header: ReturnType<typeof bucketHeader> };
-const files = new Map<string, Promise<Uint8Array | undefined>>();
+const files = new Map<string, Promise<Uint8Array<ArrayBuffer> | undefined>>();
 const buckets = new Map<number, Bucket>();
 
-function readFile(env: Env, path: string): Promise<Uint8Array | undefined> {
-    let hit = files.get(path);
+function readObject(env: Env, key: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+    let hit = files.get(key);
     if (hit) {
-        files.delete(path);
+        files.delete(key);
     } else {
-        hit = env.ASSETS.fetch(new Request(`https://assets.local/${path}`)).then(async (res) => {
-            if (res.status === 404) return undefined;
-            if (!res.ok) throw new Error(`${path}: ${res.status}`);
-            return new Uint8Array(await res.arrayBuffer());
-        });
+        hit = env.CARD_DATA.get(key).then(async (obj) => obj ? new Uint8Array(await obj.arrayBuffer()) : undefined);
         // a failure isn't kept, so the next request tries again
-        hit.catch(() => files.delete(path));
+        hit.catch(() => files.delete(key));
     }
-    files.set(path, hit);
+    files.set(key, hit);
     if (files.size > MAX_FILES) files.delete(files.keys().next().value!);
     return hit;
+}
+
+async function readFile(env: Env, path: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+    const v = await dataVersion(env);
+    return v === undefined ? undefined : readObject(env, keyOf(v, path));
 }
 
 // the files can be missing or broken; that only means asking Scryfall instead
@@ -40,6 +61,49 @@ async function quietly<T>(promise: Promise<T | undefined>): Promise<T | undefine
         console.error("Card data file failed", err);
         return undefined;
     }
+}
+
+// small files, parsed once per isolate and version
+const parsed = new Map<string, Promise<unknown>>();
+async function parsedFile<T>(env: Env, path: string): Promise<T | undefined> {
+    const v = await dataVersion(env);
+    if (v === undefined) return undefined;
+    const key = keyOf(v, path);
+    let hit = parsed.get(key);
+    if (!hit) {
+        for (const old of parsed.keys()) if (!old.startsWith(keyOf(v, ""))) parsed.delete(old);
+        hit = quietly(readObject(env, key)).then((bytes) => bytes && JSON.parse(new TextDecoder().decode(bytes)));
+        parsed.set(key, hit);
+    }
+    const value = await hit;
+    if (!value) parsed.delete(key);
+    return value as T | undefined;
+}
+
+const TYPES: Record<string, string> = { json: "application/json", xml: "application/xml; charset=utf-8" };
+
+// a card data file or sitemap as a response, for the browser (/data/...) and search engines (/sitemap.xml, /sitemaps/...)
+export async function dataFileResponse(env: Env, path: string): Promise<Response> {
+    let bytes: Uint8Array<ArrayBuffer> | undefined;
+    try {
+        const v = await dataVersion(env);
+        if (v === undefined) throw new Error("No card data version");
+        bytes = await readObject(env, keyOf(v, path));
+    } catch (err) {
+        console.error("Card data file failed", err);
+        // a 503 tells search engines to come back later, where a 404 would tell them the sitemap is gone
+        return new Response("Card data is temporarily unavailable. Try again in a minute.", {
+            status: 503,
+            headers: { "Retry-After": "60", "Cache-Control": "no-store" },
+        });
+    }
+    if (!bytes) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+    return new Response(bytes, {
+        headers: {
+            "Content-Type": TYPES[path.slice(path.lastIndexOf(".") + 1)] ?? "application/octet-stream",
+            "Cache-Control": "public, max-age=3600",
+        },
+    });
 }
 
 async function bucket(env: Env, n: number): Promise<Bucket | undefined> {
@@ -54,13 +118,7 @@ async function bucket(env: Env, n: number): Promise<Bucket | undefined> {
     return b;
 }
 
-let renamed: Promise<Renamed | undefined> | undefined;
-async function renamedSlugs(env: Env): Promise<Renamed | undefined> {
-    renamed ??= quietly(readFile(env, paths.renamed())).then((bytes) => bytes && JSON.parse(new TextDecoder().decode(bytes)));
-    const r = await renamed;
-    if (!r) renamed = undefined;
-    return r;
-}
+const renamedSlugs = (env: Env) => parsedFile<Renamed>(env, paths.renamed());
 
 // undefined: no card data files at all; null: the files are there but no card has this page
 export async function findCard(env: Env, pageSlug: string): Promise<CardRecord | null | undefined> {
@@ -83,19 +141,6 @@ export async function sameName(env: Env, record: CardRecord): Promise<CardRecord
 }
 
 // ---- sets and the footer ----
-
-// small files, parsed once per isolate
-const parsed = new Map<string, Promise<unknown>>();
-async function parsedFile<T>(env: Env, path: string): Promise<T | undefined> {
-    let hit = parsed.get(path);
-    if (!hit) {
-        hit = quietly(readFile(env, path)).then((bytes) => bytes && JSON.parse(new TextDecoder().decode(bytes)));
-        parsed.set(path, hit);
-    }
-    const value = await hit;
-    if (!value) parsed.delete(path);
-    return value as T | undefined;
-}
 
 // every set with a page, newest first; undefined without the card data files
 export const allSets = (env: Env) => parsedFile<SetSummary[]>(env, paths.sets());
