@@ -20,7 +20,9 @@
     "panel-cases": "node --import ./scripts/app-paths.ts scripts/panel-cases.ts",
     "test-keys": "node scripts/test-keys.ts",
     "fuzz-syntax": "node scripts/fuzz-syntax.ts",
-    "short-names": "node scripts/short-names.ts"
+    "short-names": "node scripts/short-names.ts",
+    "combo-cases": "node --import ./scripts/app-paths.ts scripts/combo-cases.ts",
+    "test-combos": "node scripts/test-syntax.ts --cases combo"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
