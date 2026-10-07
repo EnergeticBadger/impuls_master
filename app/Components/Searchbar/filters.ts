@@ -350,11 +350,13 @@ function isGroup(q: string) {
 // more than one term side by side, e.g. `t:elf c:g` or `t:elf or t:goblin`, but not `(a or b)` or `name:"two words"`
 const isCompound = (q: string) => splitTerms(q).length > 1
 
-// add a filter to what's already in the search; OR means "everything so far, or this instead"
+// add a filter to what's already in the search, so chips read left to right: OR means "everything so far, or
+// this instead", AND "everything so far, and this too"
 export function joinQuery(existing: string, token: string, join: Join) {
     const q = existing.trim()
     if (!q) return token
-    if (join === 'and') return `${q} ${token}`
+    // AND binds tighter than OR, so an OR so far is bracketed first: `a or b` and c is `(a or b) c`, not a or (b c)
+    if (join === 'and') return `${hasOr(q) ? `(${q})` : q} ${token}`
     // several terms (a custom query, say) stay together on the right of the OR, as they do on the left
     return `${/\s/.test(q) && !isGroup(q) ? `(${q})` : q} or ${isCompound(token) && !isGroup(token) ? `(${token})` : token}`
 }
@@ -499,6 +501,10 @@ export function splitTerms(text: string): { term: string, start: number }[] {
 }
 
 const isOr = (term: string) => /^or$/i.test(term)
+// an `or` outside any brackets
+const hasOr = (q: string) => splitTerms(q).some((t) => isOr(t.term))
+// the terms inside a bracketed group
+const inside = (group: string) => splitTerms(group.slice(1, -1)).map((t) => t.term)
 
 // The reverse of buildQuery, for a search read back from the address: as much as possible goes back into chips
 // and the rest becomes a Custom query chip. Either way it searches the same cards.
@@ -506,7 +512,9 @@ export function parseQuery(q: string): Omit<Chip, 'id'>[] {
     const terms = splitTerms(q).map((t) => t.term)
     for (let n = terms.length; n > 0; n--) {
         const rest = terms.slice(n)
-        // the rest is ANDed onto the chips, so an `or` of its own would change what it means
+        // the rest is ANDed onto the chips, so an `or` in either would change what it means: buildQuery would
+        // bracket the chips first. A search written before chips read left to right (`a or b c`) stays whole
+        if (rest.length && terms.slice(0, n).some(isOr)) continue
         if (rest.some(isOr)) continue
         const chips = toChips(terms.slice(0, n))
         if (chips) return rest.length ? [...chips, customChip(rest.join(' '))] : chips
@@ -518,15 +526,19 @@ export function parseQuery(q: string): Omit<Chip, 'id'>[] {
 function toChips(terms: string[]): Omit<Chip, 'id'>[] | null {
     const last = terms.at(-1)
     const parsed = last ? parseToken(last) : null
-    if (!parsed) return null
+    // `(a or b)` on its own: chips joined with OR, bracketed because an AND came after them
+    if (!parsed) return terms.length === 1 && isGroup(terms[0]) && hasOr(terms[0].slice(1, -1)) ? toChips(inside(terms[0])) : null
     const chip = { token: buildToken(parsed.filter, parsed.draft), filterId: parsed.filter.id, draft: parsed.draft }
     if (terms.length === 1) return [{ ...chip, join: 'and' }]
     if (isOr(terms.at(-2)!)) {
         // `a or b`, or `(a b) or c`: everything before the `or` was bracketed if it was more than one term
         if (terms.length !== 3) return null
-        const before = isGroup(terms[0]) ? toChips(splitTerms(terms[0].slice(1, -1)).map((t) => t.term)) : toChips([terms[0]])
+        const before = isGroup(terms[0]) ? toChips(inside(terms[0])) : toChips([terms[0]])
         return before && [...before, { ...chip, join: 'or' }]
     }
-    const before = toChips(terms.slice(0, -1))
+    // before an AND there's no bare `or`: buildQuery brackets one
+    const rest = terms.slice(0, -1)
+    if (rest.some(isOr)) return null
+    const before = toChips(rest)
     return before && [...before, { ...chip, join: 'and' }]
 }
