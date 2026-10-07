@@ -15,14 +15,23 @@ export type Answer = { at: number, total: number, cards?: [string, string][], er
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+// thrown instead of waiting when Scryfall asks to slow down and the script was told to stop then, so it can
+// share Scryfall with another run (a long fuzz-rules) without pushing on
+export class SlowDown extends Error {}
+
 export class Answers {
     private all: Record<string, Answer>;
     private file: string;
     private say: (line: string) => void;
-    // `say` reports waiting on Scryfall, so a status line can show it
-    constructor(file: string, say: (line: string) => void = console.log) {
+    private delay: number;
+    private stopOnLimit: boolean;
+    // `say` reports waiting on Scryfall, so a status line can show it. `delay` is the wait after each request;
+    // with `stopOnLimit`, a 429 throws SlowDown instead of waiting and trying again
+    constructor(file: string, say: (line: string) => void = console.log, { delay = 1200, stopOnLimit = false } = {}) {
         this.file = file;
         this.say = say;
+        this.delay = delay;
+        this.stopOnLimit = stopOnLimit;
         this.all = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
     }
 
@@ -43,9 +52,10 @@ export class Answers {
         let total = 0, warnings: string[] | undefined;
         for (let page = 0; url && page < Math.max(pages, 1); page++) {
             const res = await fetch(url, { headers: HEADERS });
+            if (res.status === 429 && this.stopOnLimit) throw new SlowDown("Scryfall asked to slow down");
             if (res.status === 429) { this.say("Scryfall asked to slow down; waiting 90s"); await sleep(90_000); page--; continue; }
             const body: any = await res.json().catch(() => ({ details: `HTTP ${res.status}` }));
-            await sleep(1200);
+            await sleep(this.delay);
             if (res.status === 404) return this.keep(q, { at: Date.now(), total: 0, cards: [] });
             if (!body.data) return this.keep(q, { at: Date.now(), total: 0, error: body.details ?? `HTTP ${res.status}` });
             total = body.total_cards;
