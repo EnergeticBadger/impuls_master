@@ -10,7 +10,7 @@ import { QueryInput } from './QueryInput';
 import { RowSize } from '../CardGrid/RowSize';
 import { NoResults } from './NoResults';
 import { chipId, querybox } from '../Context/query';
-import { buildQuery, parseQuery } from './filters';
+import { buildQuery, parseQuery, type Chip } from './filters';
 import { loadCatalog } from './catalog';
 import { readSearchUrl, searchUrl } from './searchUrl';
 import { sort, sortKey } from '../Context/sort';
@@ -35,6 +35,17 @@ async function searchCard(page: number, query: string, by: Sort) {
         unique: "cards",
     })
     return scryfallGet(`cards/search?${params}`)
+}
+
+type KeptChip = Omit<Chip, 'id'>
+
+// the chips as plain data, to keep with the address in the browser's history (which can't hold the live proxies)
+const keptChips = (chips: readonly Chip[]): KeptChip[] => JSON.parse(JSON.stringify(chips.map(({ id, ...c }) => c)))
+
+// the chips kept with an address, if it has any
+function chipsOf(state: unknown): KeptChip[] | null {
+    const chips = (state as { chips?: unknown } | null)?.chips
+    return Array.isArray(chips) ? chips : null
 }
 
 type PageData = { cards: CardProps[], has_more: boolean, total_pages: number, total_cards: number }
@@ -309,7 +320,9 @@ export function Searchbar() {
         // each new search or page is a step in the history, so Back returns to it; the same one again just shows it again
         const url = searchUrl({ q, ...by, page: number })
         requested.current = url
-        navigate({ search: url }, { replace: url === location.search, preventScrollReset: true })
+        // the chips go with the address, so a refresh or Back brings back these chips rather than ones read from the search
+        const chips = action === 'search' ? keptChips(querybox.chips) : chipsOf(location.state)
+        navigate({ search: url }, { replace: url === location.search, preventScrollReset: true, state: chips && { chips } })
         go(q, by, number, action === 'search', url)
     }
 
@@ -335,7 +348,12 @@ export function Searchbar() {
         const by: Sort = { order: target.order, dir: target.dir }
         sort.order = target.order
         sort.dir = target.dir
-        if (buildQuery(querybox.chips) !== target.q) {
+        const kept = chipsOf(location.state)
+        if (buildQuery(querybox.chips) !== target.q && kept && buildQuery(kept) === target.q) {
+            // the chips this search was made with, kept with the address
+            querybox.noResults = null
+            querybox.chips = kept.map((c) => ({ ...c, id: chipId() }))
+        } else if (buildQuery(querybox.chips) !== target.q) {
             querybox.noResults = null
             // creature types need their list to come back as creature chips; the search doesn't wait for it
             loadCatalog('creature-types').catch(() => { }).then(() => {

@@ -368,6 +368,53 @@ function halve(re: string): [string, string] | null {
     return [keep(options.slice(0, half)), keep(options.slice(half))]
 }
 
+// a piece's regex and every half fit() could have cut it into
+function variants(re: string): string[] {
+    const halves = halve(re)
+    return halves ? [re, ...halves.flatMap(variants)] : [re]
+}
+
+// where a group starting at `start` closes, skipping escapes and [classes]; -1 if it doesn't
+function groupEnd(re: string, start: number) {
+    let depth = 0, inClass = false
+    for (let i = start; i < re.length; i++) {
+        const ch = re[i]
+        if (ch === '\\') i++
+        else if (inClass) inClass = ch !== ']'
+        else if (ch === '[') inClass = true
+        else if (ch === '(') depth++
+        else if (ch === ')' && --depth === 0) return i
+    }
+    return -1
+}
+
+// The reverse of blockToken, for a search read back from the address: the block that writes exactly this
+// token, or null. The pieces whose regex (or a half of it) shows up in the token are tried together, and a
+// block only counts when blockToken gives back the same token.
+export function readBlock(token: string): RuleBlock | null {
+    const regexes = [...token.matchAll(/o:\/((?:\\.|[^\\/])*)\//g)].map((m) => m[1])
+    if (!regexes.length) return null
+    const found = (pieces: readonly Piece[]) => pieces.filter((p) => variants(p.re).some((v) => token.includes(v)))
+    // who/what in the person's own words: a lookahead's insides, what follows the last [^.]*, or a whole regex
+    const said = new Set<string>()
+    for (const re of regexes) {
+        const ahead = re.indexOf('(?=[^.]*')
+        if (ahead >= 0) said.add(re.slice(ahead + 8, groupEnd(re, ahead)))
+        const last = re.lastIndexOf('[^.]*')
+        said.add(last < 0 ? re : re.slice(last + 5))
+    }
+    // only plain escaped words count; anything else is a piece's regex, not something typed
+    const typed = [...said].map((s) => s.replace(/\\(.)/g, '$1')).filter((w, i) => w && escape(w) === [...said][i])
+    const words = ['', ...found(TARGETS).map((t) => t.value), ...typed]
+    for (const trigger of ['', ...found(TRIGGERS).map((t) => t.value)])
+        for (const effect of ['', ...found(EFFECTS).map((e) => e.value)])
+            for (const w of words) {
+                const block = { trigger, effect, words: w }
+                if (blockToken(block) === token) return block
+            }
+    return null
+}
+
 // one block as a sentence: "When this enters → destroy something → target creature"
 export function blockSentence(b: RuleBlock): string {
     const { trigger, effect, words, target } = parts(b)

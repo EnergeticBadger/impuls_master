@@ -1,7 +1,7 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
 import { allTypes, creatureTypes, isKnownType, keywordLabel, mergedType, singular, typeLabel } from './catalog'
-import { blockSentence, blockToken, emptyBlock, roleLabel, type RuleBlock } from './rules'
+import { blockSentence, blockToken, emptyBlock, readBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
 export type Option = { label: string, value: string, token?: string }
@@ -408,6 +408,13 @@ const OPS = /^(-?)([a-z]+)(>=|<=|!=|:|=|>|<)(.+)$/i
 
 // turn typed syntax like `t:elf`, `-mv>=3` or `c:rg` back into a filter, so it can be shown and edited as a chip
 export function parseToken(term: string): { filter: Filter, draft: Draft } | null {
+    // a regex the "What it does" filter wrote goes back into its ability
+    const block = term.includes('o:/') ? readBlock(term.replace(/^-/, '')) : null
+    if (block) {
+        const filter = filterById('oracle')!
+        return { filter, draft: { ...emptyDraft(filter), blocks: [block], exclude: term.startsWith('-') } }
+    }
+
     const m = term.match(OPS)
     if (!m) return null
     const [, minus, rawKey, rawOp, rawValue] = m
@@ -480,12 +487,18 @@ export function parseToken(term: string): { filter: Filter, draft: Draft } | nul
     }
 }
 
-// top-level terms of typed text with where each starts; quoted phrases and bracketed groups stay whole
+// top-level terms of typed text with where each starts; quoted phrases, regexes and bracketed groups stay whole
 export function splitTerms(text: string): { term: string, start: number }[] {
     const terms: { term: string, start: number }[] = []
-    let start = -1, depth = 0, quoted = false
+    let start = -1, depth = 0, quoted = false, regex = false
     for (let i = 0; i <= text.length; i++) {
         const ch = text[i]
+        // a regex's spaces and brackets are its own, up to the closing slash
+        if (regex && ch !== undefined) {
+            if (ch === '\\') i++
+            else if (ch === '/') regex = false
+            continue
+        }
         const split = ch === undefined || (/\s/.test(ch) && !quoted && depth <= 0)
         if (split) {
             if (start >= 0) terms.push({ term: text.slice(start, i), start })
@@ -493,7 +506,8 @@ export function splitTerms(text: string): { term: string, start: number }[] {
             continue
         }
         if (start < 0) start = i
-        if (ch === '"') quoted = !quoted
+        if (ch === '/' && !quoted && /[:=]$/.test(text.slice(0, i))) regex = true
+        else if (ch === '"') quoted = !quoted
         else if (!quoted && ch === '(') depth++
         else if (!quoted && ch === ')') depth--
     }
@@ -507,7 +521,7 @@ const hasOr = (q: string) => splitTerms(q).some((t) => isOr(t.term))
 const inside = (group: string) => splitTerms(group.slice(1, -1)).map((t) => t.term)
 
 // The reverse of buildQuery, for a search read back from the address: as much as possible goes back into chips
-// and the rest becomes a Custom query chip. Either way it searches the same cards.
+// and the rest becomes Custom query chips. Either way it searches the same cards.
 export function parseQuery(q: string): Omit<Chip, 'id'>[] {
     const terms = splitTerms(q).map((t) => t.term)
     for (let n = terms.length; n > 0; n--) {
@@ -517,23 +531,32 @@ export function parseQuery(q: string): Omit<Chip, 'id'>[] {
         if (rest.length && terms.slice(0, n).some(isOr)) continue
         if (rest.some(isOr)) continue
         const chips = toChips(terms.slice(0, n))
-        if (chips) return rest.length ? [...chips, customChip(rest.join(' '))] : chips
+        if (chips) return [...chips, ...rest.map((t) => ({ ...termChip(t), join: 'and' as const }))]
     }
     return q.trim() ? [customChip(q)] : []
+}
+
+// one term as its filter's chip, or as a Custom query of its own when it isn't one
+function termChip(term: string): Omit<Chip, 'id' | 'join'> {
+    const parsed = parseToken(term)
+    if (!parsed) return customChip(term)
+    return { token: buildToken(parsed.filter, parsed.draft), filterId: parsed.filter.id, draft: parsed.draft }
 }
 
 // terms the way buildQuery writes chips, back into chips; null if they aren't
 function toChips(terms: string[]): Omit<Chip, 'id'>[] | null {
     const last = terms.at(-1)
-    const parsed = last ? parseToken(last) : null
-    // `(a or b)` on its own: chips joined with OR, bracketed because an AND came after them
-    if (!parsed) return terms.length === 1 && isGroup(terms[0]) && hasOr(terms[0].slice(1, -1)) ? toChips(inside(terms[0])) : null
-    const chip = { token: buildToken(parsed.filter, parsed.draft), filterId: parsed.filter.id, draft: parsed.draft }
-    if (terms.length === 1) return [{ ...chip, join: 'and' }]
+    if (!last) return null
+    if (terms.length === 1) {
+        // `(a or b)` on its own: chips joined with OR, bracketed because an AND came after them
+        const grouped = !parseToken(last) && isGroup(last) && hasOr(last.slice(1, -1)) ? toChips(inside(last)) : null
+        return grouped ?? [{ ...termChip(last), join: 'and' }]
+    }
+    const chip = termChip(last)
     if (isOr(terms.at(-2)!)) {
         // `a or b`, or `(a b) or c`: everything before the `or` was bracketed if it was more than one term
         if (terms.length !== 3) return null
-        const before = isGroup(terms[0]) ? toChips(inside(terms[0])) : toChips([terms[0]])
+        const before = isGroup(terms[0]) && !parseToken(terms[0]) ? toChips(inside(terms[0])) : toChips([terms[0]])
         return before && [...before, { ...chip, join: 'or' }]
     }
     // before an AND there's no bare `or`: buildQuery brackets one
