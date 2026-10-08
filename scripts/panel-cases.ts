@@ -7,6 +7,7 @@
 
 import { writeFileSync } from "node:fs";
 import { COLOR_COUNTS, COLOR_MODES, COMPARE_WORDS, FILTERS, buildToken, emptyDraft, type Draft, type Filter } from "../app/Components/Searchbar/filters.ts";
+import { MECHANICS } from "../app/Components/Searchbar/mechanics.ts";
 
 const byId = (id: string) => FILTERS.find((f) => f.id === id)!;
 const token = (f: Filter, d: Partial<Draft>) => buildToken(f, { ...emptyDraft(f), ...d });
@@ -43,6 +44,14 @@ group(keyword.label, [
     ...keyword.common.map((v) => `${token(keyword, { values: [v] })} mv=3 c:w`),
     `${token(keyword, { values: ["flying", "lifelink"], match: "all" })} mv<=3`,
     `${token(keyword, { values: ["flying"], exclude: true })} t:dragon mv<=4`,
+]);
+
+// our own mechanics, each on its own (they find 14–143 cards), with a keyword, and left out
+group("Mechanics", [
+    ...MECHANICS.map((m) => token(keyword, { values: [m.value] })),
+    `${token(keyword, { values: ["devotion", "flying"], match: "any" })} mv=3 c:w`,
+    `${token(keyword, { values: ["poison counters", "trample"], match: "any" })} t:creature mv=3 c:g`,
+    `${token(keyword, { values: ["devotion"], exclude: true })} t:god`,
 ]);
 
 // colors: each color in each mode, colorless, two colors, and by how many

@@ -49,6 +49,8 @@ export const paths = {
     set: (code: string) => `${DATA_DIR}/sets/${code}.json`,
     // the links in the site's footer
     browse: () => `${DATA_DIR}/browse.json`,
+    // each of our own mechanics' cards (app/Components/Searchbar/mechanics.ts), written by scripts/mechanics.ts
+    mechanics: () => `${DATA_DIR}/mechanics.json`,
 };
 
 // Cards that share a name with another card (tokens called "Soldier", the Unstable variants) get a longer
