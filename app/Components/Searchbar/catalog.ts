@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { dataJson } from '~/lib/card'
 import { paths } from '~/lib/carddata'
 import { scryfallGet } from '~/lib/scryfall'
-import { MECHANICS, mechanicByValue, type MechanicsFile } from './mechanics'
+import { AFFINITY_SUBTYPES, AFFINITY_TYPES, MECHANICS, mechanicByValue, OUR_SEARCHES, type MechanicsFile } from './mechanics'
 
 // Scryfall's lists of every type word, used to fix plurals ("dragons" → Dragon) and to spot types that don't exist.
 
@@ -102,6 +102,38 @@ export function useTypeGroups(): TypeGroup[] | undefined {
     return groups
 }
 
+// each card type's subtypes, the words after the dash on its type line ("Artifact — Equipment").
+// `types` are the card types that can have them; instants and sorceries share theirs
+export const SUBTYPE_GROUPS: { name: CatalogName, label: string, types: string[] }[] = [
+    { name: 'artifact-types', label: 'Artifact', types: ['artifact'] },
+    { name: 'enchantment-types', label: 'Enchantment', types: ['enchantment'] },
+    { name: 'land-types', label: 'Land', types: ['land'] },
+    { name: 'spell-types', label: 'Instant & sorcery', types: ['instant', 'sorcery'] },
+    { name: 'planeswalker-types', label: 'Planeswalker', types: ['planeswalker'] },
+    { name: 'battle-types', label: 'Battle', types: ['battle'] },
+    // last: there are hundreds, and they'd push the others out of sight
+    { name: 'creature-types', label: 'Creature', types: ['creature', 'kindred'] },
+]
+
+// the subtype groups as they load, each sorted A–Z
+export function useSubtypeGroups(): TypeGroup[] | undefined {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
+    function build() {
+        const ready = SUBTYPE_GROUPS.filter((g) => loaded[g.name])
+        if (!ready.length) return undefined
+        return ready.map((g) => ({
+            label: g.label,
+            types: loaded[g.name]!.filter((t) => !NO_CARDS.has(t.toLowerCase())).sort((a, b) => a.localeCompare(b)),
+        }))
+    }
+    useEffect(() => {
+        let live = true
+        Promise.allSettled(SUBTYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        return () => { live = false }
+    }, [])
+    return groups
+}
+
 const KEYWORD_GROUPS: { name: typeof KEYWORD_CATALOGS[number], label: string }[] = [
     { name: 'keyword-abilities', label: 'Keyword abilities' },
     { name: 'keyword-actions', label: 'Keyword actions' },
@@ -117,18 +149,21 @@ export function keywordLabel(value: string) {
     return hit ?? value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-// our own mechanics (./mechanics.ts), last, after Scryfall's lists
-export const MECHANICS_GROUP = 'Mechanics'
-const mechanicsGroup: TypeGroup = { label: MECHANICS_GROUP, types: MECHANICS.map((m) => m.label).sort((a, b) => a.localeCompare(b)) }
+// our own mechanics (./mechanics.ts), last, after Scryfall's lists, then Affinity for a type and for a subtype
+const ourGroups: TypeGroup[] = [
+    { label: 'Mechanics', types: MECHANICS.map((m) => m.label).sort((a, b) => a.localeCompare(b)) },
+    { label: 'Affinity for a type', types: AFFINITY_TYPES.map((m) => m.label) },
+    { label: 'Affinity for a subtype', types: AFFINITY_SUBTYPES.map((m) => m.label) },
+]
 
-// the three keyword lists as they load, each sorted A–Z, then our mechanics. Undefined until Scryfall's lists
-// have loaded or failed; the mechanics are shown either way
+// the three keyword lists as they load, each sorted A–Z, then our own groups. Undefined until Scryfall's lists
+// have loaded or failed; ours are shown either way
 export function useKeywordGroups(): TypeGroup[] | undefined {
     const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build(false))
     function build(settled: boolean) {
         const ready = KEYWORD_GROUPS.filter((g) => loaded[g.name])
         if (!ready.length && !settled) return undefined
-        return [...ready.map((g) => ({ label: g.label, types: [...loaded[g.name]!].sort((a, b) => a.localeCompare(b)) })), mechanicsGroup]
+        return [...ready.map((g) => ({ label: g.label, types: [...loaded[g.name]!].sort((a, b) => a.localeCompare(b)) })), ...ourGroups]
     }
     useEffect(() => {
         let live = true
@@ -146,7 +181,7 @@ export function useMechanicCounts(): Map<string, number> | undefined {
     useEffect(() => {
         let live = true
         mechanicCounts ??= dataJson<MechanicsFile>(paths.mechanics()).then((file) => new Map(
-            MECHANICS.flatMap((m) => {
+            OUR_SEARCHES.flatMap((m) => {
                 const entry = file?.mechanics[m.value]
                 return entry?.token === m.token ? [[m.value, entry.count] as const] : []
             })))

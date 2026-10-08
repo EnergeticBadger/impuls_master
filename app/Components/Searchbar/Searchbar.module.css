@@ -12,10 +12,18 @@
     box-shadow: var(--shadow);
 }
 
-/* phones keep the header's edges tight, so the filters get the room */
+/* phones keep the header's edges tight, so the filters get the room. Scrolling down the results tucks the
+   header up under the top edge until only the results strip shows (Searchbar.tsx sets `top`), so it slides */
 @media screen and (max-width: 640px) {
     .main_content {
         --header-pad: var(--space-3);
+        transition: top var(--ease-slow);
+    }
+}
+
+@media screen and (max-width: 640px) and (prefers-reduced-motion: reduce) {
+    .main_content {
+        transition: none;
     }
 }
 
