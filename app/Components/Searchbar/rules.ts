@@ -3,6 +3,7 @@
 // Each block is one ability; its pieces become a Scryfall regex like o:/when (~|this \w+) enters[^.]*destroy[^.]*target artifact/.
 
 // .ts so scripts/fuzz-rules.ts can load this file in plain Node too
+import { AFFINITY_SUBTYPES, AFFINITY_TYPES, type Affinity } from './mechanics.ts'
 import { MAX_REGEX_CHARS, MAX_REGEXES } from './regexLimits.ts'
 
 // the most useful Tagger tags (otag:), shown as chips; every other tag is a search away. All checked to return cards.
@@ -155,6 +156,10 @@ export const TRIGGERS: Piece[] = [
 const GIVES = '(gains?|has|have)'
 const keywords = (...words: string[]) => `${GIVES} [^.]*\\b(${words.join('|')})`
 
+// Affinity for X, from the Keyword filter's lists, so the two filters offer the same ones
+const affinity = (group: string) => (a: Affinity): Piece =>
+    ({ group, value: `affinity-${a.words.toLowerCase().replace(/ /g, '-')}`, label: `have affinity for ${a.words}`, re: `affinity for ${a.words.toLowerCase()}`, hint: 'cost reducer cheaper' })
+
 // what the ability does. The broad ones come first: one pick covers every way of doing something,
 // so people don't need a block per wording ("gets +2/+2", "+1/+1 counter", "has flying"…)
 export const EFFECTS: Piece[] = [
@@ -232,6 +237,11 @@ export const EFFECTS: Piece[] = [
     { group: 'Mana & lands', value: 'extra-land', label: 'play an extra land', re: 'play an additional land', hint: 'ramp' },
     { group: 'Mana & lands', value: 'cost-less', label: 'make spells cost less', re: 'costs? (\\{\\w\\} |\\w+ )?less', hint: 'cost reducer' },
     { group: 'Mana & lands', value: 'cost-more', label: 'make spells cost more', re: 'costs? (\\{\\w\\} |\\w+ )?more', hint: 'tax' },
+
+    // costs {1} less for each one you control; a type and a subtype apart, as on the Keyword filter
+    { group: 'Affinity for a type', value: 'affinity', label: 'have affinity for anything', re: 'affinity for', hint: 'cost reducer cheaper' },
+    ...AFFINITY_TYPES.map(affinity('Affinity for a type')),
+    ...AFFINITY_SUBTYPES.map(affinity('Affinity for a subtype')),
 
     { group: 'Everything else', value: 'sacrifice', label: 'sacrifice something', re: 'sacrifices?', hint: '' },
     { group: 'Everything else', value: 'proliferate', label: 'proliferate', re: '\\bproliferate', hint: 'counters' },

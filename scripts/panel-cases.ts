@@ -7,7 +7,7 @@
 
 import { writeFileSync } from "node:fs";
 import { COLOR_COUNTS, COLOR_MODES, COMPARE_WORDS, FILTERS, buildToken, emptyDraft, type Draft, type Filter } from "../app/Components/Searchbar/filters.ts";
-import { MECHANICS } from "../app/Components/Searchbar/mechanics.ts";
+import { AFFINITY_SUBTYPES, AFFINITY_TYPES, MECHANICS } from "../app/Components/Searchbar/mechanics.ts";
 
 const byId = (id: string) => FILTERS.find((f) => f.id === id)!;
 const token = (f: Filter, d: Partial<Draft>) => buildToken(f, { ...emptyDraft(f), ...d });
@@ -52,6 +52,12 @@ group("Mechanics", [
     `${token(keyword, { values: ["devotion", "flying"], match: "any" })} mv=3 c:w`,
     `${token(keyword, { values: ["poison counters", "trample"], match: "any" })} t:creature mv=3 c:g`,
     `${token(keyword, { values: ["devotion"], exclude: true })} t:god`,
+]);
+
+// Affinity for a type and for a subtype, each on its own (most find 1 card), and two together
+group("Affinity for", [
+    ...[...AFFINITY_TYPES, ...AFFINITY_SUBTYPES].map((m) => token(keyword, { values: [m.value] })),
+    token(keyword, { values: ["affinity for artifacts", "affinity for equipment"], match: "any" }),
 ]);
 
 // colors: each color in each mode, colorless, two colors, and by how many

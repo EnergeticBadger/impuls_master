@@ -1,4 +1,4 @@
-// Counts each of our own mechanics' cards (app/Components/Searchbar/mechanics.ts) with the local search, into
+// Counts each of our own mechanics' cards, Affinity for… too (app/Components/Searchbar/mechanics.ts), with the local search, into
 // /data/mechanics.json beside the rest of the card data: node scripts/mechanics.ts [out dir]
 // The nightly card data job runs it after scripts/card-data.ts (which empties data/ first) and before the
 // upload, so the Keyword filter can say how many cards each mechanic finds. It writes, as MechanicsFile:
@@ -9,7 +9,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { MECHANICS, type MechanicsFile } from "../app/Components/Searchbar/mechanics.ts";
+import { OUR_SEARCHES, type MechanicsFile } from "../app/Components/Searchbar/mechanics.ts";
 import { DATA_DIR } from "../app/lib/carddata.ts";
 import { bulkFile, listed, loadCards, parse } from "./local-search.ts";
 
@@ -20,7 +20,7 @@ console.log(`${data.cards.length.toLocaleString()} cards loaded in ${((Date.now(
 
 const file: MechanicsFile = { built: new Date().toISOString(), mechanics: {} };
 const problems: string[] = [];
-for (const m of MECHANICS) {
+for (const m of OUR_SEARCHES) {
     let ids: string[] = [], problem = "";
     try {
         ids = listed(parse(m.token), data).sort();
