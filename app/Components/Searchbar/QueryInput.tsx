@@ -7,8 +7,8 @@ import {
     type Draft, type Filter, type Join,
 } from './filters'
 import {
-    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, mergedNote, mergedType, singular, typeLabel, useCatalog,
-    useKeywordGroups, useTypeGroups,
+    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, MECHANICS_GROUP, mergedNote, mergedType, singular, typeLabel, useCatalog,
+    useKeywordGroups, useMechanicCounts, useTypeGroups,
 } from './catalog'
 import { querybox, chipId } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
@@ -487,6 +487,11 @@ function KeywordPicker({ filter, draft, toggle, onDone }: {
     filter: Filter & { kind: 'keyword' }, draft: Draft, toggle: (v: string) => void, onDone: () => void,
 }) {
     const groups = useKeywordGroups()
+    const counts = useMechanicCounts()
+    const cardCount = (k: string) => {
+        const n = counts?.get(k.toLowerCase())
+        return n === undefined ? '' : `${n.toLocaleString()} ${n === 1 ? 'card' : 'cards'}`
+    }
     const [q, setQ] = useState('')
     const [hi, setHi] = useState(0)
     const [browse, setBrowse] = useState(false)
@@ -544,7 +549,7 @@ function KeywordPicker({ filter, draft, toggle, onDone }: {
                                 <li key={k} id={`${listId}-${i}`} role="option" aria-selected={i === hi} className={styles.option}
                                     onPointerDown={(e) => e.preventDefault()} onPointerEnter={() => setHi(i)} onClick={() => choose(k)}>
                                     <span>{k}</span>
-                                    <span className={styles.muted}>{groupOf.get(k.toLowerCase())?.replace(/s$/, '')}</span>
+                                    <span className={styles.muted}>{[groupOf.get(k.toLowerCase())?.replace(/s$/, ''), cardCount(k)].filter(Boolean).join(' · ')}</span>
                                 </li>
                             ))}
                         </ul>
@@ -566,7 +571,9 @@ function KeywordPicker({ filter, draft, toggle, onDone }: {
                                 <div className={styles.chips}>
                                     {shown.map((k) => (
                                         <button type="button" key={k} className={styles.chip} aria-pressed={draft.values.includes(k.toLowerCase())}
-                                            onClick={() => toggle(k.toLowerCase())}>{k}</button>
+                                            onClick={() => toggle(k.toLowerCase())}>
+                                            {k}{g.label === MECHANICS_GROUP && cardCount(k) ? <span className={styles.muted}> · {cardCount(k)}</span> : null}
+                                        </button>
                                     ))}
                                 </div>
                             </div>

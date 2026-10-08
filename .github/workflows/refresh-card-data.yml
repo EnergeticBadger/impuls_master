@@ -29,6 +29,8 @@ jobs:
 
       - run: npm ci
       - run: npm run card-data
+      # each of our own mechanics' card count, into the card data (card-data empties data/, so it goes after)
+      - run: npm run mechanics -- card-data
       # the AWS CLI comes with GitHub's Ubuntu runners
       - run: npm run card-data:upload
         env:

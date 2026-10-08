@@ -57,6 +57,17 @@ function dataFile(path: string): Promise<Uint8Array | undefined> {
     return file
 }
 
+// one of the site's small JSON data files, parsed; undefined when the site doesn't have it
+export async function dataJson<T>(path: string): Promise<T | undefined> {
+    const bytes = await dataFile(path)
+    try {
+        return bytes && JSON.parse(new TextDecoder().decode(bytes)) as T
+    } catch (err) {
+        console.error(`Card data file ${path} isn't JSON: `, err)
+        return undefined
+    }
+}
+
 // the card's record (rules text, rulings, every printing) from the site's card data files
 export async function loadRecord(card: Pick<ScryfallCard, "name" | "oracle_id" | "card_faces">): Promise<CardRecord | undefined> {
     const oracle = oracleOf(card)

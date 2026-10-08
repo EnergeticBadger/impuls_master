@@ -38,6 +38,12 @@ export const OTHERS: Spec[] = [
     ...["flying", "trample", "haste", "flash", "lifelink", "deathtouch", "cycling", "flashback", "landfall", "ward"].map((v) => ({ id: "keyword", d: { values: [v] } })),
     { id: "keyword", d: { values: ["flying", "vigilance"], match: "all" } },
     { id: "keyword", d: { values: ["flying"], exclude: true } },
+    // our own mechanics: a quoted phrase, a regex, a bracketed group, mixed with a keyword, and one left out
+    ...["devotion", "energy", "dice rolling", "poison counters", "day and night"].map((v) => ({ id: "keyword", d: { values: [v] } })),
+    { id: "keyword", d: { values: ["flying", "devotion"], match: "any" } },
+    { id: "keyword", d: { values: ["poison counters", "trample"], match: "any" } },
+    { id: "keyword", d: { values: ["monarch"], exclude: true } },
+    { id: "keyword", d: { values: ["poison counters"], exclude: true } },
     ...["0", "1", "2", "3", "4", "6"].map((v) => ({ id: "mv", d: { compare: "=", text: v } })),
     { id: "mv", d: { compare: "<=", text: "2" } },
     { id: "mv", d: { compare: ">=", text: "5" } },

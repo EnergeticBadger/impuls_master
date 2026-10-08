@@ -11,6 +11,7 @@
     "deploy": "npm run build && wrangler deploy",
     "card-data": "node scripts/card-data.ts",
     "card-data:upload": "bash scripts/upload-card-data.sh",
+    "mechanics": "node scripts/mechanics.ts",
     "preview": "npm run build && wrangler dev",
     "cf-typegen": "wrangler types",
     "fuzz-rules": "node scripts/fuzz-rules.ts",

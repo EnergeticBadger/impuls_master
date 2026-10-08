@@ -1,6 +1,7 @@
 // Plain-language filters that write Scryfall search syntax, so nobody has to remember `mv>=3` or `c<=wu`.
 
 import { allTypes, creatureTypes, isKnownType, keywordLabel, mergedType, singular, typeLabel } from './catalog'
+import { mechanicByToken, mechanicByValue } from './mechanics'
 import { blockSentence, blockToken, emptyBlock, readBlock, roleLabel, type RuleBlock } from './rules'
 
 // `token` is written as-is instead of `key:value`, for options that need other syntax (e.g. is:commander)
@@ -144,7 +145,7 @@ export const FILTERS: Filter[] = [
     },
     {
         id: 'keyword', group: 'Rules text', kind: 'keyword', key: 'kw', keys: ['kw', 'keyword'],
-        label: 'Keyword', hint: 'Flying, trample, scry, landfall… pick one or several',
+        label: 'Keyword', hint: 'Flying, trample, scry, landfall, devotion… pick one or several',
         common: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'scry', 'cycling', 'flashback', 'landfall'],
     },
     {
@@ -246,10 +247,13 @@ export function buildToken(filter: Filter, d: Draft): string {
         case 'creature':
         case 'keyword': {
             const options = filter.kind === 'choice' ? filter.options : []
+            // a mechanic isn't a Scryfall keyword (kw:devotion finds nothing), so it writes its own search
             const parts = picked(filter, d).map((v) =>
-                options.find((o) => o.value === v)?.token ?? `${filter.key}:${quote(v.toLowerCase())}`)
+                options.find((o) => o.value === v)?.token
+                ?? (filter.kind === 'keyword' ? mechanicByValue(v)?.token : undefined)
+                ?? `${filter.key}:${quote(v.toLowerCase())}`)
             // a multi-term option inside an OR needs its own brackets
-            if (parts.length > 1) token = d.match === 'all' ? parts.join(' ') : `(${parts.map((p) => /\s/.test(p) ? `(${p})` : p).join(' or ')})`
+            if (parts.length > 1) token = d.match === 'all' ? parts.join(' ') : `(${parts.map((p) => isCompound(p) && !isGroup(p) ? `(${p})` : p).join(' or ')})`
             else token = parts[0] ?? ''
             break
         }
@@ -408,6 +412,13 @@ const OPS = /^(-?)([a-z]+)(>=|<=|!=|:|=|>|<)(.+)$/i
 
 // turn typed syntax like `t:elf`, `-mv>=3` or `c:rg` back into a filter, so it can be shown and edited as a chip
 export function parseToken(term: string): { filter: Filter, draft: Draft } | null {
+    // one of our mechanics' searches, before its o:"…" or o:/…/ is read as rules text
+    const mechanic = mechanicByToken(term)
+    if (mechanic) {
+        const filter = filterById('keyword')!
+        return { filter, draft: { ...emptyDraft(filter), values: [mechanic.mechanic.value], exclude: mechanic.exclude } }
+    }
+
     // a regex the "What it does" filter wrote goes back into its ability
     const block = term.includes('o:/') ? readBlock(term.replace(/^-/, '')) : null
     if (block) {
