@@ -1,5 +1,6 @@
 /*
- * The header, the same on every screen: the logo and name with the gear across from them, the filters tray under
+ * The header, the same on every screen: the logo and name with the search mode switch and the gear across from
+ * them, the search (Simple's name box and quick picks, or Advanced's filters tray) under
  * them, then sort, then (once there are results) the count and pages in a darker strip along the header's bottom
  * edge. Cards per row is set once and left alone, so it waits in the layout settings behind the gear.
  */
@@ -36,12 +37,12 @@
 
 .headerRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-        "brand settings"
-        "search search"
-        "view view"
-        "pages pages";
+        "brand mode settings"
+        "search search search"
+        "view view view"
+        "pages pages pages";
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--header-pad);
@@ -190,6 +191,43 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
+}
+
+/* Simple / Advanced, as tall as the gear beside it; the mode in use is solid accent */
+.mode {
+    grid-area: mode;
+    display: flex;
+    height: 40px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-0);
+    overflow: hidden;
+}
+
+.mode button {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.mode button + button {
+    border-left: 1px solid var(--border-faint);
+}
+
+.mode button:hover {
+    background-color: var(--raised-hover);
+}
+
+.mode button[aria-checked="true"] {
+    background-color: var(--accent);
+}
+
+.mode button:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: -2px;
 }
 
 /* the gear that opens the layout settings, where cards per row lives, at the end of the logo's line */

@@ -17,6 +17,8 @@ import { sort, sortKey } from '../Context/sort';
 import { SortControl } from './SortControl';
 import { Arrow } from '../Arrow/Arrow';
 import { view } from '../Context/view';
+import { loadMode, searchMode } from '../Context/mode';
+import { SimpleSearch } from './SimpleSearch';
 
 type Sort = { order: string, dir: string }
 
@@ -202,6 +204,8 @@ export function Searchbar() {
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
     const { perRow } = useSnapshot(view)
+    const { mode } = useSnapshot(searchMode)
+    useEffect(loadMode, [])
     const formRef = useRef<HTMLFormElement>(null)
     // cards per row is set in a layout settings pop-up, opened from the gear across from the logo
     const settingsRef = useRef<HTMLDialogElement>(null)
@@ -375,12 +379,20 @@ export function Searchbar() {
                     <img src="/logo.svg" alt="" width={40} height={40} />
                     <span>Impulse Caster</span>
                 </a>
+                {/* Simple is a name box and a few quick picks, Advanced every filter; both are the same search */}
+                <div className={styles.mode} role="radiogroup" aria-label="Search mode">
+                    {(['simple', 'advanced'] as const).map((m) => (
+                        <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => searchMode.mode = m}>
+                            {m === 'simple' ? 'Simple' : 'Advanced'}
+                        </button>
+                    ))}
+                </div>
                 <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
                     onClick={() => settingsRef.current?.showModal()}>
                     <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
                 </button>
                 <div className={styles.searchArea}>
-                    <QueryInput searched={query} skipped={skippedBy.get(query)} />
+                    {mode === 'simple' ? <SimpleSearch /> : <QueryInput searched={query} skipped={skippedBy.get(query)} />}
                 </div>
                 <div className={styles.viewOptions}>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
