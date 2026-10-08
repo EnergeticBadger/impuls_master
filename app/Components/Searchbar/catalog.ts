@@ -115,34 +115,8 @@ export const SUBTYPE_GROUPS: { name: CatalogName, label: string, types: string[]
     { name: 'creature-types', label: 'Creature', types: ['creature', 'kindred'] },
 ]
 
-// a few well-known subtypes of each kind, to show before anything's picked (and before the lists load), so
-// people can see there's more to a type line than the card type. `kind` is its SUBTYPE_GROUPS label
-export const POPULAR_SUBTYPES: { type: string, kind: string }[] = [
-    { type: 'Equipment', kind: 'Artifact' },
-    { type: 'Aura', kind: 'Enchantment' },
-    { type: 'Saga', kind: 'Enchantment' },
-    { type: 'Vehicle', kind: 'Artifact' },
-    { type: 'Elf', kind: 'Creature' },
-    { type: 'Dragon', kind: 'Creature' },
-    { type: 'Zombie', kind: 'Creature' },
-    { type: 'Goblin', kind: 'Creature' },
-    { type: 'Angel', kind: 'Creature' },
-    { type: 'Vampire', kind: 'Creature' },
-    { type: 'Wizard', kind: 'Creature' },
-    { type: 'Sliver', kind: 'Creature' },
-    { type: 'Adventure', kind: 'Instant & sorcery' },
-    { type: 'Lesson', kind: 'Instant & sorcery' },
-    { type: 'Treasure', kind: 'Artifact' },
-    { type: 'Food', kind: 'Artifact' },
-    { type: 'Class', kind: 'Enchantment' },
-    { type: 'Room', kind: 'Enchantment' },
-    { type: 'Gate', kind: 'Land' },
-    { type: 'Desert', kind: 'Land' },
-    { type: 'Siege', kind: 'Battle' },
-]
-
-// the subtype groups as they load, each sorted A–Z; `enabled` false holds off loading them until they're wanted
-export function useSubtypeGroups(enabled = true): TypeGroup[] | undefined {
+// the subtype groups as they load, each sorted A–Z
+export function useSubtypeGroups(): TypeGroup[] | undefined {
     const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
     function build() {
         const ready = SUBTYPE_GROUPS.filter((g) => loaded[g.name])
@@ -153,11 +127,10 @@ export function useSubtypeGroups(enabled = true): TypeGroup[] | undefined {
         }))
     }
     useEffect(() => {
-        if (!enabled) return
         let live = true
         Promise.allSettled(SUBTYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
         return () => { live = false }
-    }, [enabled])
+    }, [])
     return groups
 }
 

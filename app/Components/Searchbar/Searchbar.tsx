@@ -17,8 +17,6 @@ import { sort, sortKey } from '../Context/sort';
 import { SortControl } from './SortControl';
 import { Arrow } from '../Arrow/Arrow';
 import { view } from '../Context/view';
-import { loadMode, searchMode } from '../Context/mode';
-import { SimpleSearch } from './SimpleSearch';
 
 type Sort = { order: string, dir: string }
 
@@ -209,8 +207,6 @@ export function Searchbar() {
     const [loadingDir, setLoadingDir] = useState<'back' | 'next'>('next')
     const { pending } = useSnapshot(cardsearch)
     const { perRow } = useSnapshot(view)
-    const { mode } = useSnapshot(searchMode)
-    useEffect(loadMode, [])
     const formRef = useRef<HTMLFormElement>(null)
     // cards per row is set in a layout settings pop-up, opened from the gear across from the logo
     const settingsRef = useRef<HTMLDialogElement>(null)
@@ -219,7 +215,7 @@ export function Searchbar() {
 
     const pagesRef = useRef<HTMLDivElement>(null)
 
-    // On phones the whole header would take half the screen, so scrolling down the results slides it up under the
+    // On phones the header can take half the screen (the chip tray grows with every filter), so scrolling down the results slides it up under the
     // top edge until only the results strip (count and pages) is left; scrolling up brings it all back. It moves by
     // its sticky `top`, not a transform, which would trap the filter panel's full-screen `position: fixed` inside it.
     // The part on screen is published as --header-height, so the open compare drawer sits flush under it
@@ -428,20 +424,12 @@ export function Searchbar() {
                     <img src="/logo.svg" alt="" width={40} height={40} />
                     <span>Impulse Caster</span>
                 </a>
-                {/* Simple is a name box and a few quick picks, Advanced every filter; both are the same search */}
-                <div className={styles.mode} role="radiogroup" aria-label="Search mode">
-                    {(['simple', 'advanced'] as const).map((m) => (
-                        <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => searchMode.mode = m}>
-                            {m === 'simple' ? 'Simple' : 'Advanced'}
-                        </button>
-                    ))}
-                </div>
                 <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
                     onClick={() => settingsRef.current?.showModal()}>
                     <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
                 </button>
                 <div className={styles.searchArea}>
-                    {mode === 'simple' ? <SimpleSearch /> : <QueryInput searched={query} skipped={skippedBy.get(query)} />}
+                    <QueryInput searched={query} skipped={skippedBy.get(query)} />
                 </div>
                 <div className={styles.viewOptions}>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
