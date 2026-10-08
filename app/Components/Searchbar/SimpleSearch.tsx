@@ -1,23 +1,26 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSnapshot } from 'valtio'
 import styles from './SimpleSearch.module.css'
-import { buildToken, chipLabel, COLORS, emptyDraft, filterById, parseQuery, splitTerms, type Chip, type Draft, type Filter } from './filters'
+import {
+    buildToken, CARD_TYPES, chipLabel, COLORS, emptyDraft, filterById, parseQuery, splitTerms, SUPERTYPES,
+    type Chip, type Draft, type Filter,
+} from './filters'
+import { POPULAR_SUBTYPES, SUBTYPE_GROUPS, typeLabel, useSubtypeGroups, type TypeGroup } from './catalog'
 import { chipId, querybox } from '../Context/query'
 import { searchMode } from '../Context/mode'
 import { Arrow } from '../Arrow/Arrow'
 
-// the types and mana values offered as one pick each; anything else stays an Advanced chip
-const TYPES = ['creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle']
+// the mana values offered as one pick each; anything else stays an Advanced chip
 const MANA_VALUES = ['0', '1', '2', '3', '4', '5', '6', '7+']
 const FORMATS = (filterById('format') as Filter & { kind: 'choice' }).options
 
 const cap = (v: string) => v[0].toUpperCase() + v.slice(1)
 
 // The parts of the search Simple mode has a control for, each holding a draft for its Advanced filter
-type Part = 'name' | 'color' | 'type' | 'mv' | 'format'
+type Part = 'name' | 'color' | 'type' | 'subtype' | 'mv' | 'format'
 
-// whether a chip is one Simple mode can show: a name, colors the card includes, one type, one mana value
-// (or 7+), one format, none of them left out
+// whether a chip is one Simple mode can show: a name, colors the card includes, one type, one subtype, one mana
+// value (or 7+), one format, none of them left out
 function partOf(chip: Chip): Part | null {
     const d = chip.draft
     if (!d || d.exclude) return null
@@ -27,7 +30,12 @@ function partOf(chip: Chip): Part | null {
         case 'color':
             return d.colorBy === 'colors' && (d.compare === '>=' || d.values.join('') === 'c') ? 'color' : null
         case 'type':
-            return d.values.length === 1 && !d.custom.trim() && TYPES.includes(d.values[0]) ? 'type' : null
+            if (d.values.length !== 1 || d.custom.trim()) return null
+            if (CARD_TYPES.includes(d.values[0])) return 'type'
+            return SUPERTYPES.includes(d.values[0]) ? null : 'subtype'
+        // creature types are kept as the Creature type filter's chips, as a search read from an address makes them
+        case 'creature':
+            return d.values.length === 1 ? 'subtype' : null
         case 'mv':
             return (d.compare === '=' && /^[0-6]$/.test(d.text)) || (d.compare === '>=' && d.text === '7') ? 'mv' : null
         case 'format':
@@ -54,7 +62,7 @@ function splitChips(chips: readonly Chip[]) {
 // typed syntax like `t:elf mv<=2`, which is turned into chips rather than searched as a name
 const looksLikeSyntax = (text: string) => splitTerms(text).some((t) => /^-?[a-z]+(>=|<=|!=|:|=|>|<)./i.test(t.term))
 
-// Simple mode: a name box and one-tap colors, type, mana value and format. It reads and writes the same chips
+// Simple mode: a name box and one-tap colors, type, subtype, mana value and format, with subtypes on show to tap. It reads and writes the same chips
 // as Advanced, so a search started in one carries on in the other. A change searches straight away; the name
 // searches on Enter or Search.
 export function SimpleSearch() {
@@ -80,7 +88,7 @@ export function SimpleSearch() {
         if (!token || !draft) {
             if (i >= 0) querybox.chips.splice(i, 1)
         } else if (i >= 0) {
-            Object.assign(querybox.chips[i], { token, draft })
+            Object.assign(querybox.chips[i], { token, draft, filterId })
         } else {
             querybox.chips.push({ id: chipId(), token, join: 'and', filterId, draft })
         }
@@ -117,6 +125,52 @@ export function SimpleSearch() {
     }
 
     const type = parts.type?.draft?.values[0] ?? ''
+    const subtype = parts.subtype?.draft?.values[0] ?? ''
+
+    // the full subtype lists are only fetched once they're wanted: a type is picked, or the Subtype menu is reached for
+    const [wantSubtypes, setWantSubtypes] = useState(false)
+    const subtypeGroups = useSubtypeGroups(wantSubtypes || !!type || !!subtype)
+    // the kind of subtype a card type has (Artifact → Equipment, Vehicle…), and which kind a subtype is
+    const kindOf = (t: string) => SUBTYPE_GROUPS.find((g) => g.types.includes(t))?.label
+    const kindOfSubtype = (st: string) => parts.subtype?.filterId === 'creature' && st === subtype ? 'Creature'
+        : subtypeGroups?.find((g) => g.types.some((x) => x.toLowerCase() === st.toLowerCase()))?.label
+        ?? POPULAR_SUBTYPES.find((p) => p.type.toLowerCase() === st.toLowerCase())?.kind
+    const typeKind = type ? kindOf(type) : undefined
+
+    // a subtype's chip: creature types are the Creature type filter's, the rest the Card type filter's
+    const subtypeDraft = (st: string, kind: string | undefined): [string, Draft] => kind === 'Creature'
+        ? ['creature', draftFor('creature', { values: [st] })]
+        : ['type', draftFor('type', { values: [st.toLowerCase()] })]
+
+    function pickType(v: string) {
+        commitName()
+        // a subtype the new type can't have (Equipment, then Creature) would find nothing, so it goes
+        const kind = subtype ? kindOfSubtype(subtype) : undefined
+        if (v && kind && kindOf(v) !== kind) setPart('subtype', 'type', null)
+        setPart('type', 'type', v ? draftFor('type', { values: [v] }) : null)
+        search()
+    }
+
+    function pickSubtype(st: string) {
+        if (!st || st.toLowerCase() === subtype.toLowerCase()) return pick('subtype', 'type', null)
+        const [filterId, draft] = subtypeDraft(st, kindOfSubtype(st) ?? typeKind)
+        pick('subtype', filterId, draft)
+    }
+
+    // the subtypes to offer: all of the picked type's, or the popular ones of every kind while no type is
+    // picked (and while the lists load). The one picked is always among them
+    const typeGroup = typeKind ? subtypeGroups?.find((g) => g.label === typeKind) : undefined
+    const popular = POPULAR_SUBTYPES.filter((p) => !typeKind || p.kind === typeKind).map((p) => p.type)
+    const offered = typeGroup?.types ?? popular
+    const subtypeLabel = subtype ? (parts.subtype?.filterId === 'creature' ? subtype : typeLabel(subtype)) : ''
+    const row = subtype && !offered.some((t) => t.toLowerCase() === subtype.toLowerCase()) ? [subtypeLabel, ...offered] : offered
+    // the menu lists them by kind: the picked type's kind, or every kind
+    const menuGroups: TypeGroup[] = subtypeGroups
+        ? subtypeGroups.filter((g) => !typeKind || g.label === typeKind)
+        : [{ label: 'Popular', types: popular }]
+    if (subtype && !menuGroups.some((g) => g.types.some((t) => t.toLowerCase() === subtype.toLowerCase()))) {
+        menuGroups.unshift({ label: 'Picked', types: [subtypeLabel] })
+    }
     const mv = parts.mv?.draft ? (parts.mv.draft.compare === '>=' ? '7+' : parts.mv.draft.text) : ''
     const format = parts.format?.draft?.values[0] ?? ''
 
@@ -138,14 +192,32 @@ export function SimpleSearch() {
                             onClick={() => toggleColor(c.value)} />
                     ))}
                 </div>
-                <Pick label="Type" value={type} disabled={hasOr} options={TYPES.map((t) => ({ value: t, label: cap(t) }))}
-                    onChange={(v) => pick('type', 'type', v ? draftFor('type', { values: [v] }) : null)} />
+                <Pick label="Type" value={type} disabled={hasOr} options={CARD_TYPES.map((t) => ({ value: t, label: cap(t) }))}
+                    onChange={pickType} />
+                <Pick label="Subtype" value={subtype.toLowerCase()} disabled={hasOr} onWant={() => setWantSubtypes(true)}
+                    groups={menuGroups.map((g) => ({ label: g.label, options: g.types.map((t) => ({ value: t.toLowerCase(), label: t })) }))}
+                    onChange={(v) => pickSubtype(menuGroups.flatMap((g) => g.types).find((t) => t.toLowerCase() === v) ?? '')} />
                 <Pick label="Mana value" value={mv} disabled={hasOr}
                     options={MANA_VALUES.map((v) => ({ value: v, label: v === '7+' ? '7 or more' : v }))}
                     onChange={(v) => pick('mv', 'mv', v ? draftFor('mv', v === '7+' ? { compare: '>=', text: '7' } : { compare: '=', text: v }) : null)} />
                 <Pick label="Format" value={format} disabled={hasOr} options={FORMATS}
                     onChange={(v) => pick('format', 'format', v ? draftFor('format', { values: [v] }) : null)} />
             </div>
+
+            {/* the subtypes on show, so there's something to come across: tap one to search it */}
+            {hasOr ? null : (
+                <div className={styles.subtypes}>
+                    <span className={styles.muted}>{typeKind ? `${typeKind} subtypes` : 'Subtypes'}</span>
+                    <div className={styles.subtypeRow}>
+                        {row.map((t) => (
+                            <button type="button" key={t} className={styles.subtype} aria-pressed={t.toLowerCase() === subtype.toLowerCase()}
+                                onClick={() => pickSubtype(t)}>
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {others.length ? (
                 <div className={styles.others}>
@@ -173,16 +245,25 @@ export function SimpleSearch() {
     )
 }
 
-// one of the menus: it reads "Type: Any" until something's picked, and the browser's own menu opens over it
-function Pick({ label, value, options, disabled, onChange }: {
-    label: string, value: string, options: readonly { value: string, label: string }[], disabled?: boolean, onChange: (v: string) => void,
+type Choice = { value: string, label: string }
+
+// one of the menus: it reads "Type: Any" until something's picked, and the browser's own menu opens over it.
+// `groups` lists the choices under headings instead; `onWant` is told when someone reaches for the menu
+function Pick({ label, value, options = [], groups, disabled, onWant, onChange }: {
+    label: string, value: string, options?: readonly Choice[], groups?: { label: string, options: Choice[] }[], disabled?: boolean,
+    onWant?: () => void, onChange: (v: string) => void,
 }): ReactNode {
-    const current = options.find((o) => o.value === value)
+    const current = [...options, ...(groups ?? []).flatMap((g) => g.options)].find((o) => o.value === value)
     return (
-        <label className={styles.pick} data-set={current ? true : undefined}>
+        <label className={styles.pick} data-set={current ? true : undefined} onPointerEnter={onWant} onFocus={onWant}>
             <select value={current ? value : ''} disabled={disabled} aria-label={label} onChange={(e) => onChange(e.target.value)}>
                 <option value="">Any {label.toLowerCase()}</option>
                 {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {groups?.map((g) => (
+                    <optgroup key={g.label} label={g.label}>
+                        {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </optgroup>
+                ))}
             </select>
             <span className={styles.face} aria-hidden>
                 <span>{label}: {current?.label ?? 'Any'}</span>

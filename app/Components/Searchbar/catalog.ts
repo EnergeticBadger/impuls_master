@@ -102,6 +102,65 @@ export function useTypeGroups(): TypeGroup[] | undefined {
     return groups
 }
 
+// each card type's subtypes, the words after the dash on its type line ("Artifact — Equipment").
+// `types` are the card types that can have them; instants and sorceries share theirs
+export const SUBTYPE_GROUPS: { name: CatalogName, label: string, types: string[] }[] = [
+    { name: 'artifact-types', label: 'Artifact', types: ['artifact'] },
+    { name: 'enchantment-types', label: 'Enchantment', types: ['enchantment'] },
+    { name: 'land-types', label: 'Land', types: ['land'] },
+    { name: 'spell-types', label: 'Instant & sorcery', types: ['instant', 'sorcery'] },
+    { name: 'planeswalker-types', label: 'Planeswalker', types: ['planeswalker'] },
+    { name: 'battle-types', label: 'Battle', types: ['battle'] },
+    // last: there are hundreds, and they'd push the others out of sight
+    { name: 'creature-types', label: 'Creature', types: ['creature', 'kindred'] },
+]
+
+// a few well-known subtypes of each kind, to show before anything's picked (and before the lists load), so
+// people can see there's more to a type line than the card type. `kind` is its SUBTYPE_GROUPS label
+export const POPULAR_SUBTYPES: { type: string, kind: string }[] = [
+    { type: 'Equipment', kind: 'Artifact' },
+    { type: 'Aura', kind: 'Enchantment' },
+    { type: 'Saga', kind: 'Enchantment' },
+    { type: 'Vehicle', kind: 'Artifact' },
+    { type: 'Elf', kind: 'Creature' },
+    { type: 'Dragon', kind: 'Creature' },
+    { type: 'Zombie', kind: 'Creature' },
+    { type: 'Goblin', kind: 'Creature' },
+    { type: 'Angel', kind: 'Creature' },
+    { type: 'Vampire', kind: 'Creature' },
+    { type: 'Wizard', kind: 'Creature' },
+    { type: 'Sliver', kind: 'Creature' },
+    { type: 'Adventure', kind: 'Instant & sorcery' },
+    { type: 'Lesson', kind: 'Instant & sorcery' },
+    { type: 'Treasure', kind: 'Artifact' },
+    { type: 'Food', kind: 'Artifact' },
+    { type: 'Class', kind: 'Enchantment' },
+    { type: 'Room', kind: 'Enchantment' },
+    { type: 'Gate', kind: 'Land' },
+    { type: 'Desert', kind: 'Land' },
+    { type: 'Siege', kind: 'Battle' },
+]
+
+// the subtype groups as they load, each sorted A–Z; `enabled` false holds off loading them until they're wanted
+export function useSubtypeGroups(enabled = true): TypeGroup[] | undefined {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
+    function build() {
+        const ready = SUBTYPE_GROUPS.filter((g) => loaded[g.name])
+        if (!ready.length) return undefined
+        return ready.map((g) => ({
+            label: g.label,
+            types: loaded[g.name]!.filter((t) => !NO_CARDS.has(t.toLowerCase())).sort((a, b) => a.localeCompare(b)),
+        }))
+    }
+    useEffect(() => {
+        if (!enabled) return
+        let live = true
+        Promise.allSettled(SUBTYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        return () => { live = false }
+    }, [enabled])
+    return groups
+}
+
 const KEYWORD_GROUPS: { name: typeof KEYWORD_CATALOGS[number], label: string }[] = [
     { name: 'keyword-abilities', label: 'Keyword abilities' },
     { name: 'keyword-actions', label: 'Keyword actions' },

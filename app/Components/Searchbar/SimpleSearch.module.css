@@ -170,6 +170,69 @@
     outline-offset: 2px;
 }
 
+/* the subtypes on show: one line that scrolls sideways on phones, two lines that scroll down on wider screens
+   (where a mouse wheel scrolls down, not across) */
+.subtypes {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.subtypes > .muted {
+    flex: none;
+}
+
+.subtypeRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    min-width: 0;
+    max-height: calc(2 * 30px + var(--space-1));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+
+.subtype {
+    flex: none;
+    box-sizing: border-box;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-sm);
+    background-color: var(--raised-1);
+    font-size: var(--text-sm);
+    line-height: 28px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--ease);
+}
+
+.subtype:hover {
+    background-color: var(--raised-hover);
+}
+
+.subtype[aria-pressed="true"] {
+    border-color: var(--accent-line);
+    background-color: var(--accent-tint);
+}
+
+@media screen and (max-width: 640px) {
+    .subtypes {
+        align-items: center;
+    }
+
+    .subtypeRow {
+        flex-wrap: nowrap;
+        max-width: 100%;
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 2px;
+    }
+}
+
 /* the rest of the search, which only Advanced can edit */
 .others {
     display: flex;
