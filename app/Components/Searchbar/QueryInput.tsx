@@ -709,9 +709,18 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
     const listed = new Set([...top, ...shown.flatMap((g) => g.types.map((t) => t.toLowerCase()))])
     const extras = draft.values.filter((v) => !listed.has(v))
 
+    // a type and a subtype together mean a card that's both ("Creature — Elf"), so the first time a pick puts
+    // them together, the filter switches to matching all of them; it can still be switched back below
+    const mixed = (values: readonly string[]) => values.some((v) => top.includes(v)) && values.some((v) => !top.includes(v))
+    function flip(v: string) {
+        const next = draft.values.includes(v) ? draft.values.filter((x) => x !== v) : [...draft.values, v]
+        if (!draft.exclude && mixed(next) && !mixed(draft.values)) update({ values: next, match: 'all' })
+        else toggle(v)
+    }
+
     function choose(t: string) {
         const v = t.toLowerCase()
-        if (!draft.values.includes(v)) toggle(v)
+        if (!draft.values.includes(v)) flip(v)
         setQ('')
         setHi(0)
     }
@@ -734,7 +743,7 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
                 <span className={styles.label}>Types</span>
                 <div className={styles.chips}>
                     {[...top, ...extras].map((v) => (
-                        <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => toggle(v)}>
+                        <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => flip(v)}>
                             {label(v)}
                         </button>
                     ))}
@@ -787,7 +796,7 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
                                 <div className={styles.chips}>
                                     {list.map((t) => (
                                         <button type="button" key={t} className={styles.chip} aria-pressed={draft.values.includes(t.toLowerCase())}
-                                            onClick={() => toggle(t.toLowerCase())}>{t}</button>
+                                            onClick={() => flip(t.toLowerCase())}>{t}</button>
                                     ))}
                                 </div>
                             </div>
