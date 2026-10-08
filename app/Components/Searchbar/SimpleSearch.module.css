@@ -57,13 +57,27 @@
     background-color: var(--accent-hover);
 }
 
-/* the quick picks wrap onto a second line on phones rather than scroll */
+/* the quick picks: the colors, then the menus in equal widths on one line. Where four won't fit, the colors
+   take a line of their own and the menus go two by two, lining up with the sort menus under them */
 .quick {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto repeat(4, minmax(0, 13rem));
+    justify-content: start;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
+}
+
+@media screen and (max-width: 1000px) {
+    .quick {
+        /* as wide as the sort menus at most (16rem), so the columns line up */
+        grid-template-columns: repeat(2, minmax(0, 16rem));
+    }
+
+    .quick > .colors {
+        grid-column: 1 / -1;
+        justify-content: space-between;
+    }
 }
 
 .quick[data-locked] {
@@ -112,7 +126,8 @@
 .pip[data-color="g"] { background-color: var(--mana-g); }
 .pip[data-color="c"] { background-color: var(--mana-c); }
 
-/* each menu sits invisibly over its face, so a click opens the browser's own picker (as the sort menus do) */
+/* each menu sits invisibly over its face, so a click opens the browser's own picker. The face is drawn like the
+   sort menus' (Searchbar.module.css .sortFace), so the header's menus all look alike */
 .pick {
     position: relative;
     display: flex;
@@ -137,15 +152,16 @@
 .face {
     box-sizing: border-box;
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
-    gap: var(--space-2);
+    justify-content: space-between;
+    gap: var(--space-1);
     min-width: 0;
     height: 40px;
-    padding: 0 var(--space-3);
+    padding: 0 var(--space-1) 0 var(--space-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-sm);
     background-color: var(--raised-0);
-    font-size: var(--text-sm);
     white-space: nowrap;
     transition: background-color var(--ease);
 }
@@ -155,14 +171,28 @@
     text-overflow: ellipsis;
 }
 
+/* the arrow keeps its size at the right-hand end */
+.face > :last-child {
+    flex: none;
+    margin-right: var(--space-2);
+}
+
 .pick:hover .face {
     background-color: var(--raised-hover);
 }
 
-/* something picked reads in the accent, like a pressed chip */
-.pick[data-set] .face {
+/* something picked reads in the accent, like a pressed chip: the tint laid over the dark face, so it stays as
+   solid as the menus beside it instead of letting the header show through */
+.pick[data-set] .face,
+.face[data-set] {
+    --face: var(--raised-0);
     border-color: var(--accent-line);
-    background-color: var(--accent-tint);
+    background: linear-gradient(var(--accent-tint), var(--accent-tint)) var(--face);
+}
+
+.pick[data-set]:hover .face,
+.face[data-set]:hover:not(:disabled) {
+    --face: var(--raised-hover);
 }
 
 .pick:has(select:focus-visible) .face {
