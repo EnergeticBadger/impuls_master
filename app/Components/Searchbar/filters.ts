@@ -150,7 +150,7 @@ export const FILTERS: Filter[] = [
     },
     {
         id: 'keyword', group: 'Rules text', kind: 'keyword', key: 'kw', keys: ['kw', 'keyword'],
-        label: 'Keyword', hint: 'Flying, trample, scry, landfall, devotion… pick one or several',
+        label: 'Keyword', hint: 'Flying, trample, scry, landfall, devotion, affinity for artifacts… pick one or several',
         common: ['flying', 'trample', 'haste', 'lifelink', 'deathtouch', 'vigilance', 'first strike', 'double strike', 'reach', 'menace', 'hexproof', 'indestructible', 'flash', 'ward', 'defender', 'prowess', 'scry', 'cycling', 'flashback', 'landfall'],
     },
     {

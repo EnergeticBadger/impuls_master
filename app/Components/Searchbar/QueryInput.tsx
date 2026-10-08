@@ -7,7 +7,7 @@ import {
     type Draft, type Filter, type Join,
 } from './filters'
 import {
-    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, MECHANICS_GROUP, mergedNote, mergedType, singular, SUBTYPE_GROUPS, typeLabel, useCatalog,
+    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, mergedNote, mergedType, singular, SUBTYPE_GROUPS, typeLabel, useCatalog,
     useKeywordGroups, useMechanicCounts, useSubtypeGroups, useTypeGroups,
 } from './catalog'
 import { querybox, chipId } from '../Context/query'
@@ -572,7 +572,7 @@ function KeywordPicker({ filter, draft, toggle, onDone }: {
                                     {shown.map((k) => (
                                         <button type="button" key={k} className={styles.chip} aria-pressed={draft.values.includes(k.toLowerCase())}
                                             onClick={() => toggle(k.toLowerCase())}>
-                                            {k}{g.label === MECHANICS_GROUP && cardCount(k) ? <span className={styles.muted}> · {cardCount(k)}</span> : null}
+                                            {k}{cardCount(k) ? <span className={styles.muted}> · {cardCount(k)}</span> : null}
                                         </button>
                                     ))}
                                 </div>
