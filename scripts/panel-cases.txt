@@ -84,6 +84,29 @@ kw:landfall mv=3 c:w
 kw:flying kw:lifelink mv<=3
 -kw:flying t:dragon mv<=4
 
+# Mechanics
+o:"devotion to"
+o:"your party"
+o:monarch
+o:"the initiative"
+o:{E}
+o:"experience counter"
+(o:"poison counter" or kw:toxic or kw:infect or kw:poisonous)
+(o:daybound or o:"it becomes day" or o:"it becomes night")
+o:"city's blessing"
+o:"the ring tempts you"
+o:dungeon
+o:/roll(s)? (a|one or more|two|\w+) (d\d+|dice|die)/
+o:"flip a coin"
+o:attraction
+o:sticker
+o:"villainous choice"
+o:"rad counter"
+o:vote
+(o:"devotion to" or kw:flying) mv=3 c:w
+((o:"poison counter" or kw:toxic or kw:infect or kw:poisonous) or kw:trample) t:creature mv=3 c:g
+-o:"devotion to" t:god
+
 # Color
 c>=w t:creature mv=3
 c>=u t:creature mv=3

@@ -7,7 +7,8 @@
   },
   "main": "./workers/app.ts",
   // the card data (scripts/card-data.ts), kept apart from the deploy and uploaded each night by
-  // scripts/upload-card-data.sh. Locally it's an empty stand-in, so pages ask Scryfall instead.
+  // scripts/upload-card-data.sh. Locally it's an empty stand-in, so pages ask Scryfall instead;
+  // npm run card-data:local puts what's in card-data/ into it (e.g. after npm run mechanics).
   "r2_buckets": [
     { "binding": "CARD_DATA", "bucket_name": "impulsecaster-cards-data" }
   ],

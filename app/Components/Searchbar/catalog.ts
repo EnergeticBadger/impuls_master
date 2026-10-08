@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
+import { dataJson } from '~/lib/card'
+import { paths } from '~/lib/carddata'
 import { scryfallGet } from '~/lib/scryfall'
+import { MECHANICS, mechanicByValue, type MechanicsFile } from './mechanics'
 
 // Scryfall's lists of every type word, used to fix plurals ("dragons" → Dragon) and to spot types that don't exist.
 
@@ -107,25 +110,50 @@ const KEYWORD_GROUPS: { name: typeof KEYWORD_CATALOGS[number], label: string }[]
 
 // a keyword written the way cards print it: `first strike` → First strike
 export function keywordLabel(value: string) {
+    const mechanic = mechanicByValue(value)
+    if (mechanic) return mechanic.label
     const v = value.toLowerCase()
     const hit = KEYWORD_CATALOGS.flatMap((n) => loaded[n] ?? []).find((k) => k.toLowerCase() === v)
     return hit ?? value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-// the three keyword lists as they load, each sorted A–Z
+// our own mechanics (./mechanics.ts), last, after Scryfall's lists
+export const MECHANICS_GROUP = 'Mechanics'
+const mechanicsGroup: TypeGroup = { label: MECHANICS_GROUP, types: MECHANICS.map((m) => m.label).sort((a, b) => a.localeCompare(b)) }
+
+// the three keyword lists as they load, each sorted A–Z, then our mechanics. Undefined until Scryfall's lists
+// have loaded or failed; the mechanics are shown either way
 export function useKeywordGroups(): TypeGroup[] | undefined {
-    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
-    function build() {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build(false))
+    function build(settled: boolean) {
         const ready = KEYWORD_GROUPS.filter((g) => loaded[g.name])
-        if (!ready.length) return undefined
-        return ready.map((g) => ({ label: g.label, types: [...loaded[g.name]!].sort((a, b) => a.localeCompare(b)) }))
+        if (!ready.length && !settled) return undefined
+        return [...ready.map((g) => ({ label: g.label, types: [...loaded[g.name]!].sort((a, b) => a.localeCompare(b)) })), mechanicsGroup]
     }
     useEffect(() => {
         let live = true
-        Promise.allSettled(KEYWORD_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        Promise.allSettled(KEYWORD_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build(true)) })
         return () => { live = false }
     }, [])
     return groups
+}
+
+// how many cards each mechanic finds, by value, from the nightly card data. Empty where the site has no card
+// data (local dev) and for a mechanic whose search changed after the count was made
+let mechanicCounts: Promise<Map<string, number>> | undefined
+export function useMechanicCounts(): Map<string, number> | undefined {
+    const [counts, setCounts] = useState<Map<string, number>>()
+    useEffect(() => {
+        let live = true
+        mechanicCounts ??= dataJson<MechanicsFile>(paths.mechanics()).then((file) => new Map(
+            MECHANICS.flatMap((m) => {
+                const entry = file?.mechanics[m.value]
+                return entry?.token === m.token ? [[m.value, entry.count] as const] : []
+            })))
+        mechanicCounts.then((c) => live && setCounts(c))
+        return () => { live = false }
+    }, [])
+    return counts
 }
 
 // words whose plural isn't just the singular plus an ending
