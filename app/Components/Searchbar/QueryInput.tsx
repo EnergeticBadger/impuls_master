@@ -2,13 +2,13 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useSnapshot } from 'valtio'
 import styles from './QueryInput.module.css'
 import {
-    buildQuery, buildToken, chipLabel, COLOR_COUNTS, COLOR_MODES, COLORS, COMPARE_WORDS, describe, emptyDraft, filterById,
-    FILTER_GROUPS, FILTERS, isComplete, pickCount,
+    buildQuery, buildToken, CARD_TYPES, chipLabel, COLOR_COUNTS, COLOR_MODES, COLORS, COMPARE_WORDS, describe, emptyDraft, filterById,
+    FILTER_GROUPS, FILTERS, isComplete, pickCount, SUPERTYPES,
     type Draft, type Filter, type Join,
 } from './filters'
 import {
-    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, MECHANICS_GROUP, mergedNote, mergedType, singular, typeLabel, useCatalog,
-    useKeywordGroups, useMechanicCounts, useTypeGroups,
+    findTypes, isKnownType, keywordLabel, loadTypeCatalogs, MECHANICS_GROUP, mergedNote, mergedType, singular, SUBTYPE_GROUPS, typeLabel, useCatalog,
+    useKeywordGroups, useMechanicCounts, useSubtypeGroups, useTypeGroups,
 } from './catalog'
 import { querybox, chipId } from '../Context/query'
 import { RulesBuilder } from './RulesBuilder'
@@ -676,35 +676,51 @@ function CreaturePicker({ draft, update, toggle, onDone }: { draft: Draft, updat
     )
 }
 
-// the common card types as chips, a search over every type word, and the full list grouped by kind to browse
+// Types up top as chips, then the subtypes, always on show: those of the types picked, or every kind while none
+// is, so people come across Sagas, Equipment and Elves without having to know to look for them. The search box
+// covers every type word and narrows the subtypes too.
 function TypePicker({ filter, draft, update, toggle, onDone }: {
     filter: Filter & { kind: 'choice' }, draft: Draft, update: (p: Partial<Draft>) => void, toggle: (v: string) => void, onDone: () => void,
 }) {
     const groups = useTypeGroups()
-    const creatures = useCatalog('creature-types')
+    const subtypes = useSubtypeGroups()
     const [q, setQ] = useState('')
     const [hi, setHi] = useState(0)
-    const [browse, setBrowse] = useState(false)
     const listId = useId()
     const query = q.trim().toLowerCase()
 
     // every type word with the group it's from; creature types too, so "elf" still works here
     const all = [
         ...(groups ?? []).flatMap((g) => g.types.map((t) => ({ type: t, group: g.label }))),
-        ...(creatures ?? []).map((t) => ({ type: t, group: 'Creature type' })),
+        ...(subtypes?.find((g) => g.label === 'Creature')?.types ?? []).map((t) => ({ type: t, group: 'Creature type' })),
     ]
     const groupOf = new Map(all.map((a) => [a.type, a.group]))
     const hits = findTypes(q, all.map((a) => a.type)).filter((t) => !draft.values.includes(t.toLowerCase()))
     const merged = query && !singular(query, all.map((a) => a.type)) ? mergedType(query) : undefined
-    const total = (groups ?? []).reduce((n, g) => n + g.types.length, 0)
 
-    // types picked from the search or the list stay on show next to the common ones
-    const chips = [...filter.options.map((o) => o.value), ...draft.values.filter((v) => !filter.options.some((o) => o.value === v))]
+    const top = [...CARD_TYPES, ...SUPERTYPES]
     const label = (v: string) => filter.options.find((o) => o.value === v)?.label ?? typeLabel(v)
+    const has = (g: { types: string[] }) => g.types.some((t) => draft.values.includes(t.toLowerCase()))
+    // the kinds of subtype that go with the types picked (Artifact → Equipment, Vehicle…)
+    const kinds = SUBTYPE_GROUPS.filter((g) => g.types.some((t) => draft.values.includes(t))).map((g) => g.label)
+    // those kinds, plus any kind a pick is from, so a pick never drops out of sight; all of them while none is picked
+    const shown = (subtypes ?? []).filter((g) => !kinds.length || kinds.includes(g.label) || has(g))
+    // picks that are neither a type up top nor a subtype listed, e.g. `world` from the search
+    const listed = new Set([...top, ...shown.flatMap((g) => g.types.map((t) => t.toLowerCase()))])
+    const extras = draft.values.filter((v) => !listed.has(v))
+
+    // a type and a subtype together mean a card that's both ("Creature — Elf"), so the first time a pick puts
+    // them together, the filter switches to matching all of them; it can still be switched back below
+    const mixed = (values: readonly string[]) => values.some((v) => top.includes(v)) && values.some((v) => !top.includes(v))
+    function flip(v: string) {
+        const next = draft.values.includes(v) ? draft.values.filter((x) => x !== v) : [...draft.values, v]
+        if (!draft.exclude && mixed(next) && !mixed(draft.values)) update({ values: next, match: 'all' })
+        else toggle(v)
+    }
 
     function choose(t: string) {
         const v = t.toLowerCase()
-        if (!draft.values.includes(v)) toggle(v)
+        if (!draft.values.includes(v)) flip(v)
         setQ('')
         setHi(0)
     }
@@ -723,22 +739,25 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
 
     return (
         <>
-            <div className={styles.chips}>
-                {chips.map((v) => (
-                    <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => toggle(v)}>
-                        {label(v)}
-                    </button>
-                ))}
-                {draft.custom.trim() ? (
-                    <button type="button" className={styles.chip} aria-pressed="true" title="Remove" onClick={() => update({ custom: '' })}>
-                        {draft.custom.trim()}
-                    </button>
-                ) : null}
+            <div className={styles.typeGroup}>
+                <span className={styles.label}>Types</span>
+                <div className={styles.chips}>
+                    {[...top, ...extras].map((v) => (
+                        <button type="button" key={v} className={styles.chip} aria-pressed={draft.values.includes(v)} onClick={() => flip(v)}>
+                            {label(v)}
+                        </button>
+                    ))}
+                    {draft.custom.trim() ? (
+                        <button type="button" className={styles.chip} aria-pressed="true" title="Remove" onClick={() => update({ custom: '' })}>
+                            {draft.custom.trim()}
+                        </button>
+                    ) : null}
+                </div>
             </div>
             <div className={styles.pieceWrap}>
-                <input className={styles.field} value={q} role="combobox" aria-label="Search card types" aria-expanded={!!query} aria-controls={listId}
+                <input className={styles.field} value={q} role="combobox" aria-label="Search types and subtypes" aria-expanded={!!query} aria-controls={listId}
                     aria-activedescendant={hits[hi] ? `${listId}-${hi}` : undefined}
-                    placeholder={groups ? 'Search every type, e.g. saga, equipment, snow, Jace' : 'Loading types…'}
+                    placeholder={groups ? 'Search every type and subtype, e.g. saga, equipment, snow, Jace' : 'Loading types…'}
                     onChange={(e) => { setQ(e.target.value); setHi(0) }} onKeyDown={onKeyDown} />
                 {query ? (
                     hits.length ? (
@@ -753,37 +772,40 @@ function TypePicker({ filter, draft, update, toggle, onDone }: {
                                 </li>
                             ))}
                         </ul>
-                    ) : groups ? <span className={styles.muted}>“{q.trim()}” isn't a card type. Check the spelling or browse the list below.</span> : null
+                    ) : groups ? <span className={styles.muted}>“{q.trim()}” isn't a card type. Check the spelling or look through the subtypes below.</span> : null
                 ) : null}
             </div>
             {(() => {
                 const m = draft.custom.trim() && !isKnownType(draft.custom.trim()) ? mergedType(draft.custom) : undefined
                 return m ? <span className={styles.noteLine}>{mergedNote(m)} This will search {m.type}.</span> : null
             })()}
-            {groups ? (
-                <button type="button" className={styles.back} aria-expanded={browse} onClick={() => setBrowse((b) => !b)}>
-                    {browse ? '▴ Hide the list' : `▾ Browse all ${total} card types`}
-                </button>
-            ) : null}
-            {browse && groups ? (
+            <div className={styles.typeGroup}>
+                <span className={styles.label}>
+                    Subtypes{kinds.length ? ` of ${kinds.join(', ').toLowerCase()} cards` : ''}
+                </span>
+                <span className={styles.muted}>
+                    The words after the dash on a type line, like “Artifact — Equipment” or “Creature — Elf Druid”.
+                    {kinds.length ? null : ' Pick a type above to see just its subtypes.'}
+                </span>
                 <div className={styles.browse}>
-                    {groups.map((g) => {
-                        const shown = g.types.filter((t) => t.toLowerCase().includes(query))
-                        return shown.length ? (
+                    {subtypes ? shown.map((g) => {
+                        const list = g.types.filter((t) => t.toLowerCase().includes(query))
+                        return list.length ? (
                             <div key={g.label} className={styles.typeGroup}>
-                                <span className={styles.label}>{g.label}</span>
+                                <span className={styles.label}>{g.label} ({list.length})</span>
                                 <div className={styles.chips}>
-                                    {shown.map((t) => (
+                                    {list.map((t) => (
                                         <button type="button" key={t} className={styles.chip} aria-pressed={draft.values.includes(t.toLowerCase())}
-                                            onClick={() => toggle(t.toLowerCase())}>{t}</button>
+                                            onClick={() => flip(t.toLowerCase())}>{t}</button>
                                     ))}
                                 </div>
                             </div>
                         ) : null
-                    })}
-                    <span className={styles.muted}>Creature types like Elf or Dragon have their own list under the Creature type filter.</span>
+                    }) : <span className={styles.muted}>Loading subtypes…</span>}
+                    {subtypes && query && !shown.some((g) => g.types.some((t) => t.toLowerCase().includes(query)))
+                        ? <span className={styles.muted}>No subtype here matches “{q.trim()}”</span> : null}
                 </div>
-            ) : null}
+            </div>
         </>
     )
 }

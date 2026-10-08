@@ -100,6 +100,10 @@ export const COLOR_COUNTS = ['0', '1', '2', '3', '4', '5']
 // each comparison's opposite, for a number filter that's left out
 const OPPOSITE: Record<Compare, string> = { '=': '!=', '>=': '<', '<=': '>', '>': '<=', '<': '>=' }
 
+// the words before the dash on a type line: what kind of card it is, and the supertypes that go in front
+export const CARD_TYPES = ['creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'kindred']
+export const SUPERTYPES = ['legendary', 'basic', 'snow']
+
 const opts = (...values: string[]): Option[] =>
     values.map((v) => ({ label: v[0].toUpperCase() + v.slice(1), value: v }))
 
@@ -112,8 +116,9 @@ export const FILTERS: Filter[] = [
     },
     {
         id: 'type', group: 'Card', kind: 'choice', key: 't', keys: ['t', 'type'],
-        label: 'Card type', hint: 'Creature, instant, land, saga, equipment… search or browse all of them',
-        options: opts('creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle', 'legendary', 'equipment', 'aura', 'vehicle'),
+        label: 'Card type', hint: 'Creature, artifact, legendary… and subtypes like Saga, Equipment or Elf',
+        // the types and supertypes the picker shows up top, then subtypes known even before the lists load
+        options: opts(...CARD_TYPES, ...SUPERTYPES, 'equipment', 'aura', 'vehicle'),
     },
     {
         id: 'creature', group: 'Card', kind: 'creature', key: 't', keys: ['t', 'type'],

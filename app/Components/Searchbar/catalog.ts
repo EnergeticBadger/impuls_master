@@ -102,6 +102,38 @@ export function useTypeGroups(): TypeGroup[] | undefined {
     return groups
 }
 
+// each card type's subtypes, the words after the dash on its type line ("Artifact — Equipment").
+// `types` are the card types that can have them; instants and sorceries share theirs
+export const SUBTYPE_GROUPS: { name: CatalogName, label: string, types: string[] }[] = [
+    { name: 'artifact-types', label: 'Artifact', types: ['artifact'] },
+    { name: 'enchantment-types', label: 'Enchantment', types: ['enchantment'] },
+    { name: 'land-types', label: 'Land', types: ['land'] },
+    { name: 'spell-types', label: 'Instant & sorcery', types: ['instant', 'sorcery'] },
+    { name: 'planeswalker-types', label: 'Planeswalker', types: ['planeswalker'] },
+    { name: 'battle-types', label: 'Battle', types: ['battle'] },
+    // last: there are hundreds, and they'd push the others out of sight
+    { name: 'creature-types', label: 'Creature', types: ['creature', 'kindred'] },
+]
+
+// the subtype groups as they load, each sorted A–Z
+export function useSubtypeGroups(): TypeGroup[] | undefined {
+    const [groups, setGroups] = useState<TypeGroup[] | undefined>(() => build())
+    function build() {
+        const ready = SUBTYPE_GROUPS.filter((g) => loaded[g.name])
+        if (!ready.length) return undefined
+        return ready.map((g) => ({
+            label: g.label,
+            types: loaded[g.name]!.filter((t) => !NO_CARDS.has(t.toLowerCase())).sort((a, b) => a.localeCompare(b)),
+        }))
+    }
+    useEffect(() => {
+        let live = true
+        Promise.allSettled(SUBTYPE_GROUPS.map((g) => loadCatalog(g.name))).then(() => { if (live) setGroups(build()) })
+        return () => { live = false }
+    }, [])
+    return groups
+}
+
 const KEYWORD_GROUPS: { name: typeof KEYWORD_CATALOGS[number], label: string }[] = [
     { name: 'keyword-abilities', label: 'Keyword abilities' },
     { name: 'keyword-actions', label: 'Keyword actions' },

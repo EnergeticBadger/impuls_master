@@ -158,6 +158,11 @@ function firstRowReady(cards: CardProps[]) {
     return Promise.race([Promise.all(decoded), new Promise((r) => setTimeout(r, 3000))])
 }
 
+// the widest screen the header tucks away on as the results scroll (matches the phone layout in the CSS),
+// and how far a scroll has to go before it counts
+const PHONE_WIDTH = 640
+const SCROLL_SLACK = 8
+
 // how long a page change has to take before it shows as loading, so a warm preload swaps without a flicker
 const PENDING_DELAY = 200
 
@@ -208,14 +213,58 @@ export function Searchbar() {
     const settingsTitle = useId()
     const headerRef = useRef<HTMLDivElement>(null)
 
-    // publish the header's height so the open compare drawer can sit flush under it (the header grows with the chip tray and the results rows)
+    const pagesRef = useRef<HTMLDivElement>(null)
+
+    // On phones the header can take half the screen (the chip tray grows with every filter), so scrolling down the results slides it up under the
+    // top edge until only the results strip (count and pages) is left; scrolling up brings it all back. It moves by
+    // its sticky `top`, not a transform, which would trap the filter panel's full-screen `position: fixed` inside it.
+    // The part on screen is published as --header-height, so the open compare drawer sits flush under it
+    // (the header grows with the chip tray and the results rows).
     useEffect(() => {
         const header = headerRef.current
         if (!header) return
         const root = document.documentElement
-        const observer = new ResizeObserver(() => root.style.setProperty('--header-height', `${header.getBoundingClientRect().height}px`))
+        const phone = matchMedia(`(max-width: ${PHONE_WIDTH}px)`)
+        let tucked = false
+        let lastY = scrollY
+
+        function apply() {
+            const height = header!.getBoundingClientRect().height
+            const keep = pagesRef.current?.offsetHeight ?? 0
+            const offset = tucked ? Math.max(0, height - keep) : 0
+            header!.style.top = offset ? `${-offset}px` : ''
+            root.style.setProperty('--header-height', `${height - offset}px`)
+        }
+        function tuck(next: boolean) {
+            if (next === tucked) return
+            tucked = next
+            apply()
+        }
+        function onScroll() {
+            const y = scrollY
+            // small wobbles (a finger resting, the bounce at the top) don't count
+            if (Math.abs(y - lastY) < SCROLL_SLACK) return
+            const down = y > lastY
+            lastY = y
+            // only once the header's own place has scrolled by, and never while something in it has focus (typing a name)
+            tuck(phone.matches && down && y > header!.offsetHeight && !header!.contains(document.activeElement))
+        }
+
+        const observer = new ResizeObserver(apply)
         observer.observe(header)
-        return () => { observer.disconnect(); root.style.removeProperty('--header-height') }
+        const show = () => tuck(false)
+        addEventListener('scroll', onScroll, { passive: true })
+        // tabbing into it, or turning the phone sideways, brings it back
+        header.addEventListener('focusin', show)
+        phone.addEventListener('change', show)
+        return () => {
+            observer.disconnect()
+            removeEventListener('scroll', onScroll)
+            header.removeEventListener('focusin', show)
+            phone.removeEventListener('change', show)
+            header.style.top = ''
+            root.style.removeProperty('--header-height')
+        }
     }, [])
     // the sort of the results on screen; Previous/Next page through those, a new search picks up the current sort
     const shownSort = useRef<Sort>(remembered.sort ?? { ...sort })
@@ -385,7 +434,7 @@ export function Searchbar() {
                 <div className={styles.viewOptions}>
                     <SortControl onChange={() => { if (query) formRef.current?.requestSubmit() }} />
                 </div>
-                <div className={styles.Pages}>
+                <div className={styles.Pages} ref={pagesRef}>
                     {query ? (
                         <>
                             {page.cards > 0 && (
