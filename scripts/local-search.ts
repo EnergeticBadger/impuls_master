@@ -146,7 +146,10 @@ function extraKind(c: any): Printing["extra"] {
     if (c.set_type === "alchemy" && c.reprint && !c.booster && !c.highres_image) return "extra";
     // silver-bordered promos too: Goblin Mime's Arena League one shows for e:pal04, not for r:rare (Secret
     // Lair's silver-bordered ponies are shown)
-    if (c.promo_types?.includes("playtest") || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name)
+    // Playtest cards, but not in an Un-set (Look at Me, I'm R&D is shown) or not out yet (Auspicious Aquarium, out
+    // 19 Oct 2026, is shown; In Residence, from the same set in April, isn't); Blacker Lotus's Secret Lair poster
+    if ((c.promo_types?.includes("playtest") && c.set_type !== "funny" && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
+        || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name) || (c.set === "sld" && c.collector_number === "869")
         || (c.border_color === "silver" && c.set_type === "promo")) return "extra";
     return "";
 }
@@ -329,7 +332,9 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
 // Steamflogger Boss's Unstable printing doesn't make it funny: it's legal. Checked against all 1,476 of
 // Scryfall's
 function isFunnyPrinting(c: any): boolean {
-    return (c.set_type === "funny" && c.set !== "hho") || c.security_stamp === "acorn" || !!c.promo_types?.includes("playtest")
+    return (c.set_type === "funny" && c.set !== "hho") || c.security_stamp === "acorn"
+        // (a playtest card not out yet isn't, as it isn't hidden: Auspicious Aquarium)
+        || (!!c.promo_types?.includes("playtest") && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
         || (c.border_color === "silver" && c.set_type !== "token");
 }
 
@@ -737,6 +742,10 @@ const DUEL_BANNED_COMMANDERS = new Set(["Ajani, Nacatl Pariah // Ajani, Nacatl A
     "Spider-Man 2099", "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar", "Urza, Lord High Artificer", "Vial Smasher the Fierce",
     "Yuriko, the Tiger's Shadow"]);
 
+// is:brawler leaves these out though they're legal in Brawl and could lead (9 Oct 2026; not in the bulk files)
+const BRAWL_LEFT_OUT = new Set(["Ragavan, Nimble Pilferer", "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar",
+    "Ajani, Nacatl Pariah // Ajani, Nacatl Avenger", "Wrenn and Six", "Old Stickfingers", "Rusko, Clockmaker", "Tajic, Legion's Valor"]);
+
 const canLead = (c: LocalCard) => c.meld !== "result" && (
     /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
     || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t)));
@@ -750,13 +759,16 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     commander: (c) => !c.banned.has("commander") && canLead(c),
     // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
     // a legendary planeswalker, legal in Brawl
-    brawler: (c) => c.legal.has("brawl") && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
+    // not a meld card's back (Urza, Planeswalker), nor the few Scryfall leaves out though Brawl allows them
+    brawler: (c) => c.legal.has("brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
+        && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
     // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
     // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
     // Conspiracies aren't
     spell: (c) => (["transform", "meld", "flip"].includes(c.layout) ? c.faceTypes.slice(0, 1) : c.faceTypes).some((t) =>
-        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
-    permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/),
+        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal|eaturecray)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
+    // Unhinged's joke types too: Old Fogey's "Summon — Dinosaur" and Atinlay Igpay's "Eaturecray" are permanents
+    permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle|summon|eaturecray)\b/),
     historic: (c) => anyFace(c, /\b(legendary|artifact|saga)\b/),
     party: (c) => isCreature(c) && hasType(c, /\b(cleric|rogue|warrior|wizard)\b/),
     outlaw: (c) => hasType(c, /\b(assassin|mercenary|pirate|rogue|warlock)\b/),
@@ -1008,6 +1020,8 @@ function compile(t: Term, data: Cards): Test {
             if (lands) return card((c) => lands.has(c.name) !== negate);
             // the kinds of promo, as the printings' promo types name them (is:prerelease, is:fnm…)
             const promo = PROMO_NAMES[v] ?? v;
+            // is:starterdeck leaves out the Kaladesh and Aether Revolt planeswalker decks' cards (numbered with †)
+            if (promo === "starterdeck") return print((p) => (p.promoTypes.has(promo) && !p.cn.endsWith("†")) !== negate);
             if (data.promoTypes.has(promo)) return print((p) => p.promoTypes.has(promo) !== negate);
             throw new Unsupported(`is:${v}`);
         }
