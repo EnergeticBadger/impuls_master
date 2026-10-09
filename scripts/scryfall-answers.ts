@@ -58,7 +58,15 @@ export async function politeFetch(url: string, { stopOnLimit = false, say = cons
                 if (wait > 5000) say(`waiting ${Math.round(wait / 1000)}s for Scryfall`);
                 await sleep(wait);
             }
-            const r = await fetch(url, { headers: HEADERS });
+            // the network drops now and then over a long run: try again a few times, a while apart
+            let r: Response | undefined;
+            for (let attempt = 1; !r; attempt++) {
+                try { r = await fetch(url, { headers: HEADERS }); } catch (e) {
+                    if (attempt >= 5) throw e;
+                    say(`network error (${(e as Error).message}); trying again in ${attempt * 15}s`);
+                    await sleep(attempt * 15_000);
+                }
+            }
             writeFileSync(LAST, String(Date.now()));
             if (r.status === 429) writeFileSync(PAUSE, String(Date.now() + 90_000));
             return r;
