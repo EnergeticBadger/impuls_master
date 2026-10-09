@@ -199,9 +199,9 @@ function readSearch(q: string, data: Cards): Read {
             out += q.slice(at, t.start) + `(${DROPPED})`;
             at = tokens[n + 1].end;
         }
-        const swap = (start: number, as: string) => { out += q.slice(at, start) + as; at = t.end; };
+        const swap = (start: number, as: string) => { out += `${q.slice(at, start)}${as} `; at = t.end; };
         // an "or" with nothing on one side is left out: "t:sliver or", "or t:sliver", "t:sliver or or t:elf"
-        if (t.kind === "or" && (!tokens[n - 1] || ["(", "or", "-"].includes(tokens[n - 1].kind) || !tokens[n + 1] || ["or", ")"].includes(tokens[n + 1].kind))) {
+        if (t.kind === "or" && (!tokens[n - 1] || ["(", "-"].includes(tokens[n - 1].kind) || !tokens[n + 1] || ["or", ")"].includes(tokens[n + 1].kind))) {
             swap(t.start, "");
             continue;
         }
@@ -225,7 +225,8 @@ function readSearch(q: string, data: Cards): Read {
         } else verdict = judge(t, negated, (negated ? "-" : "") + t.key + q.slice(t.start + t.key!.length, t.end), words);
         if (verdict.warning) (DISPLAY_KEYS.has(t.key!) ? displayWarnings : warnings).push(verdict.warning);
         if (verdict.as === undefined) continue;
-        out += q.slice(at, start) + verdict.as;
+        // (with a space after, so "http://x" doesn't run the x into it)
+        out += `${q.slice(at, start)}${verdict.as} `;
         at = t.end;
     }
     // a bad display option's warning comes before the others, wherever it is: "foo:bar t:sliver order:zzqx"
@@ -299,6 +300,7 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     // an unknown key with a minus is unknown with it: -foo:bar is “-foo”. With a regex (and an empty regex on any
     // key: o://) it's an unknown "regular expression keyword": http://x is “http://”, then the word x
     const named = cut(negated ? `-${key}` : key, 21);
+    if (t.regex && KNOWN_KEYS.has(key) && !REGEX_KEYS.has(key) && !NO_REGEX_KEYS.has(key)) throw new Unsupported(`${key}:/regex/`);
     if (t.regex && (!REGEX_KEYS.has(key) || (value === "" && !t.open))) return ignore(raw, `Unknown regular expression keyword “${named}”.`);
     if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${named}”.`);
     // o:"" is an unknown keyword too
@@ -404,11 +406,14 @@ function manaProblem(value: string): string | undefined {
 }
 
 // frame: and lang: words Scryfall knows beyond the bulk file's (found by asking it)
-const FRAME_WORDS = new Set(["old", "new"]);
+const FRAME_WORDS = new Set(["old", "new", "modern"]);
 const LANGUAGE_NAMES = new Set(["english", "spanish", "french", "german", "italian", "portuguese", "japanese", "korean", "russian", "chinese"]);
 
 // keys that take a regex
-const REGEX_KEYS = new Set(["o", "oracle", "fo", "fulloracle", "t", "type", "name", "ft", "flavor", "flavortext", "a", "artist", "artists", "wm", "watermark", "kw", "keyword", "keywords"]);
+const REGEX_KEYS = new Set(["o", "oracle", "fo", "fulloracle", "t", "type", "name", "ft", "flavor", "flavortext"]);
+// keys that don't: kw:/fly/, s:/tsp/ and a:/miracola/ are an "Unknown regular expression keyword". What the rest
+// make of one (t:sliver c:/w/ finds 35) isn't known, so they're left to Scryfall
+const NO_REGEX_KEYS = new Set(["kw", "keyword", "s", "e", "set", "edition", "a", "artist"]);
 // keys that compare with < > <= >= (and !=)
 const COMPARE_KEYS = new Set([...NUMBER_KEYS, "cn", "number", "c", "color", "colors", "id", "identity", "ci", "commander", "produces", "r", "rarity",
     "m", "mana", "devotion", "date"]);
@@ -426,7 +431,7 @@ function regexProblem(body: string): string | undefined {
 }
 
 // formats by their other names: f:edh is Commander
-const FORMAT_NAMES: Record<string, string> = { edh: "commander", pdh: "paupercommander" };
+const FORMAT_NAMES: Record<string, string> = { edh: "commander", pdh: "paupercommander", duelcommander: "duel" };
 
 // set types as people type them, as the engine reads them
 const SET_TYPE_NAMES: Record<string, string> = { draftinnovation: "draft_innovation", duel: "duel_deck", duels: "duel_deck", fromthevault: "from_the_vault", ftv: "from_the_vault", premium: "premium_deck", treasure: "treasure_chest" };

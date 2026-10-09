@@ -375,3 +375,19 @@ t:sliver c:mq
 t:sliver id:mw
 t:sliver c:wcm
 t:sliver produces:wc
+
+# regexes on other keys, frame and format names, next_page in lower case
+t:goblin O:"Haste"
+pow:* or t:goblin
+t:goblin a:"Jeff Miracola" or t:elf
+t:goblin wm:izzet or t:elf
+t:sliver order:manavalue
+t:sliver kw:/fly/
+t:sliver s:/tsp/
+t:sliver a:/miracola/
+t:sliver c:/w/
+t:sliver frame:new
+t:sliver frame:modern
+f:pauper t:goblin mv=1 f:pdh
+f:cedh t:sliver
+f:duelcommander t:sliver
