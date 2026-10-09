@@ -1105,15 +1105,21 @@ export function preferred(p: Printing): boolean {
 // the number in a collector number, its digits together: 1 for "1a", "S1" or "1★", 252 for The List's "MH2-52"
 // (order:set lists plst/CNS-35, AFC-50 … ISD-129, then MH2-52)
 const cnNumber = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
-// Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, and on the
-// same day the lower collector number (Secret Lair's 83, 84, 85, 86; 1638 before 1638★). Among the rest on one
-// day Scryfall's order has no rule found yet: one/310, 353, 444 come before pone/125p, but pwoe/145p before woe/350
+// Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, then the
+// rest newest first, and last a Secret Lair's reversible printings (Dragonlord Dromoka's 2022 Magic Online promo
+// comes before its 2025 reversible sld/1971). On the same day, the lower collector number first (Secret Lair's 83,
+// 84, 85, 86; 1638 before 1638★). Among the rest on one day Scryfall's order has no rule found yet: one/310, 353
+// and 444 come before pone/125p, but pwoe/145p before woe/350
 function byPreference(data: Cards) {
-    const good = new Map<number, boolean>();
-    const isGood = (i: number) => { let g = good.get(i); if (g === undefined) good.set(i, g = preferred(data.prints[i])); return g; };
+    const rank = new Map<number, number>();
+    const rankOf = (i: number) => {
+        let r = rank.get(i);
+        if (r === undefined) rank.set(i, r = preferred(data.prints[i]) ? 0 : data.prints[i].layout === "reversible_card" ? 2 : 1);
+        return r;
+    };
     return (a: number, b: number) => {
         const p = data.prints[a], q = data.prints[b];
-        return Number(isGood(b)) - Number(isGood(a)) || q.released.localeCompare(p.released) || cnNumber(p) - cnNumber(q) || p.cn.localeCompare(q.cn);
+        return rankOf(a) - rankOf(b) || q.released.localeCompare(p.released) || cnNumber(p) - cnNumber(q) || p.cn.localeCompare(q.cn);
     };
 }
 

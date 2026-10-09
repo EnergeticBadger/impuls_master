@@ -77,12 +77,15 @@ const byId = new Map(data.prints.map((p, i) => [p.id, i]));
 const describe = (i: number | undefined) => i === undefined ? "nothing" : `${data.cards[data.prints[i].card].name} (${data.prints[i].set}/${data.prints[i].cn})`;
 
 // `kind`: where the first difference is: another printing of the same card, another card, or not the same cards
-type Row = { label: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string };
+type Row = { label: string, group: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string };
 const rows: Row[] = [];
 for (const c of cases) {
     const label = `${c.q}${Object.keys(c.options).length ? `  [${new URLSearchParams(c.options)}]` : ""}`;
     const theirs = (await answers.ask(c.q, PAGES, false, c.options))!;
-    const row: Row = { label, entries: theirs.total, exact: 0, sameCard: 0, error: theirs.error };
+    // what the search is shown by, for the breakdown: its order (prices apart: they move every day) and unique
+    const order = c.options.order ?? "name", unique = c.options.unique ?? "cards";
+    const group = /^(usd|eur|tix)$/.test(order) || /prefer:(usd|eur|tix)/.test(c.q) ? "a price order or prefer:" : `order:${order}${unique === "cards" ? "" : ` unique:${unique}`}`;
+    const row: Row = { label, group, entries: theirs.total, exact: 0, sameCard: 0, error: theirs.error };
     rows.push(row);
     if (theirs.error || !theirs.cards) { row.why ??= theirs.error ? undefined : `${theirs.total} entries: more than ${PAGES} pages`; continue; }
     try {
@@ -121,9 +124,16 @@ const same = compared.filter((r) => r.kind !== "cards");
 const sameEntries = same.reduce((n, r) => n + r.entries, 0), sameExact = same.reduce((n, r) => n + r.exact, 0);
 const headline = `${same.length} searches find the same cards: ${sameExact.toLocaleString()} of ${sameEntries.toLocaleString()} entries (${pct(sameExact, sameEntries)}) the same printing in the same place, ${same.filter((r) => !r.first).length} searches exact`
     + `. All ${compared.length} searches compared: ${exact.toLocaleString()} of ${entries.toLocaleString()} (${pct(exact, entries)}), ${pct(sameCard, entries)} the same card`;
+// the same-cards searches by how they're shown
+const groups = [...new Set(same.map((r) => r.group))].sort().map((g) => {
+    const list = same.filter((r) => r.group === g);
+    const n = list.reduce((t, r) => t + r.entries, 0), x = list.reduce((t, r) => t + r.exact, 0);
+    return `| ${g} | ${list.length} | ${x.toLocaleString()} / ${n.toLocaleString()} | ${pct(x, n)} |`;
+});
 const section = (title: string, list: Row[]) => [`## ${title} (${list.length})`, ``, ...(list.length ? list.map((r) => `- \`${r.label}\`: ${r.exact}/${r.entries} exact; ${r.first}`) : ["None."]), ``];
 const lines2 = [
     `# Printings and order against Scryfall`, ``, `${new Date().toISOString()} · ${headline}`, ``,
+    `| Shown by | Searches | Same printing, same place | |`, `|---|---|---|---|`, ...groups, ``,
     ...section("Not the same cards (see test-syntax)", differ("cards")),
     ...section("Same cards, another order", differ("order")),
     ...section("Same cards in the same order, another printing", differ("printing")),
