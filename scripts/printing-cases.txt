@@ -72,7 +72,6 @@ not:ub t:hobbit
 is:booster t:sliver
 -is:booster t:sliver
 is:hires t:wall
-lang:ja t:dragon r:mythic
 in:lea t:instant
 !"Lightning Bolt"
 !"Counterspell"

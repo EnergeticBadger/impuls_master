@@ -1073,25 +1073,35 @@ export function searchPrintings(node: Node, data: Cards, among?: number[]): numb
 // newest first, then the rest newest first. That order is plain in a unique:prints search (by name, each card's
 // printings come in it: Lightning Bolt's msc, clu, 2x2, clb, jmp … lea, then plst, fdc, slz, sld …), and the
 // first is the printing the card is shown with: oracle_cards' printing (see loadCards), where it has one.
-// What isn't preferred, found by comparing with oracle_cards' 21,434 cards with more than one printing and with
-// unique:prints searches: other languages; promos, The List, and these kinds of set
+// What isn't preferred, found by comparing with oracle_cards' 21,434 cards with more than one printing (the rule
+// below picks the same printing for 98.6% of them) and with 8,668 printings' places in unique:prints answers (99.5%
+// right): other languages; promos, The List; masterpieces, Secret Lairs and other boxed products (not Game Night or
+// the Arena starter kit), memorabilia and the like
 const SPECIAL_SET_TYPES = new Set(["box", "masterpiece", "memorabilia", "treasure_chest", "from_the_vault", "premium_deck", "spellbook", "promo", "token", "minigame"]);
-// a printing without a non-foil finish, special frames, borderless or full art, and Arena-only printings
+const KEPT_SETS = new Set(["gnt", "gn2", "oana", "inr"]);
+// special frames, borderless or full art (a foil-only printing is fine: 7ed's 289★ comes before the older ones);
+// Arena-only printings; a Universes Beyond reprint with the triangle stamp (Sol Ring's fic, pip, who, ltc and 40k
+// printings come after every other, but the cards new in those sets are preferred); and the old frames on a
+// printing from 2015 on (Cloudshredder Sliver's Time Spiral Remastered one, The Brothers' War Commander's
+// artifacts), though not on Masters Edition or Innistrad Remastered's
 const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched", "fullart", "textless", "shatteredglass", "colorshifted"]);
 // and these sets, though nothing in the bulk files tells their printings from others': Cemetery Reaper's mic,
 // scd, drc and fdc printings differ in nothing but the set, yet mic's is shown and the other three come after
 // every older printing. Mostly reprint products (Jumpstart 2022 and Foundations Jumpstart, Mystery Booster 2,
 // Starter Commander Decks) and some commander decks; learned from oracle_cards, so a new set may need adding
-const LOW_SETS = new Set(["anb", "blc", "drc", "fdc", "fem", "h2r", "j22", "j25", "m3c", "mb2", "plst", "punk", "scd", "tblc", "tdft", "tdrc", "tlcc", "tncc", "tscd", "ttdc", "woc", "ymid", "yotj"]);
+const LOW_SETS = new Set(["anb", "blc", "drc", "fdc", "h2r", "j22", "j25", "m3c", "mb2", "onc", "plst", "punk", "scd", "tblc", "tdft", "tdrc", "tlcc", "tncc", "tscd", "ttdc", "woc", "ymid", "yotj"]);
 export function preferred(p: Printing): boolean {
-    return p.lang === "en" && !p.promo && !SPECIAL_SET_TYPES.has(p.setType) && !LOW_SETS.has(p.set) && p.finishes.has("nonfoil")
+    if (KEPT_SETS.has(p.set)) return true;
+    return p.lang === "en" && !p.promo && !SPECIAL_SET_TYPES.has(p.setType) && !LOW_SETS.has(p.set)
         && ![...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) && (p.border === "black" || p.border === "white") && !p.fullArt
-        && !(p.games.size === 1 && p.games.has("arena"));
+        && !(p.games.size === 1 && p.games.has("arena")) && !(p.stamp === "triangle" && p.reprint)
+        && !((p.frame === "1993" || p.frame === "1997") && p.released >= "2015");
 }
 // the number in a collector number: 1 for "1a", "S1" or "1★"
 const cnNumber = (p: Printing) => Number(/\d+/.exec(p.cn)?.[0] ?? 0);
 // Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, and on the
-// same day the lower collector number (Secret Lair's 83, 84, 85, 86; 1638 before 1638★)
+// same day the lower collector number (Secret Lair's 83, 84, 85, 86; 1638 before 1638★). Among the rest on one
+// day Scryfall's order has no rule found yet: one/310, 353, 444 come before pone/125p, but pwoe/145p before woe/350
 function byPreference(data: Cards) {
     const good = new Map<number, boolean>();
     const isGood = (i: number) => { let g = good.get(i); if (g === undefined) good.set(i, g = preferred(data.prints[i])); return g; };
@@ -1174,14 +1184,23 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
         const list = byCard.get(c);
         if (list) list.push(p); else byCard.set(c, [p]);
     }
+    // sorted by a price, a card is shown with its cheapest printing that has one, whatever the direction: Eater of
+    // the Dead with its mb2 printing (1.31 euros, not drk's 5.15 or me1's none), Wall of Roots by tix with its 2013
+    // promo (3.80, the least of five). Otherwise see pickPrinting
+    const pick = (c: number, list: number[]) => {
+        const key = how.price;
+        const priced = key && !v.prefer ? list.filter((p) => data.prints[p][key] !== undefined) : [];
+        if (!key || !priced.length) return pickPrinting(data.cards[c], list, data, v.prefer, order);
+        return priced.reduce((best, p) => (data.prints[p][key]! - data.prints[best][key]! || order(p, best)) < 0 ? p : best);
+    };
     const entries: number[] = [];
     for (const [c, list] of byCard) {
         if (v.unique === "prints") { entries.push(...list); continue; }
-        if (v.unique === "cards") { entries.push(pickPrinting(data.cards[c], list, data, v.prefer, order)); continue; }
+        if (v.unique === "cards") { entries.push(pick(c, list)); continue; }
         // an art each: the printings with the same illustration, and the one of them the card would be shown with
         const arts = new Map<string, number[]>();
         for (const p of list) { const a = data.prints[p].art || data.prints[p].id; arts.set(a, [...arts.get(a) ?? [], p]); }
-        for (const group of arts.values()) entries.push(pickPrinting(data.cards[c], group, data, v.prefer, order));
+        for (const group of arts.values()) entries.push(pick(c, group));
     }
     return sortEntries(entries, data, how, v, order);
 }
@@ -1199,31 +1218,41 @@ const WUBRG = ["w", "u", "b", "r", "g"];
 const RARITY_RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, special: 3, mythic: 4, bonus: 5 };
 
 // each order: what an entry sorts by (its card's or its printing's), ascending as Scryfall's table puts it.
-// `high`: direction:auto lists the highest first. `missingFirst`: what has no value goes first (power), else last
-// `byDate`: ties go by set and collector number, turned round with the rest (order:released); else by name
-type Order = { key: (p: Printing, c: LocalCard) => number | string | undefined, missingFirst?: boolean, high?: boolean, byDate?: boolean };
+// `high`: direction:auto lists the highest first. `missing`: where what has no value goes, as if it were the
+// lowest value ("low": first ascending, last descending) or the highest. `byDate`: ties go by set and collector
+// number, turned round with the rest (order:released); otherwise by name. `price`: see `pick` in results
+type Order = { key: (p: Printing, c: LocalCard) => number | string | undefined, missing?: "low" | "high", high?: boolean, byDate?: boolean, price?: "usd" | "eur" | "tix" };
+// colors as order:color lists them: white, blue, black, red, green, then two colors in the guilds' order (the
+// allied pairs, then the enemy ones: Crystalline Sliver WU, Dementia UB … Harmonic GW, Necrotic WB … Dormant GU),
+// then three, four and five, then colorless
+const COLOR_GROUPS = ["w", "u", "b", "r", "g", "wu", "ub", "br", "rg", "gw", "wb", "ur", "bg", "rw", "gu",
+    "wub", "ubr", "brg", "rgw", "gwu", "wbg", "urw", "bgu", "rwb", "gur", "wubr", "ubrg", "brgw", "rgwu", "gwub", "wubrg"]
+    .map((g) => [...g].sort().join(""));
 const ORDERS: Record<string, Order> = {
     name: { key: () => 0 },
     cmc: { key: (_, c) => c.mv },
-    power: { key: (_, c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
-    toughness: { key: (_, c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
-    // WUBRG one color at a time, then multicolor (white-blue before black-red), then colorless
+    power: { key: (_, c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missing: "low" },
+    toughness: { key: (_, c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missing: "low" },
     color: { key: (_, c) => {
-        const colors = WUBRG.map((l, i) => c.faceColors.some((f) => f.has(l)) ? String(i) : "").join("");
-        return colors.length === 0 ? "9" : colors.length > 1 ? `5${colors}` : colors;
+        // the front face's (a split card's are both halves'): Heliod, the Radiant Dawn is white, not white-blue
+        const colors = [...c.faceColors[0] ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
+        return colors ? COLOR_GROUPS.indexOf(colors) : 99;
     } },
-    edhrec: { key: (_, c) => c.edhrec },
-    penny: { key: (_, c) => c.penny },
-    // the printing's price, dearest first
-    usd: { key: (p) => p.usd, high: true },
-    eur: { key: (p) => p.eur, high: true },
-    tix: { key: (p) => p.tix, high: true },
+    // unranked cards count as the highest rank: last, or first with direction:desc (Cosmic Sovereign, an Alchemy
+    // card, leads f:timeless t:dragon order:edhrec direction:desc)
+    edhrec: { key: (_, c) => c.edhrec, missing: "high" },
+    penny: { key: (_, c) => c.penny, missing: "high" },
+    // the price of the printing shown (see `pick` in results), dearest first; no price counts as the lowest
+    usd: { key: (p) => p.usd, high: true, missing: "low", price: "usd" },
+    eur: { key: (p) => p.eur, high: true, missing: "low", price: "eur" },
+    tix: { key: (p) => p.tix, high: true, missing: "low", price: "tix" },
     // newest first
     released: { key: (p) => p.released, high: true, byDate: true },
     rarity: { key: (p) => RARITY_RANK[p.rarity] ?? -1, high: true },
     // by set code, then collector number
     set: { key: (p) => `${p.set}/${String(cnNumber(p)).padStart(6, "0")}/${p.cn}` },
-    artist: { key: (p) => fold(p.artist).toLowerCase() },
+    // letters only, as names are: Lucas Graciano before Luca Zontini
+    artist: { key: (p) => p.artist, missing: "high" },
 };
 ORDERS.mv = ORDERS.manavalue = ORDERS.cmc;
 ORDERS.pow = ORDERS.power;
@@ -1241,9 +1270,10 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
     return [...entries].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);
         if (x !== y) {
-            if (x === undefined) return how.missingFirst ? -flip : 1;
-            if (y === undefined) return how.missingFirst ? flip : -1;
-            return (x < y ? -1 : 1) * flip;
+            if (x === undefined) return (how.missing === "low" ? -1 : 1) * flip;
+            if (y === undefined) return (how.missing === "low" ? 1 : -1) * flip;
+            const cmp = how === ORDERS.artist ? byName(x as string, y as string) : x < y ? -1 : 1;
+            if (cmp) return cmp * flip;
         }
         return tie(a, b);
     });
