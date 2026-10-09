@@ -146,9 +146,9 @@ function extraKind(c: any): Printing["extra"] {
     if (c.set_type === "alchemy" && c.reprint && !c.booster && !c.highres_image) return "extra";
     // silver-bordered promos too: Goblin Mime's Arena League one shows for e:pal04, not for r:rare (Secret
     // Lair's silver-bordered ponies are shown)
-    // Playtest cards, but not in an Un-set (Look at Me, I'm R&D is shown) or not out yet (Auspicious Aquarium, out
+    // Playtest cards, but not silver-bordered ones (Look at Me, I'm R&D in Unhinged is shown) or not out yet (Auspicious Aquarium, out
     // 19 Oct 2026, is shown; In Residence, from the same set in April, isn't); Blacker Lotus's Secret Lair poster
-    if ((c.promo_types?.includes("playtest") && c.set_type !== "funny" && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
+    if ((c.promo_types?.includes("playtest") && c.border_color !== "silver" && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
         || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name) || (c.set === "sld" && c.collector_number === "869")
         || (c.border_color === "silver" && c.set_type === "promo")) return "extra";
     return "";
@@ -375,8 +375,8 @@ export type Cards = {
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
-    // each set's family, for g: (the set at the top of its parents; from the list of sets too)
-    groups: Map<string, string>,
+    // each set's parent set (tfin's is fin), for g: (from the list of sets too; see family)
+    parents: Map<string, string>,
     // the printings in other languages, when languages.jsonl.gz is there (see readLanguages)
     languages?: Languages,
     // every promo type there is, for is:prerelease and the like
@@ -502,16 +502,8 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
             if (s.parent_set_code) parents.set(s.code, s.parent_set_code);
         }
     }
-    // g:ecc is Lorwyn Eclipsed's whole family: its parent ecl, ecl's other children (tecl, aecl…) and its own
-    // (tecc). So a set's group is the set at the top of its parents
-    const groups = new Map<string, string>();
-    for (const code of parents.keys()) {
-        let top = code;
-        for (let n = 0; parents.has(top) && n < 10; n++) top = parents.get(top)!;
-        groups.set(code, top);
-    }
     const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
-    const data: Cards = { cards, prints, tags, artTags, setDates, blocks, groups, promoTypes, languages: undefined };
+    const data: Cards = { cards, prints, tags, artTags, setDates, blocks, parents, promoTypes, languages: undefined };
     const langPath = join(dirname(printsPath), "languages.jsonl.gz");
     if (existsSync(langPath)) data.languages = await readLanguages(langPath, data, byOracle);
     return data;
@@ -911,6 +903,22 @@ function languageOf(v: string): string | undefined {
     return CODES.has(key) ? key : LANGUAGES[key];
 }
 
+// g:ecc, the sets tied to Lorwyn Eclipsed Commander: itself, its parent ecl, its siblings (tecl, aecl…) and its
+// children (tecc), but no further: g:fin finds tfin's tokens, not tfic's (fic's tokens; fic is fin's child)
+const FAMILIES = new WeakMap<Cards, Map<string, Set<string>>>();
+function family(data: Cards, code: string): Set<string> {
+    if (!FAMILIES.has(data)) FAMILIES.set(data, new Map());
+    const known = FAMILIES.get(data)!;
+    let out = known.get(code);
+    if (out) return out;
+    const parent = data.parents.get(code);
+    out = new Set([code]);
+    if (parent) out.add(parent);
+    for (const [set, of] of data.parents) if (of === code || (parent && of === parent)) out.add(set);
+    known.set(code, out);
+    return out;
+}
+
 // for new:art, each picture's first printing (as an index into `prints`), over every card's printings but
 // memorabilia: by release, then by the bulk file's order. Worked out once per Cards
 const FIRST_ARTS = new WeakMap<Cards, Set<number>>();
@@ -1069,28 +1077,39 @@ function compile(t: Term, data: Cards): Test {
             return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
                 [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
         }
-        // a printing that's the first of its card with this rarity (promos aside), flavor text, frame, artist or
-        // language (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
+        // a printing that's the first of its card with this rarity (promos aside), flavor text, frame or language
+        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
         // and art cards, Helvault promos, Arena starter decks) don't count as earlier: Avacyn, Angel of Hope's
         // Helvault printing came first, but its Avacyn Restored one is new:language; a hidden promo does (Mise's
-        // Arena League one makes its Unhinged one not new:language). An artist can be none (the AFR dungeons are
-        // new:artist), and for new:artist no hidden printing counts (Velukan Dragon's Dreamcast one doesn't). Flavor
-        // text is the front face's, by its letters only: ". . ." is "...", "Ætheric" "aetheric". Each checked by its
-        // count against Scryfall's, 9 Oct 2026 (new:flavor 3 over and new:rarity 1 short, not yet explained)
+        // Arena League one makes its Unhinged one not new:language). Flavor text is the front face's, by its letters
+        // only: ". . ." is "...", "Ætheric" "aetheric". Each checked by its count against Scryfall's, 9 Oct 2026
+        // (new:flavor 3 over and new:rarity 1 short, not yet explained)
         case "new": {
             const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
             // new:art is the first printing of a picture on any card: Tiefling Outcasts' only printing isn't, since
             // Elturel Survivors had the picture first, and of the four Killbots sharing one, only the first in
             // Scryfall's own order (its bulk file's) is. 33,561 cards, as on Scryfall
             if (v === "art") { const first = firstArts(data); return print((p, c, i) => first.has(i)); }
+            // new:artist only looks within the printing's set family (g:): 127 of M15's 127 reprints but its three
+            // basics drawn twice are new:artist there (Ajani's Pridemate, by the same artist in M11, is), and Phytotitan
+            // isn't, by its earlier prerelease promo (a promo-pack one doesn't count: Chasm Skulker's). Ties go by the
+            // bulk file's order. Close, not exact: Scryfall leaves out M15's John Avon Forest, which this can't explain
+            if (v === "artist") return print((p, c, i) => {
+                const group = family(data, p.set);
+                return !c.printings.some((j) => {
+                    const q = data.prints[j];
+                    return j !== i && q.artist === p.artist && group.has(q.set) && !q.promoTypes.has("promopack")
+                        && (q.released < p.released || (q.released === p.released && j < i));
+                });
+            });
             const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, flavor: (p) => letters(p.flavor[0] ?? ""),
-                frame: (p) => p.frame, artist: (p) => p.artist || "none", language: (p) => p.lang };
+                frame: (p) => p.frame, language: (p) => p.lang };
             const of = field[v];
             if (!of) throw new Unsupported(`new:${v}`);
             // new:language: the first printing in its language, of every language's printings
             return print((p, c) => {
                 const earlier = (v === "language" ? everyLanguage(c, data) : c.printings).map((i) => data.prints[i])
-                    .filter((q) => q.released < p.released && q.setType !== "memorabilia" && !(v === "rarity" && q.promo) && !(v === "artist" && q.extra));
+                    .filter((q) => q.released < p.released && q.setType !== "memorabilia" && !(v === "rarity" && q.promo));
                 return !!of(p) && !earlier.some((q) => of(q) === of(p));
             });
         }
@@ -1137,11 +1156,11 @@ function compile(t: Term, data: Cards): Test {
             const arts = data.artTags.get(v) ?? data.artTags.get(tagKey(v));
             return print((p) => !!arts && p.illustrations.some((a) => arts.has(a)));
         }
-        // a set's whole family (see Cards.groups): g:ecc is ecl, ecc and their tokens, art cards and promos
+        // a set's family (see family): g:ecc is ecl, ecc and their tokens, art cards and promos
         case "g": case "group": {
-            if (!data.groups.size) throw new Unsupported("g: without Scryfall's list of sets");
-            const group = data.groups.get(v) ?? v;
-            return print((p) => (data.groups.get(p.set) ?? p.set) === group);
+            if (!data.parents.size) throw new Unsupported("g: without Scryfall's list of sets");
+            const group = family(data, v);
+            return print((p) => group.has(p.set));
         }
         // the language a printing is in: lang:ja, lang:japanese, lang:any (see languageOf). Naming a language
         // brings in every language's printings (see searchPrintings)

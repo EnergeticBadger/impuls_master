@@ -72,7 +72,7 @@ const keys: string[] = [
     "artists>1", "illustrations>1", "illustrations>=5",
     ...["arena", "grixis", "legacy", "chuck", "twisted", "april", "protour", "uncommon", "modern", "amaz", "tinkerer", "livethedream", "chromatic", "vintage", "apcube"].map((c) => `cube:${c}`),
     // set families: the biggest ones
-    ...values(data, (i) => printsOf(i).map((p) => data.groups.get(p.set) ?? ""), 300).slice(0, 15).map((g) => `g:${g}`),
+    ...values(data, (i) => printsOf(i).map((p) => data.parents.get(p.set) ?? ""), 300).slice(0, 15).map((g) => `g:${g}`),
 ].filter((k) => k.includes(ONLY));
 
 // a key split by mana value, and a big slice by color, so each part is small enough to fetch whole
