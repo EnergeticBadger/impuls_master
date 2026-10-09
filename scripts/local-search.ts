@@ -11,8 +11,9 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
+import { politeFetch } from "./scryfall-answers.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -103,6 +104,12 @@ export type Printing = {
     stamp: string,
     // the art, for new:art
     art: string,
+    // every face's art, for atag: and illustrations>1
+    illustrations: string[],
+    // how many artists it credits, for artists>1
+    artists: number,
+    // who previewed it first, for is:scryfallpreview
+    preview: string,
     // why it isn't shown unless asked for (see revealed): "setOnly" (only include:extras or its set shows it)
     // or "extra" (tokens, art cards, playtest cards…); "" is shown
     extra: "" | "setOnly" | "extra",
@@ -216,6 +223,15 @@ export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[],
 
 const lower = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
 const price = (v?: string | null) => v == null ? undefined : Number(v);
+// the same small set for every printing with the same values (games, finishes…): with every language's printings
+// loaded there are half a million of them. Never changed after loading
+const sets = new Map<string, Set<string>>();
+const shared = (list?: string[]) => {
+    const key = (list ?? []).join("\u0000").toLowerCase();
+    let set = sets.get(key);
+    if (!set) sets.set(key, set = lower(list));
+    return set;
+};
 
 function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     const legal = (want: string[]) => new Set(Object.entries(c.legalities ?? {}).filter(([, v]) => want.includes(v as string)).map(([k]) => k));
@@ -268,13 +284,13 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         eur: price(c.prices?.eur ?? c.prices?.eur_foil),
         tix: price(c.prices?.tix),
         frame: c.frame ?? "",
-        frameEffects: lower(c.frame_effects),
+        frameEffects: shared(c.frame_effects),
         border: c.border_color ?? "",
-        games: lower(c.games),
+        games: shared(c.games),
         cn: c.collector_number ?? "",
         lang: c.lang ?? "en",
         promo: !!c.promo,
-        promoTypes: lower(c.promo_types),
+        promoTypes: shared(c.promo_types),
         digital: !!c.digital,
         fullArt: !!c.full_art,
         textless: !!c.textless,
@@ -283,11 +299,14 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         oversized: !!c.oversized,
         booster: !!c.booster,
         hires: !!c.highres_image,
-        finishes: lower(c.finishes),
-        watermarks: lower([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
+        finishes: shared(c.finishes),
+        watermarks: shared([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
         flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
         art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
+        illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))],
+        artists: c.artist_ids?.length ?? 0,
+        preview: c.preview?.source ?? "",
         extra: extraKind(c),
     };
 }
@@ -307,7 +326,7 @@ async function* jsonLines(path: string) {
     for await (const line of lines) if (line.trim()) yield JSON.parse(line);
 }
 
-export type BulkType = "default_cards" | "oracle_tags";
+export type BulkType = "default_cards" | "oracle_tags" | "art_tags" | "all_cards";
 
 // the bulk file of this type: from SCRYFALL_BULK_DIR (as <type>.jsonl.gz, like scripts/card-data.ts), or
 // downloaded into `cache` and kept a day, since Scryfall rebuilds them daily
@@ -317,7 +336,7 @@ export async function bulkFile(type: BulkType, cache: string): Promise<string> {
     const path = join(cache, `${type}.jsonl.gz`);
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const list = await (await fetch("https://api.scryfall.com/bulk-data", { headers: HEADERS })).json() as { data: { type: string, jsonl_download_uri?: string }[] };
+    const list = await (await politeFetch("https://api.scryfall.com/bulk-data")).json() as { data: { type: string, jsonl_download_uri?: string }[] };
     const url = list.data.find((f) => f.type === type)?.jsonl_download_uri;
     if (!url) throw new Error(`Scryfall has no ${type} bulk file`);
     const res = await fetch(url, { headers: HEADERS });
@@ -326,14 +345,23 @@ export async function bulkFile(type: BulkType, cache: string): Promise<string> {
     return path;
 }
 
+// each card's printings in other languages, as indexes into `prints`
+export type Languages = { byCard: Map<number, number[]> };
+
 export type Cards = {
     cards: LocalCard[],
     prints: Printing[],
     tags: Map<string, Set<string>>,
+    // each art tag's illustration ids, for atag: (empty without the art_tags file)
+    artTags: Map<string, Set<string>>,
     // each set's first release date, for date>set
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
+    // each set's family, for g: (the set at the top of its parents; from the list of sets too)
+    groups: Map<string, string>,
+    // the printings in other languages, when languages.jsonl.gz is there (see readLanguages)
+    languages?: Languages,
     // every promo type there is, for is:prerelease and the like
     promoTypes: Set<string>,
 };
@@ -346,7 +374,7 @@ export async function setsFile(cache: string): Promise<string> {
     const path = join(cache, "sets.json");
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const res = await fetch("https://api.scryfall.com/sets", { headers: HEADERS });
+    const res = await politeFetch("https://api.scryfall.com/sets");
     if (!res.ok) throw new Error(`sets: ${res.status}`);
     writeFileSync(path, await res.text());
     return path;
@@ -362,6 +390,56 @@ const TAG_LAG = {
     unknown: ["protects-self"],
     parents: { "gains-hexproof": "protection", "gains-shroud": "protection", "gains-protection": "protection" } as Record<string, string>,
 };
+
+// each Tagger tag's oracle ids (oracle_tags) or illustration ids (art_tags), by its slug, and by its aliases
+// with punctuation ignored. A tag's include its child tags', as on Scryfall
+async function readTags(path: string, by: "oracle_id" | "illustration_id", lag?: typeof TAG_LAG): Promise<Map<string, Set<string>>> {
+    const byId = new Map<string, { slug: string, aliases: string[], children: string[], cards: string[] }>();
+    for await (const t of jsonLines(path)) {
+        byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g[by]) });
+    }
+    const idOf = new Map([...byId].map(([id, t]) => [t.slug, id]));
+    for (const [child, parent] of Object.entries(lag?.parents ?? {})) {
+        const c = idOf.get(child), p = byId.get(idOf.get(parent) ?? "");
+        if (c && p && !p.children.includes(c)) p.children.push(c);
+    }
+    const gather = (id: string, into: Set<string>, seen: Set<string>) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const t = byId.get(id);
+        if (!t) return;
+        for (const o of t.cards) into.add(o);
+        for (const child of t.children) gather(child, into, seen);
+    };
+    const tags = new Map<string, Set<string>>();
+    for (const [id, t] of byId) {
+        const into = new Set<string>();
+        if (!lag?.unknown.includes(t.slug)) gather(id, into, new Set());
+        tags.set(t.slug, into);
+        // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
+        for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
+    }
+    return tags;
+}
+
+// The printings in other languages, beside default_cards' (English, or the one language a printing came out in):
+// languages.jsonl.gz, a slice of the all_cards bulk file made by npm run languages. They join the search only
+// when it names a language (lang:ja, -lang:en, lang:any), and count for in:ja and new:language. They go at the end
+// of `prints`, kept out of each card's own `printings`, so prints=, sets= and the rest count English printings
+async function readLanguages(path: string, data: Cards, byOracle: Map<string, number>): Promise<Languages> {
+    const byCard = new Map<number, number[]>();
+    for await (const c of jsonLines(path)) {
+        const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
+        const card = byOracle.get(c.oracle_id ?? faces[0]?.oracle_id);
+        if (card === undefined) continue;
+        // the legal formats only matter to extraKind (an Alchemy card legal nowhere), and are the card's
+        if (!c.legalities) c.legalities = Object.fromEntries([...data.cards[card].legal].map((f) => [f, "legal"]));
+        const at = data.prints.push(toPrinting(c, faces, card)) - 1;
+        if (!byCard.has(card)) byCard.set(card, []);
+        byCard.get(card)!.push(at);
+    }
+    return { byCard };
+}
 
 // every card and printing (default_cards), each Tagger tag's cards (a tag's cards include its child tags', as
 // on Scryfall), and the sets' blocks
@@ -395,39 +473,31 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
     for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal.size && !c.banned.size);
-    const tags = new Map<string, Set<string>>();
-    if (tagsPath && existsSync(tagsPath)) {
-        const byId = new Map<string, { slug: string, aliases: string[], children: string[], cards: string[] }>();
-        for await (const t of jsonLines(tagsPath)) {
-            byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g.oracle_id) });
-        }
-        const idOf = new Map([...byId].map(([id, t]) => [t.slug, id]));
-        for (const [child, parent] of Object.entries(TAG_LAG.parents)) {
-            const c = idOf.get(child), p = byId.get(idOf.get(parent) ?? "");
-            if (c && p && !p.children.includes(c)) p.children.push(c);
-        }
-        const gather = (id: string, into: Set<string>, seen: Set<string>) => {
-            if (seen.has(id)) return;
-            seen.add(id);
-            const t = byId.get(id);
-            if (!t) return;
-            for (const o of t.cards) into.add(o);
-            for (const child of t.children) gather(child, into, seen);
-        };
-        for (const [id, t] of byId) {
-            const into = new Set<string>();
-            if (!TAG_LAG.unknown.includes(t.slug)) gather(id, into, new Set());
-            tags.set(t.slug, into);
-            // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
-            for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
+    const tags = tagsPath && existsSync(tagsPath) ? await readTags(tagsPath, "oracle_id", TAG_LAG) : new Map<string, Set<string>>();
+    // the other bulk files, read when they're beside default_cards: art tags (atag:) and every language's
+    // printings (lang:, see npm run languages)
+    const artPath = join(dirname(printsPath), "art_tags.jsonl.gz");
+    const artTags = existsSync(artPath) ? await readTags(artPath, "illustration_id") : new Map<string, Set<string>>();
+    const blocks = new Map<string, string>(), parents = new Map<string, string>();
+    if (setsPath && existsSync(setsPath)) {
+        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) {
+            if (s.block_code) blocks.set(s.code, s.block_code);
+            if (s.parent_set_code) parents.set(s.code, s.parent_set_code);
         }
     }
-    const blocks = new Map<string, string>();
-    if (setsPath && existsSync(setsPath)) {
-        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
+    // g:ecc is Lorwyn Eclipsed's whole family: its parent ecl, ecl's other children (tecl, aecl…) and its own
+    // (tecc). So a set's group is the set at the top of its parents
+    const groups = new Map<string, string>();
+    for (const code of parents.keys()) {
+        let top = code;
+        for (let n = 0; parents.has(top) && n < 10; n++) top = parents.get(top)!;
+        groups.set(code, top);
     }
     const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
-    return { cards, prints, tags, setDates, blocks, promoTypes };
+    const data: Cards = { cards, prints, tags, artTags, setDates, blocks, groups, promoTypes, languages: undefined };
+    const langPath = join(dirname(printsPath), "languages.jsonl.gz");
+    if (existsSync(langPath)) data.languages = await readLanguages(langPath, data, byOracle);
+    return data;
 }
 
 // ---- the query language ----
@@ -488,6 +558,8 @@ function tokenize(q: string): (string | Term)[] {
             continue;
         }
         const word = /^[^\s()]+/.exec(q.slice(i))![0];
+        // ++ is unique:prints and @@ unique:art, from before those had names (the syntax guide)
+        if (word === "++" || word === "@@") { out.push({ key: "unique", op: ":", value: word === "++" ? "prints" : "art" }); i += 2; continue; }
         out.push(/^or$/i.test(word) ? "or" : /^and$/i.test(word) ? "and" : { key: "word", op: ":", value: word });
         i += word.length;
     }
@@ -526,8 +598,6 @@ export function parse(q: string): Node {
             const next = tokens[at];
             if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) { at++; return null; }
             if (typeof next === "object" && next.key === "date") return one();
-            // which cards have printings in other languages needs every language's (the all_cards bulk file)
-            if (typeof next === "object" && (next.key === "lang" || next.key === "language")) throw new Unsupported("-lang: needs every language's printings");
             const inner = one();
             return inner && { not: inner };
         }
@@ -697,6 +767,8 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // named card isn't one of them
     partner: (c) => /\blegendary\b/.test(c.faceTypes[0]) && (["partner", "partner with", "friends forever", "choose a background", "doctor's companion"].some((k) => c.keywords.has(k))
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
+    duelcommander: (c) => !c.banned.has("duel") && canLead(c),
+    oathbreaker: (c) => c.legal.has("oathbreaker") && /\bplaneswalker\b/.test(c.faceTypes[0]),
     companion: (c) => c.keywords.has("companion"),
     meldpart: (c) => c.meld === "part",
     meldresult: (c) => c.meld === "result",
@@ -735,7 +807,14 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     hires: (p) => p.hires,
     masterpiece: (p) => p.setType === "masterpiece",
     colorshifted: (p) => p.frameEffects.has("colorshifted"),
+    // the 1993 and 1997 frames
+    old: (p) => p.frame === "1993" || p.frame === "1997",
+    new: (p) => p.frame === "2015",
+    scryfallpreview: (p) => p.preview === "Scryfall",
+    atypical: (p) => atypical(p),
+    default: (p) => !atypical(p),
 };
+const atypical = (p: Printing) => p.border === "borderless" || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass"].some((f) => p.frameEffects.has(f)) || p.fullArt;
 
 // Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
 // are wider than the intropack and mediainsert promo types
@@ -751,11 +830,31 @@ const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland:
     battlebondland: "bondland", karoo: "bounceland", canland: "canopyland", snarl: "shadowland", battleland: "tangoland", trikeland: "tricycleland", triome: "tricycleland" };
 for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LAND_CYCLES[cycle];
 
+// the cubes (cube:vintage…): Scryfall's own lists, kept in cubes.json by npm run cubes
+const CUBES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
+    existsSync(new URL("./cubes.json", import.meta.url)) ? JSON.parse(readFileSync(new URL("./cubes.json", import.meta.url), "utf8")) as Record<string, string[]> : {},
+).map(([cube, names]) => [cube, new Set(names)]));
+
 // every is: value this search knows, for scripts/test-keys.ts to check one by one
 export const isValues = (data: Cards) => [...new Set([...Object.keys(IS_CARD), ...Object.keys(IS_PRINT), ...Object.keys(LAND_CYCLES), ...Object.keys(PROMO_NAMES), ...data.promoTypes])].sort();
 
 // keys that change how results are shown, not which cards match
-const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "lang", "sort"]);
+const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "sort"]);
+
+// the languages, by Scryfall's code (lang:ja), the code printed on the card (lang:jp, lang:cs) or name
+// (lang:japanese); not lang:chinese. Checked against Scryfall, 9 Oct 2026
+const LANGUAGES: Record<string, string> = {
+    english: "en", spanish: "es", sp: "es", french: "fr", german: "de", italian: "it", portuguese: "pt", japanese: "ja", jp: "ja",
+    korean: "ko", kr: "ko", russian: "ru", simplifiedchinese: "zhs", cs: "zhs", traditionalchinese: "zht", ct: "zht", hebrew: "he",
+    latin: "la", ancientgreek: "grc", arabic: "ar", sanskrit: "sa", phyrexian: "ph", quenya: "qya",
+};
+const CODES = new Set(["en", "es", "fr", "de", "it", "pt", "ja", "ko", "ru", "zhs", "zht", "he", "la", "grc", "ar", "sa", "ph", "qya", "dw"]);
+// a language's code, "any" for lang:any, or undefined
+function languageOf(v: string): string | undefined {
+    const key = v.toLowerCase().replace(/[\s_]/g, "");
+    if (key === "any") return "any";
+    return CODES.has(key) ? key : LANGUAGES[key];
+}
 
 type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard) => boolean };
 const card = (fn: (c: LocalCard) => boolean): Test => ({ level: "card", fn });
@@ -839,6 +938,9 @@ function compile(t: Term, data: Cards): Test {
         }
         case "is": case "not": {
             const negate = t.key === "not";
+            // underscores don't count: is:planeswalker_deck and is:judge_gift, as the syntax guide writes them,
+            // are is:planeswalkerdeck and is:judgegift
+            const v = t.value.toLowerCase().replace(/_/g, "");
             const onCard = IS_CARD[v], onPrint = IS_PRINT[v];
             if (onCard) return card((c) => onCard(c, data) !== negate);
             if (onPrint) return print((p) => onPrint(p) !== negate);
@@ -878,7 +980,8 @@ function compile(t: Term, data: Cards): Test {
             return print((p) => p.cn.toLowerCase() === v);
         case "year": { const n = number(); return print((p) => !!p.released && compare(t.op, Number(p.released.slice(0, 4)), n)); }
         case "date": {
-            const day = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : data.setDates.get(v);
+            // a day, a set's first release, or now/today (Scryfall's day, in UTC)
+            const day = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : v === "now" || v === "today" ? new Date().toISOString().slice(0, 10) : data.setDates.get(v);
             if (!day) throw new Unsupported(`date ${v}`);
             return print((p) => !!p.released && compare(t.op, p.released < day ? -1 : p.released > day ? 1 : 0, 0));
         }
@@ -897,12 +1000,14 @@ function compile(t: Term, data: Cards): Test {
         // ". . ." is "...", and "Ætheric" "aetheric"
         case "new": {
             const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")), frame: (p) => p.frame };
+            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")),
+                frame: (p) => p.frame, artist: (p) => p.artist, language: (p) => p.lang };
             const of = field[v];
             if (!of) throw new Unsupported(`new:${v}`);
+            // new:language: the first printing in its language, of every language's printings
             return print((p, c) => {
-                const earlier = c.printings.map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo));
-                return !!of(p) && !earlier.some((q) => of(q) === of(p));
+                const earlier = (v === "language" ? everyLanguage(c, data) : c.printings).map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo) && (process.env.NEWMEMO ? q.setType !== "memorabilia" : true));
+                return (!!of(p) || (process.env.NEWEMPTY && v === "artist")) && !earlier.some((q) => of(q) === of(p));
             });
         }
         // each card's cheapest printing in this currency
@@ -922,9 +1027,15 @@ function compile(t: Term, data: Cards): Test {
         // From the Vault, all mythic: in:mythic isn't Swords to Plowshares)
         case "in": {
             const st = setType(v), r = rarityOf(v);
+            // or a language: in:ja, in:japanese, every language's printings counted (hidden ones too)
+            const lang = languageOf(v);
+            if (lang && lang !== "any") {
+                if (lang !== "en" && !data.languages) throw new Unsupported(`in:${v} without the languages file (npm run languages)`);
+                return card((c) => everyLanguage(c, data).some((i) => data.prints[i].lang === lang));
+            }
             return card((c) => c.printings.some((i) => {
                 const p = data.prints[i];
-                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r) || p.lang === v;
+                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r);
             }));
         }
         case "prints": case "sets": case "paperprints": case "papersets": {
@@ -933,6 +1044,39 @@ function compile(t: Term, data: Cards): Test {
                 const list = c.printings.map((i) => data.prints[i]).filter((p) => !t.key.startsWith("paper") || p.games.has("paper"));
                 return compare(t.op, t.key.endsWith("sets") ? new Set(list.map((p) => p.set)).size : list.length, n);
             });
+        }
+    }
+    switch (t.key) {
+        // what's in the art, from Tagger like otag: (a tag's child tags count too), by any face's illustration
+        case "atag": case "arttag": case "art": {
+            if (!data.artTags.size) throw new Unsupported("atag without the art_tags file");
+            const arts = data.artTags.get(v) ?? data.artTags.get(tagKey(v));
+            return print((p) => !!arts && p.illustrations.some((a) => arts.has(a)));
+        }
+        // a set's whole family (see Cards.groups): g:ecc is ecl, ecc and their tokens, art cards and promos
+        case "g": case "group": {
+            if (!data.groups.size) throw new Unsupported("g: without Scryfall's list of sets");
+            const group = data.groups.get(v) ?? v;
+            return print((p) => (data.groups.get(p.set) ?? p.set) === group);
+        }
+        // the language a printing is in: lang:ja, lang:japanese, lang:any (see languageOf). Naming a language
+        // brings in every language's printings (see searchPrintings)
+        case "lang": case "language": {
+            const want = languageOf(v);
+            if (!want) throw new Unsupported(`lang:${v}`);
+            return want === "any" ? print(() => true) : print((p) => p.lang === want);
+        }
+        case "cube": {
+            const cube = CUBES[v];
+            if (!cube) throw new Unsupported(`cube:${v}`);
+            return card((c) => cube.has(c.name));
+        }
+        // how many artists a printing credits: artists>1 is the ones drawn by two
+        case "artists": { const n = number(); return print((p) => compare(t.op, p.artists, n)); }
+        // how many different pictures a card has had, over every printing (hidden ones too)
+        case "illustrations": {
+            const n = number();
+            return card((c) => compare(t.op, new Set(c.printings.map((i) => data.prints[i].art).filter(Boolean)).size, n));
         }
     }
     if (DISPLAY.has(t.key)) return card(() => true);
@@ -952,8 +1096,8 @@ const NEEDS: Record<Printing["extra"], number> = { "": 0, extra: 1, setOnly: 2 }
 function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
     if ("term" in node) {
         const { key, value } = node.term;
-        // -s:tsp doesn't
-        if (["s", "e", "set", "edition"].includes(key)) return scope === "set" && !negated ? 2 : 0;
+        // naming a set, or a set's family (g:fin finds its tokens and art cards); -s:tsp doesn't
+        if (["s", "e", "set", "edition", "g", "group"].includes(key)) return scope === "set" && !negated ? 2 : 0;
         if (scope === "set") return 0;
         if (key === "include" && value.toLowerCase() === "extras") return 2;
         // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
@@ -963,11 +1107,11 @@ function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): nu
         // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
         // is:transform doesn't
         if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
+        // is:oversized finds the gold-bordered oversized cards (Secret Lair's pssc), is:reserved the withdrawn ones
+        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
         // (the surge-foil tokens), but not is:stamped or is:setpromo
         if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
-        // and further: is:oversized finds the gold-bordered oversized cards, is:reserved the withdrawn ones
-        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't
         if (["banned", "restricted"].includes(key) && !negated) return 2;
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
@@ -1044,8 +1188,31 @@ export function search(node: Node, data: Cards, among?: number[]): number[] {
 // the printings (as indexes into `prints`) that match the whole search, among those it shows
 export function searchPrintings(node: Node, data: Cards, among?: number[]): number[] {
     const prints: number[] = [];
-    for (const c of among ?? data.cards.keys()) prints.push(...data.cards[c].printings);
+    // a search naming a language (lang:ja, -lang:en, lang:any) looks at every language's printings; others at
+    // default_cards' only: English, or the one language a printing came out in
+    const languages = namesLanguage(node) ? data.languages : undefined;
+    if (namesLanguage(node) && !languages && !onlyEnglish(node)) throw new Unsupported("lang: without the languages file (npm run languages)");
+    for (const c of among ?? data.cards.keys()) {
+        prints.push(...data.cards[c].printings);
+        if (languages) prints.push(...languages.byCard.get(c) ?? []);
+    }
     return evaluate(node, data, prints, revealed(node));
+}
+
+// a card's printings in every language: its own, and those in languages.jsonl.gz when it's loaded
+const everyLanguage = (c: LocalCard, data: Cards) => [...c.printings, ...data.languages?.byCard.get(data.prints[c.printings[0]].card) ?? []];
+
+const isLang = (t: Term) => t.key === "lang" || t.key === "language";
+function namesLanguage(node: Node): boolean {
+    if ("term" in node) return isLang(node.term);
+    if ("not" in node) return namesLanguage(node.not);
+    return ("and" in node ? node.and : node.or).some(namesLanguage);
+}
+// every lang: in the search is lang:en, not negated, so English printings are all it needs
+function onlyEnglish(node: Node, negated = false): boolean {
+    if ("term" in node) return !isLang(node.term) || (!negated && languageOf(node.term.value) === "en");
+    if ("not" in node) return onlyEnglish(node.not, !negated);
+    return ("and" in node ? node.and : node.or).every((n) => onlyEnglish(n, negated));
 }
 
 // what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each
