@@ -49,7 +49,7 @@ for await (const line of lines(all)) {
     const p: any = pick(c, KEEP);
     const prices = pick(c.prices ?? {}, ["usd", "usd_foil", "usd_etched", "eur", "eur_foil", "tix"]);
     if (Object.keys(prices).length) p.prices = prices;
-    if (c.preview?.source) p.preview = { source: c.preview.source };
+    if (c.preview?.source) p.preview = { source: c.preview.source, source_uri: c.preview.source_uri };
     if (c.card_faces?.length) p.card_faces = c.card_faces.map((f: any) => pick(f, FACE));
     // a line each, so the line and paragraph separators some flavor text has are escaped: Node's readline would
     // break a line at them

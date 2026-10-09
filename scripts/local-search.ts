@@ -108,8 +108,8 @@ export type Printing = {
     illustrations: string[],
     // how many artists it credits, for artists>1
     artists: number,
-    // who previewed it first, for is:scryfallpreview
-    preview: string,
+    // previewed on Scryfall's own card page, for is:scryfallpreview
+    scryfallPreview: boolean,
     // why it isn't shown unless asked for (see revealed): "setOnly" (only include:extras or its set shows it)
     // or "extra" (tokens, art cards, playtest cards…); "" is shown
     extra: "" | "setOnly" | "extra",
@@ -118,7 +118,9 @@ export type Printing = {
 // printings Scryfall's search doesn't show by default (found by comparing with it, see npm run test-syntax):
 // these layouts and memorabilia (but not dungeons), tokens, "Card"s, Alchemy's specialize variants (in Alchemy
 // sets but legal nowhere), Astral and Sega printings, playtest cards, Heroes of the Realm and holiday promos,
-// silver-bordered promos, Gleemox ("This card is banned.") and Secret Lair's sticker sheet. Only
+// silver-bordered promos, Gleemox ("This card is banned.") and Secret Lair's sticker sheet, and The List's
+// Un-cards (ulst: `!"Blast from the Past" year>=2022` is nothing there, but is:funny, border:silver, a name regex
+// or include:extras find it, 9 Oct 2026; st:funny doesn't). Only
 // include:extras or naming the set shows the seven cards Wizards banned in 2020 for racist content, and the
 // gold-bordered World Championship decks (border:gold finds nothing) and the Sega Dreamcast cards
 const WITHDRAWN = new Set(["Crusade", "Cleanse", "Imprison", "Invoke Prejudice", "Jihad", "Pradesh Gypsies", "Stone-Throwing Devils"]);
@@ -126,7 +128,7 @@ const HIDDEN_FUNNY = new Set(["Gleemox", "Sticker sheet"]);
 // is:funny though nothing in the bulk files says so (see isFunnyPrinting)
 const FUNNY_CARDS = new Set([...HIDDEN_FUNNY, "Baldur's Gate Wilderness"]);
 const EXTRA_LAYOUTS = new Set(["token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard"]);
-const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel)$/;
+const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel|ulst)$/;
 function extraKind(c: any): Printing["extra"] {
     const games: string[] = c.games ?? [];
     const type: string = c.type_line ?? c.card_faces?.[0]?.type_line ?? "";
@@ -137,6 +139,11 @@ function extraKind(c: any): Printing["extra"] {
     const dungeon = /^dungeon\b/i.test(type);
     if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
         || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
+    // the Arena-only reprints added to Alchemy sets outside their packs, with only a low-resolution picture: the
+    // Power Nine in Alchemy: Dominaria, Storm Crow in Alchemy: Secrets of Strixhaven, Lightning Bolt in Alchemy
+    // Horizons: Baldur's Gate (cn 902–928)… Of the 263 Alchemy-set reprints, Scryfall shows 225 (9 Oct 2026); the
+    // 38 it hides are exactly those neither in boosters nor scanned in high resolution
+    if (c.set_type === "alchemy" && c.reprint && !c.booster && !c.highres_image) return "extra";
     // silver-bordered promos too: Goblin Mime's Arena League one shows for e:pal04, not for r:rare (Secret
     // Lair's silver-bordered ponies are shown)
     if (c.promo_types?.includes("playtest") || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name)
@@ -267,6 +274,11 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     };
 }
 
+// is:scryfallpreview is the cards Scryfall previewed on its own card pages: the preview's link is
+// scryfall.com/card/… (Kraul Stinger, Archmage's Charm; not the Secret Lair cards it lists as "Scryfall" with a
+// link to the set). Two of its six (9 Oct 2026) have no preview in the bulk files, so they're named here
+const SCRYFALL_PREVIEWS = new Set(["uma/50", "grn/103"]);
+
 function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
         card,
@@ -306,7 +318,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
         illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))],
         artists: c.artist_ids?.length ?? 0,
-        preview: c.preview?.source ?? "",
+        scryfallPreview: /^https:\/\/scryfall\.com\/card\//.test(c.preview?.source_uri ?? "") || SCRYFALL_PREVIEWS.has(`${c.set}/${c.collector_number}`),
         extra: extraKind(c),
     };
 }
@@ -716,6 +728,15 @@ const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("
 
 
 // a commander by its type or text, whatever the ban list says (see is:commander)
+// Duel Commander's cards that can be in a deck but not lead it: not in the bulk files (it has one legality per
+// format), so taken from Scryfall's is:commander -is:duelcommander, 9 Oct 2026
+const DUEL_BANNED_COMMANDERS = new Set(["Ajani, Nacatl Pariah // Ajani, Nacatl Avenger", "Arahbo, Roar of the World", "Derevi, Empyrial Tactician",
+    "Dihada, Binder of Wills", "Edgar Markov", "Edric, Spymaster of Trest", "Eris, Roar of the Storm", "Ezio Auditore da Firenze", "Geist of Saint Traft",
+    "Hogaak, Arisen Necropolis", "Inalla, Archmage Ritualist", "Krark, the Thumbless", "Lumra, Bellow of the Woods", "Minsc & Boo, Timeless Heroes",
+    "Old Stickfingers", "Oloro, Ageless Ascetic", "Omnath, Locus of Creation", "Prime Speaker Vannifar", "Raffine, Scheming Seer", "Rograkh, Son of Rohgahh",
+    "Spider-Man 2099", "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar", "Urza, Lord High Artificer", "Vial Smasher the Fierce",
+    "Yuriko, the Tiger's Shadow"]);
+
 const canLead = (c: LocalCard) => c.meld !== "result" && (
     /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
     || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t)));
@@ -767,8 +788,12 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // named card isn't one of them
     partner: (c) => /\blegendary\b/.test(c.faceTypes[0]) && (["partner", "partner with", "friends forever", "choose a background", "doctor's companion"].some((k) => c.keywords.has(k))
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
-    duelcommander: (c) => !c.banned.has("duel") && canLead(c),
-    oathbreaker: (c) => c.legal.has("oathbreaker") && /\bplaneswalker\b/.test(c.faceTypes[0]),
+    // could lead a Commander deck (Leovold, banned there, too), legal in Duel Commander, but not a Background, a
+    // Vehicle or a Spacecraft (Faceless One, a Background creature, is one), and not on Duel Commander's own "banned as commander" list (DUEL_BANNED_COMMANDERS)
+    duelcommander: (c) => c.legal.has("duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
+        && (/\bcreature\b/.test(c.faceTypes[0]) || !/\b(background|vehicle|spacecraft)\b/.test(c.faceTypes[0])),
+    // a planeswalker, legal in Oathbreaker; not Urza, Planeswalker, the back of a meld
+    oathbreaker: (c) => c.legal.has("oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
     companion: (c) => c.keywords.has("companion"),
     meldpart: (c) => c.meld === "part",
     meldresult: (c) => c.meld === "result",
@@ -810,7 +835,7 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     // the 1993 and 1997 frames
     old: (p) => p.frame === "1993" || p.frame === "1997",
     new: (p) => p.frame === "2015",
-    scryfallpreview: (p) => p.preview === "Scryfall",
+    scryfallpreview: (p) => p.scryfallPreview,
     atypical: (p) => atypical(p),
     default: (p) => !atypical(p),
 };
