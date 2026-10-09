@@ -224,16 +224,21 @@ for (const { queries } of all) {
         const o = ours.body;
         // the cards differ when the totals do; then has_more, next_page and a 404 for none follow from that
         const cardsDiffer = theirs.object === "list" && o.object === "list" && theirs.total_cards !== o.total_cards
+            // (or one side has a page past the end of the other's list)
+            || [theirStatus, ours.status].sort().join() === "200,422"
             || (theirStatus === 404) !== (ours.status === 404) && !theirs.warnings?.length && !o.warnings?.length && theirs.code !== "bad_request" && o.code !== "bad_request";
         const pileFor = (field: string) => cardsDiffer && ["status", "object", "code", "details", "total_cards", "has_more", "next_page"].includes(field) ? "cards" : "response";
         if (theirStatus !== ours.status) d(pileFor("status"), `status: Scryfall ${theirStatus}, here ${ours.status}`);
         // the fields and their order
         const keys = (b: any) => Object.keys(b).join(",");
-        if (theirStatus === ours.status && keys(theirs) !== keys(o)) d("response", `fields: Scryfall ${keys(theirs)}, here ${keys(o)}`);
+        // (with other totals, next_page can be there on one side only)
+        const shape = (b: any) => Object.keys(b).filter((k) => !cardsDiffer || k !== "next_page").join(",");
+        if (theirStatus === ours.status && shape(theirs) !== shape(o)) d("response", `fields: Scryfall ${keys(theirs)}, here ${keys(o)}`);
         for (const field of ["object", "code", "details", "total_cards", "has_more"]) {
             if (show(theirs[field]) !== show(o[field])) d(pileFor(field), `${field}: Scryfall ${show(theirs[field])}, here ${show(o[field])}`);
         }
-        if (show(theirs.warnings) !== show(o.warnings)) d("response", `warnings: Scryfall ${show(theirs.warnings)}, here ${show(o.warnings)}`);
+        // (a 404 or 422 has no warnings: when that's the cards' doing, so is the missing warning)
+        if (show(theirs.warnings) !== show(o.warnings)) d(cardsDiffer && theirStatus !== ours.status ? "cards" : "response", `warnings: Scryfall ${show(theirs.warnings)}, here ${show(o.warnings)}`);
         const next = (s?: string) => s?.replace(API, base);
         if (next(theirs.next_page) !== o.next_page) d(pileFor("next_page"), `next_page: Scryfall ${show(theirs.next_page)}, here ${show(o.next_page)}`);
         if (Array.isArray(theirs.data) && Array.isArray(o.data)) {

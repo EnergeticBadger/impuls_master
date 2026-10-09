@@ -128,7 +128,9 @@ const OPS = ["<=", ">=", "!=", ":", "=", "<", ">"];
 function scan(q: string): Token[] {
     const out: Token[] = [];
     let i = 0;
-    const quotedEnd = (at: number) => { const end = q.indexOf("\"", at + 1); return end < 0 ? q.length : end + 1; };
+    // a quote that's never closed doesn't run to the end: it's a quote mark in a word, up to a space or bracket
+    // (is:"digital t:dragon) has unclosed brackets, (r:/common or r:uncommon) warns about the rarity “/common”)
+    const quotedEnd = (at: number) => { const end = q.indexOf("\"", at + 1); return end < 0 ? at + 1 + /^[^\s()]*/.exec(q.slice(at + 1))![0].length : end + 1; };
     while (i < q.length) {
         const ch = q[i];
         if (/\s/.test(ch)) { i++; continue; }
@@ -145,19 +147,22 @@ function scan(q: string): Token[] {
         const op = key ? OPS.find((o) => q.startsWith(o, i + key.length)) : undefined;
         if (key && op) {
             let j = i + key.length + op.length, regex = false, quoted = false, open = false, value: string;
-            if (q[j] === "/") {
-                let end = j + 1;
-                while (end < q.length && q[end] !== "/") end += q[end] === "\\" ? 2 : 1;
+            let end = j + 1;
+            if (q[j] === "/") while (end < q.length && q[end] !== "/") end += q[end] === "\\" ? 2 : 1;
+            if (q[j] === "/" && end < q.length) {
                 value = q.slice(j + 1, end);
                 regex = true;
-                open = end >= q.length;
-                j = Math.min(end + 1, q.length);
-            } else if (q[j] === "\"") {
-                const end = quotedEnd(j);
-                open = q[end - 1] !== "\"" || end - 1 === j;
-                value = q.slice(j + 1, open ? end : end - 1);
+                j = end + 1;
+            } else if (q[j] === "\"" && q.indexOf("\"", j + 1) > 0) {
+                end = q.indexOf("\"", j + 1);
+                value = q.slice(j + 1, end);
                 quoted = true;
-                j = end;
+                j = end + 1;
+            } else if (q[j] === "/" || q[j] === "\"") {
+                // never closed: the slash or quote is part of a plain value
+                value = /^[^\s()]*/.exec(q.slice(j))![0];
+                open = true;
+                j += value.length;
             } else {
                 value = /^[^\s()]*/.exec(q.slice(j))![0];
                 j += value.length;
@@ -182,13 +187,15 @@ type Read = { error: string, warnings: string[] } | { rewritten: string, warning
 // matches nothing, and the display options (order:, unique:…) are taken out and read here
 function readSearch(q: string, data: Cards): Read {
     const tokens = scan(q);
-    // brackets first: an unclosed or unopened one fails the whole search, before anything else is read
-    let depth = 0;
+    // brackets first: a display option in brackets ("t:sliver (order:cmc)", or after a bracket never closed) and then
+    // an unclosed or unopened bracket fail the whole search, before anything else is read
+    let depth = 0, unbalanced = false;
     for (const t of tokens) {
         if (t.kind === "(") depth++;
-        if (t.kind === ")" && --depth < 0) return { error: UNCLOSED, warnings: [] };
+        if (t.kind === ")" && --depth < 0) { unbalanced = true; depth = 0; }
+        if (t.kind === "term" && isDisplay(t) && depth > 0) return { error: DISPLAY_IN_BRACKETS, warnings: [] };
     }
-    if (depth) return { error: UNCLOSED, warnings: [] };
+    if (unbalanced || depth) return { error: UNCLOSED, warnings: [] };
     const warnings: string[] = [], displayWarnings: string[] = [], display: Display = { extras: false };
     let regexes = 0;
     const words = vocabulary(data);
@@ -211,7 +218,8 @@ function readSearch(q: string, data: Cards): Read {
             const word = q.slice(t.start, t.end);
             // a minus on its own finds nothing ("t:sliver -" is a 404); "!", "!\"" and ":" on their own are every card
             if (word === "-") swap(t.start, NOTHING);
-            else if (/^!"?$/.test(word) || /^[:=<>]+$/.test(word)) swap(t.start, EVERYTHING);
+            else if (/^!"?$/.test(word)) swap(t.start, EVERYTHING);
+            else if (/[:=<>"]/.test(word) && !/^!?"[^"]*"$/.test(word)) swap(t.start, nameWords(word));
             continue;
         }
         if (t.kind !== "term") continue;
@@ -220,12 +228,10 @@ function readSearch(q: string, data: Cards): Read {
         // at most six regexes in a search: "Too many regular expression operators used"
         if (t.regex && ++regexes > 6) return { error: TOO_MANY_REGEXES, warnings: [] };
         let verdict: Verdict;
-        if (DISPLAY_KEYS.has(t.key!)) {
-            // "t:sliver (order:cmc)" is a 400
-            if (depth > 0) return { error: DISPLAY_IN_BRACKETS, warnings: [] };
-            verdict = displayOption(t, display);
-        } else verdict = judge(t, negated, (negated ? "-" : "") + t.key + q.slice(t.start + t.key!.length, t.end), words);
-        if (verdict.warning) (DISPLAY_KEYS.has(t.key!) ? displayWarnings : warnings).push(verdict.warning);
+        if (isDisplay(t)) verdict = displayOption(t, display);
+        // (the warning quotes it in lower case: A:/X/ is “a:/x/”, r:FOO “r:foo” and “foo.”)
+        else verdict = judge(t, negated, q.slice(start, t.end).toLowerCase(), words);
+        if (verdict.warning) (isDisplay(t) ? displayWarnings : warnings).push(verdict.warning);
         if (verdict.as === undefined) continue;
         // (with a space after, so "http://x" doesn't run the x into it)
         out += `${q.slice(at, start)}${verdict.as} `;
@@ -233,6 +239,13 @@ function readSearch(q: string, data: Cards): Read {
     }
     // a bad display option's warning comes before the others, wherever it is: "foo:bar t:sliver order:zzqx"
     return { rewritten: out + q.slice(at), warnings: [...displayWarnings, ...warnings], display };
+}
+
+// a word of a name as Scryfall reads one with : < > = or a stray quote in it: its letters and digits, the rest as
+// spaces ("t:sliver is 13 cards, ones with "t sliver" in their names, like t>sliver); nothing left is every card (":")
+function nameWords(word: string) {
+    const words = word.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    return words ? `"${words}"` : EVERYTHING;
 }
 
 // a term the engine drops (see parse), and one that matches no card
@@ -287,7 +300,15 @@ const NUMBER_KEYS = new Set(["mv", "cmc", "manavalue", "pow", "power", "tou", "t
 // what Scryfall does with one term: keeps it, ignores it (and warns), or finds nothing for it. `raw` is the term as
 // typed, with its minus, which the warning quotes
 function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
+    const verdict = judgeValue(t, negated, raw, words);
+    // a quote or slash never closed is part of the value: checked like any other (r:/common warns), then it finds
+    // nothing (t:sliver o:"draw is a 404)
+    return t.open && verdict.as === undefined ? { as: NOTHING } : verdict;
+}
+function judgeValue(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     const key = t.key!, value = t.value!, v = value.toLowerCase();
+    // order>cmc and the like: a word of a name
+    if (DISPLAY_KEYS.has(key)) return { as: t.op!.length === 1 ? nameWords(raw) : NOTHING };
     // a minus before a number comparison (see MINUS_DROPPED): -mv>=3, -pow<2 and the like are dropped without a
     // word, and the engine does that. With = or : Scryfall says why: for mana value the value's wrong ("-mv=3",
     // "-mv:zzqx"), for the others the key is unknown, minus and all (“-pow”), and for cn it's kept
@@ -309,20 +330,19 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     if (t.quoted && value === "" && !t.open) return ignore(raw, `Unknown keyword “${named}”.`);
     // with no value at all the key is a word of a name: t:sliver c: is the slivers with a c in their name
     if (!t.quoted && !t.regex && value === "") return { as: (negated ? "-" : "") + key };
-    // a quote or regex left open finds nothing: t:sliver o:"draw
-    if (t.open) return { as: NOTHING };
     if (t.regex) {
         const why = regexProblem(value);
         if (why) return ignore(raw, `Invalid regular expression: ${why}.`);
     }
-    // < > and != only compare what can be compared: t>goblin, o>draw, is>foo find nothing, without a warning
-    if (!["=", ":"].includes(t.op!) && !COMPARE_KEYS.has(key) && !(t.op === "!=" && NOT_EQUAL_KEYS.has(key))) return { as: NOTHING };
+    // < > and != only compare what can be compared. On another key, t>=sliver and t!=sliver find nothing, and
+    // t>sliver is a word of a name ("t sliver": 13 cards), so t:sliver t>goblin finds nothing either
+    if (!["=", ":"].includes(t.op!) && !COMPARE_KEYS.has(key) && !(t.op === "!=" && NOT_EQUAL_KEYS.has(key))) return { as: t.op!.length === 1 ? nameWords(raw) : NOTHING };
     // the engine reads a key as letters only, so set_type:… would be a word of a name there: it gets its other name,
     // or isn't supported
     if (key.includes("_")) {
         const alias = UNDERSCORE_KEYS[key];
         if (!alias) throw new Unsupported(`${key}:`);
-        const verdict = judge({ ...t, key: alias }, negated, raw, words);
+        const verdict = judgeValue({ ...t, key: alias }, negated, raw, words);
         return verdict.as !== undefined ? verdict : { as: (negated ? "-" : "") + alias + raw.slice(raw.indexOf(t.op!, negated ? 1 : 0)) };
     }
     if (t.regex) return {};
@@ -344,46 +364,47 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
             return bad ? ignore(raw, `Unknown mana symbols “${bad}”.`) : {};
         }
         case "is": case "not":
-            return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
+            return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(v)}” is not supported`);
         case "has":
-            return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
+            return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(v)}” is not supported`);
         // (keywords: takes anything)
         case "kw": case "keyword":
-            if (!words.keywords.has(v)) return ignore(raw, `Unknown keyword “${cut(value)}”`);
+            if (!words.keywords.has(v)) return ignore(raw, `Unknown keyword “${cut(v)}”`);
             // known whatever the case, but kw:Flying finds nothing where kw:flying finds every flier
             return value === v ? {} : { as: NOTHING };
         case "r": case "rarity":
-            return RARITY_WORDS.has(v) ? {} : ignore(raw, `Unknown rarity “${cut(value)}.”`);
+            return RARITY_WORDS.has(v) ? {} : ignore(raw, `Unknown rarity “${cut(v)}.”`);
         case "new":
-            return NEW_WORDS.has(v) ? {} : ignore(raw, `Checking if cards have a new “${cut(value)}” is not supported`);
+            return NEW_WORDS.has(v) ? {} : ignore(raw, `Checking if cards have a new “${cut(v)}” is not supported`);
         case "st": case "settype": case "set_type":
-            return words.setTypes.has(SET_TYPE_NAMES[v.replace(/_/g, "")] ?? v) ? {} : ignore(raw, `Unknown set type “${cut(value)}”`);
+            return words.setTypes.has(SET_TYPE_NAMES[v.replace(/_/g, "")] ?? v) ? {} : ignore(raw, `Unknown set type “${cut(v)}”`);
         case "f": case "format": case "legal":
             if (FORMAT_NAMES[v]) return { as: raw.replace(/:.*$|=.*$/, "") + t.op + FORMAT_NAMES[v] };
-            return words.formats.has(v) ? {} : ignore(raw, `Unknown game format “${cut(value)}”`);
+            return words.formats.has(v) ? {} : ignore(raw, `Unknown game format “${cut(v)}”`);
         case "banned": case "restricted":
-            return words.formats.has(v) ? {} : ignore(raw, `Unknown constructed format “${cut(value)}”`);
+            return words.formats.has(v) ? {} : ignore(raw, `Unknown constructed format “${cut(v)}”`);
         case "game":
-            return words.games.has(v) ? {} : ignore(raw, `Unknown game \`${cut(value)}\``);
+            if (v === "mtga") return { as: (negated ? "-" : "") + "game:arena" };
+            return words.games.has(v) ? {} : ignore(raw, `Unknown game \`${cut(v)}\``);
         case "lang": case "language":
-            if (!words.langs.has(v) && v !== "any" && !LANGUAGE_NAMES.has(v)) return ignore(raw, `Unknown language \`${cut(value)}\``);
+            if (!words.langs.has(v) && v !== "any" && !LANGUAGE_NAMES.has(v)) return ignore(raw, `Unknown language \`${cut(v)}\``);
             // printings in other languages are in all_cards, which the engine doesn't load
             throw new Unsupported(`${key}:${value}`);
         case "frame":
             if (FRAME_WORDS.has(v)) throw new Unsupported(`frame:${v}`);
-            return words.frames.has(v) ? {} : ignore(raw, `Unknown frame “${cut(value)}”`);
+            return words.frames.has(v) ? {} : ignore(raw, `Unknown frame “${cut(v)}”`);
         case "stamp":
-            return words.stamps.has(v) ? {} : ignore(raw, `Unknown security stamp “${cut(value)}”`);
+            return words.stamps.has(v) ? {} : ignore(raw, `Unknown security stamp “${cut(v)}”`);
         case "cheapest":
-            return ["usd", "eur", "tix"].includes(v) ? {} : ignore(raw, `Unknown currency “${cut(value)}”`);
+            return ["usd", "eur", "tix"].includes(v) ? {} : ignore(raw, `Unknown currency “${cut(v)}”`);
         case "date":
             if (words.sets.has(v)) return {};
             // date>=2020 is known; the engine takes whole dates only
             if (/^\d{4}(-\d{2})?$/.test(v)) throw new Unsupported(`date ${v}`);
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return ignore(raw, `Invalid date or unknown set code “${cut(value)}”`);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return ignore(raw, `Invalid date or unknown set code “${cut(v)}”`);
             // a date that doesn't exist: date>2020-13-45
             const day = new Date(`${v}T00:00:00Z`);
-            return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v) ? {} : ignore(raw, `Invalid date “${cut(value)}”`);
+            return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v) ? {} : ignore(raw, `Invalid date “${cut(v)}”`);
         case "oracleid": case "oracle_id": case "illustrationid": case "scryfallid": case "scryfall_id":
             return UUID.test(value) ? {} : ignore(raw, "You must provide a valid v4 UUID.");
         // (sic)
@@ -477,7 +498,10 @@ const HAS_WORDS = new Set([
 
 const UNDERSCORE_KEYS: Record<string, string> = { set_type: "settype", flavor_text: "flavor", oracle_tag: "oracletag", art_tag: "arttag" };
 
-// keys that say how to show the results, not which cards: not allowed in brackets
+// keys that say how to show the results, not which cards: not allowed in brackets. Only with : or = ("order>cmc"
+// is a word of a name)
+const isDisplay = (t: Token) => DISPLAY_KEYS.has(t.key!) && (t.op === ":" || t.op === "=");
+// keys that say how to show the results
 const DISPLAY_KEYS = new Set(["unique", "order", "sort", "direction", "dir", "display", "prefer", "include"]);
 // every key Scryfall knows, found by asking it about each: an unknown one warns "Unknown keyword"
 const KNOWN_KEYS = new Set(["c", "color", "colors", "id", "identity", "ci", "commander", "t", "type", "o", "oracle", "fo", "fulloracle",
@@ -497,10 +521,13 @@ function displayOption(t: Token, display: Display): Verdict {
     switch (t.key) {
         // (order:mv is order:cmc)
         case "order": case "sort": if (!ORDER_VALUES.has(ORDER_NAMES[v] ?? v)) return unknown("order choice"); display.order = ORDER_NAMES[v] ?? v; break;
-        case "unique": if (!UNIQUE_VALUES.has(v)) return unknown("unique mode"); display.unique = v; break;
-        case "direction": case "dir": if (!DIR_VALUES.has(v)) return unknown("direction choice"); display.dir = v; break;
+        // unique:arts is unique:art (unique:print isn't prints)
+        case "unique": { const u = v === "arts" ? "art" : v; if (!UNIQUE_VALUES.has(u)) return unknown("unique mode"); display.unique = u; break; }
+        // direction:up and down are asc and desc (next_page says dir=desc)
+        case "direction": case "dir": { const d = { up: "asc", down: "desc" }[v] ?? v; if (!DIR_VALUES.has(d)) return unknown("direction choice"); display.dir = d; break; }
         // (Scryfall calls a bad include: a direction too)
-        case "include": if (v !== "extras") return unknown("direction choice"); display.extras = true; break;
+        // include:all is include:extras
+        case "include": if (v !== "extras" && v !== "all") return unknown("direction choice"); display.extras = true; break;
         case "display": if (!["grid", "checklist", "text", "full"].includes(v)) return unknown("display mode"); break;
         case "prefer": if (!PREFER_VALUES.has(v)) return unknown("preference mode"); display.prefer = v; break;
     }

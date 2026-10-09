@@ -391,3 +391,12 @@ t:sliver frame:modern
 f:pauper t:goblin mv=1 f:pdh
 f:cedh t:sliver
 f:duelcommander t:sliver
+t:sliver cheapest:gbp
+t:sliver st:Expansion
+t:sliver game:mtga
+t:sliver direction:up
+t:sliver direction:down
+t:sliver include:all
+t:sliver unique:print
+t:sliver r:FOO
+t:goblin direction:down order:cmc
