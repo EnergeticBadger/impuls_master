@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { politeFetch } from "./scryfall-answers.ts";
 import { makeCases, type Case } from "./lookup-cases.ts";
-import { Lookups, type Store } from "./lookups.ts";
+import { Lookups, autocompleteKey, type Store } from "./lookups.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -122,6 +122,14 @@ const dayOrder = (body: any) => ({
     data: [...body.data].sort((x: any, y: any) => y.published_at.localeCompare(x.published_at) || x.comment.localeCompare(y.comment)),
 });
 
+// A card's all_parts (its tokens, meld parts, combo pieces) each point at one printing of the related card, and
+// Scryfall picks that printing again from time to time: Highspire Infusion's Energy Reserve was tkld in both
+// bulk files of 8 Oct and tdrc in the API on 9 Oct; Squire's Devotion's Vampire went from txln to plst. The
+// newer pick isn't in any bulk file yet, so answers differing only there are counted apart ("related printing")
+const otherParts = (body: any) => body?.object === "card" && Array.isArray(body.all_parts)
+    ? { ...body, all_parts: body.all_parts.map(({ id, uri, ...rest }: any) => rest) }
+    : body;
+
 // a card's name and printing, or an error's details, to read a difference by
 function brief(body: string) {
     try {
@@ -134,7 +142,7 @@ function brief(body: string) {
 
 // same: the very same answer. daily: the same but for DAILY fields. rulings order: the same rulings, with the
 // same day's in another order
-type Outcome = "same" | "daily" | "rulings order" | "differs" | "unanswered" | "unasked";
+type Outcome = "same" | "daily" | "related printing" | "tie order" | "differs" | "unanswered" | "unasked";
 type Result = { c: Case, outcome: Outcome, note?: string };
 const results: Result[] = [];
 for (const c of all) {
@@ -151,8 +159,14 @@ for (const c of all) {
     if (!exact) { results.push({ c, outcome: "same" }); continue; }
     const d = differ(a, b, DAILY);
     if (!d) { results.push({ c, outcome: "daily", note: exact }); continue; }
-    if (c.endpoint === "rulings" && a.object === "list" && !differ(dayOrder(a), dayOrder(b), new Set())) {
-        results.push({ c, outcome: "rulings order", note: d });
+    if (!differ(otherParts(a), otherParts(b), DAILY)) { results.push({ c, outcome: "related printing", note: d }); continue; }
+    // the same keys in the same places: only names that tie have moved (possibly across the 20-name cut)
+    const asked = new URLSearchParams(c.path.split("?")[1]).get("q") ?? "";
+    const keys = (x: any) => JSON.stringify(x.data.map((n: string) => autocompleteKey(asked, n)));
+    const sameNames = (x: any, y: any) => keys(x) === keys(y);
+    if ((c.endpoint === "rulings" && a.object === "list" && !differ(dayOrder(a), dayOrder(b), new Set()))
+        || (c.endpoint === "autocomplete" && a.object === "catalog" && sameNames(a, b))) {
+        results.push({ c, outcome: "tie order", note: d });
         continue;
     }
     results.push({ c, outcome: "differs", note: d });
@@ -160,25 +174,29 @@ for (const c of all) {
 
 const out: string[] = [`# Lookups vs Scryfall`, "", `${new Date().toISOString()}, data built ${lookups.index.built}`, "",
     "Same: the whole answer is. Daily: the same but for prices or EDHREC/Penny ranks, which Scryfall updates every day " +
-    "apart from the cards. Rulings order: the same rulings, but the same day's in another order, which the bulk file " +
-    "doesn't keep.", ""];
-out.push("| endpoint | asked | same | daily | rulings order | differs | not answered here | % same or daily |", "|---|---|---|---|---|---|---|---|");
+    "apart from the cards. Related printing: the same but for which printing all_parts points at, which Scryfall " +
+    "picks again after the bulk file is made. Tie order: the same rulings, but the same day's in another order (the bulk " +
+    "file doesn't keep Scryfall's), or the same autocomplete names, but names equally near in another order " +
+    "(Scryfall's order for those follows nothing in the data). Strict counts only same; explained counts all four.", ""];
+out.push("| endpoint | asked | same | daily | related printing | tie order | differs | not answered here | % strict | % explained |",
+    "|---|---|---|---|---|---|---|---|---|---|");
 const endpoints = [...new Set(results.map((r) => r.c.endpoint))];
 let bad = 0;
 const count = (rs: Result[], o: Outcome) => rs.filter((r) => r.outcome === o).length;
 for (const e of endpoints) {
     const rs = results.filter((r) => r.c.endpoint === e && r.outcome !== "unasked");
-    const ok = count(rs, "same") + count(rs, "daily");
-    bad += rs.length - ok;
-    out.push(`| ${e} | ${rs.length} | ${count(rs, "same")} | ${count(rs, "daily")} | ${count(rs, "rulings order")} | ` +
-        `${count(rs, "differs")} | ${count(rs, "unanswered")} | ${rs.length ? (100 * ok / rs.length).toFixed(2) : "-"} |`);
+    const explained = count(rs, "same") + count(rs, "daily") + count(rs, "related printing") + count(rs, "tie order");
+    bad += rs.length - explained;
+    const pct = (n: number) => rs.length ? (100 * n / rs.length).toFixed(2) : "-";
+    out.push(`| ${e} | ${rs.length} | ${count(rs, "same")} | ${count(rs, "daily")} | ${count(rs, "related printing")} | ` +
+        `${count(rs, "tie order")} | ${count(rs, "differs")} | ${count(rs, "unanswered")} | ${pct(count(rs, "same"))} | ${pct(explained)} |`);
 }
 const unasked = count(results, "unasked");
 const head = out.length;
 if (unasked) out.push("", `${unasked} not asked of Scryfall yet (npm run test-lookups -- --fetch)`);
 const quote = (path: string) => "`" + decodeURIComponent(path) + "`";
 for (const e of endpoints) {
-    const rs = results.filter((r) => r.c.endpoint === e && ["differs", "unanswered", "rulings order"].includes(r.outcome));
+    const rs = results.filter((r) => r.c.endpoint === e && ["differs", "unanswered", "tie order", "related printing"].includes(r.outcome));
     if (!rs.length) continue;
     out.push("", `## ${e}`, "");
     for (const r of rs) out.push(`- ${r.outcome === "differs" ? "" : `(${r.outcome}) `}${r.c.kind}: ${quote(r.c.path)}: ${r.note ?? ""}`);

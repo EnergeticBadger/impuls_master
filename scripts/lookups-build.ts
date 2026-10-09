@@ -197,6 +197,8 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
     const defaults = new Set<string>();
     // each card's colors, as letters ("", "B", "GR")
     const colors = new Map<string, string>();
+    // each printing's release date
+    const released = new Map<string, string>();
     // each set's printings that aren't variations, for sets/{code}'s card_count
     const counts: Record<string, number> = {};
     let count = 0;
@@ -211,7 +213,7 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
         if (!c.variation) counts[c.set] = (counts[c.set] ?? 0) + 1;
         collect(got, c);
         let e = names.get(c.name);
-        if (!e) names.set(c.name, e = { name: c.name, faces: (c.card_faces ?? []).map((f: any) => f.name), card: false, art: true, visible: false, oracles: [], prints: [] });
+        if (!e) names.set(c.name, e = { name: c.name, faces: (c.card_faces ?? []).map((f: any) => f.name), card: false, art: true, visible: false, released: "", oracles: [], prints: [] });
         if (isCardName(c)) e.card = true;
         if (c.layout !== "art_series") e.art = false;
         if (extraKind(c) === "") e.visible = true;
@@ -219,6 +221,7 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
         if (oracle && !e.oracles.includes(oracle)) e.oracles.push(oracle);
         if (oracle && !colors.has(oracle)) colors.set(oracle, (c.colors ?? [...new Set(c.card_faces?.flatMap((f: any) => f.colors ?? []))].sort()).join(""));
         e.prints.push(c.id);
+        released.set(c.id, c.released_at);
         count++;
     }
     say(`${count} printings in default_cards`);
@@ -272,6 +275,9 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
 
     const kept = JSON.parse(readFileSync(new URL("./catalogs.json", import.meta.url), "utf8")).lists;
     const catalogs = buildCatalogs(got, kept, say);
+
+    // when the card was last printed (the printing it's shown with), which settles fuzzy ties
+    for (const e of names.values()) e.released = released.get(shown[e.oracles[0]]) ?? released.get(e.prints[0]) ?? "";
 
     const index: Index = {
         built: new Date().toISOString(),
