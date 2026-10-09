@@ -881,9 +881,26 @@ function languageOf(v: string): string | undefined {
     return CODES.has(key) ? key : LANGUAGES[key];
 }
 
-type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard) => boolean };
+// for new:art, each picture's first printing (as an index into `prints`), over every card's printings but
+// memorabilia: by release, then by the bulk file's order. Worked out once per Cards
+const FIRST_ARTS = new WeakMap<Cards, Set<number>>();
+function firstArts(data: Cards): Set<number> {
+    let firsts = FIRST_ARTS.get(data);
+    if (firsts) return firsts;
+    const first = new Map<string, number>();
+    for (const c of data.cards) for (const i of c.printings) {
+        const p = data.prints[i];
+        if (!p.art || p.setType === "memorabilia") continue;
+        const f = first.get(p.art);
+        if (f === undefined || p.released < data.prints[f].released || (p.released === data.prints[f].released && i < f)) first.set(p.art, i);
+    }
+    FIRST_ARTS.set(data, firsts = new Set(first.values()));
+    return firsts;
+}
+
+type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard, i: number) => boolean };
 const card = (fn: (c: LocalCard) => boolean): Test => ({ level: "card", fn });
-const print = (fn: (p: Printing, c: LocalCard) => boolean): Test => ({ level: "print", fn });
+const print = (fn: (p: Printing, c: LocalCard, i: number) => boolean): Test => ({ level: "print", fn });
 
 function compile(t: Term, data: Cards): Test {
     const plainOrRegex = (op: string) => {
@@ -1020,19 +1037,29 @@ function compile(t: Term, data: Cards): Test {
             return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
                 [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
         }
-        // a printing that's the first of its card with this rarity (promos aside), art, flavor text or frame
-        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Flavor text by its letters only:
-        // ". . ." is "...", and "Ætheric" "aetheric"
+        // a printing that's the first of its card with this rarity (promos aside), flavor text, frame, artist or
+        // language (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
+        // and art cards, Helvault promos, Arena starter decks) don't count as earlier: Avacyn, Angel of Hope's
+        // Helvault printing came first, but its Avacyn Restored one is new:language; a hidden promo does (Mise's
+        // Arena League one makes its Unhinged one not new:language). An artist can be none (the AFR dungeons are
+        // new:artist), and for new:artist no hidden printing counts (Velukan Dragon's Dreamcast one doesn't). Flavor
+        // text is the front face's, by its letters only: ". . ." is "...", "Ætheric" "aetheric". Each checked by its
+        // count against Scryfall's, 9 Oct 2026 (new:flavor 3 over and new:rarity 1 short, not yet explained)
         case "new": {
             const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")),
-                frame: (p) => p.frame, artist: (p) => p.artist, language: (p) => p.lang };
+            // new:art is the first printing of a picture on any card: Tiefling Outcasts' only printing isn't, since
+            // Elturel Survivors had the picture first, and of the four Killbots sharing one, only the first in
+            // Scryfall's own order (its bulk file's) is. 33,561 cards, as on Scryfall
+            if (v === "art") { const first = firstArts(data); return print((p, c, i) => first.has(i)); }
+            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, flavor: (p) => letters(p.flavor[0] ?? ""),
+                frame: (p) => p.frame, artist: (p) => p.artist || "none", language: (p) => p.lang };
             const of = field[v];
             if (!of) throw new Unsupported(`new:${v}`);
             // new:language: the first printing in its language, of every language's printings
             return print((p, c) => {
-                const earlier = (v === "language" ? everyLanguage(c, data) : c.printings).map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo) && (process.env.NEWMEMO ? q.setType !== "memorabilia" : true));
-                return (!!of(p) || (process.env.NEWEMPTY && v === "artist")) && !earlier.some((q) => of(q) === of(p));
+                const earlier = (v === "language" ? everyLanguage(c, data) : c.printings).map((i) => data.prints[i])
+                    .filter((q) => q.released < p.released && q.setType !== "memorabilia" && !(v === "rarity" && q.promo) && !(v === "artist" && q.extra));
+                return !!of(p) && !earlier.some((q) => of(q) === of(p));
             });
         }
         // each card's cheapest printing in this currency
@@ -1164,7 +1191,7 @@ function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = f
     const prints = all.filter((i) => NEEDS[data.prints[i].extra] <= shown);
     if ("term" in node) {
         const test = compile(node.term, data);
-        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card]));
+        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card], i));
         // a card's facts are the same for each of its printings, so each card is tested once
         const known = new Map<number, boolean>();
         return prints.filter((i) => {

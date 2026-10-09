@@ -58,5 +58,5 @@ for await (const line of lines(all)) {
     kept++;
 }
 gzip.end();
-await new Promise((res) => file.on("finish", res));
+await new Promise<void>((res) => file.on("finish", () => res()));
 console.log(`${kept.toLocaleString()} printings in other languages: ${join(out, "languages.jsonl.gz")}`);
