@@ -26,6 +26,7 @@
     "combo-cases": "node --import ./scripts/app-paths.ts scripts/combo-cases.ts",
     "test-combos": "node scripts/test-syntax.ts --cases combo --delay 3000 --stop-on-429",
     "types": "node scripts/types.ts",
+    "test-api": "node scripts/test-api.ts",
     "test-chips": "node --import ./scripts/app-paths.ts scripts/test-chips.ts"
   },
   "dependencies": {

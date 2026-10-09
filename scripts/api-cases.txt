@@ -1,0 +1,63 @@
+# Cases npm run test-api sends to Scryfall's cards/search and to scripts/search-api.ts, to compare the whole
+# response: broken and odd searches (for Scryfall's errors and warnings) and the API's other parameters.
+# One a line; # starts a comment. A line is a search, or "?" and the whole query string as sent.
+# A plain search is trimmed; for spaces at either end, write it as a query string (?q=%20%20t%3Agoblin).
+
+# nothing found, and nothing to search
+xyzzyqq
+t:slivr
+?q=
+?q=%20%20
+?page=2
+
+# unknown keys, and what's left
+foo:bar
+foo:bar t:sliver
+foo:bar t:slivr
+(hand:zzqx or t:sliver)
+t:sliver hand:zzqx
+
+# brackets
+t:sliver (
+t:sliver )
+t:sliver "abc
+
+# regexes
+o:/[/
+
+# numbers
+mv>abc
+t:sliver mv>abc
+-mv>=3 t:sliver
+
+# is:
+is:foo
+is:foo t:sliver
+
+# pages
+?q=t%3Agoblin&page=99
+?q=t%3Agoblin&page=0
+?q=t%3Agoblin&page=-1
+?q=t%3Agoblin&page=abc
+?q=t%3Agoblin&page=2.5
+?q=t%3Asliver&page=2
+?q=%20%20t%3Agoblin%20%20
+
+# the other parameters, good and bad
+?q=t%3Agoblin&order=foo
+?q=t%3Agoblin&order=CMC
+?q=t%3Agoblin&unique=foo
+?q=t%3Agoblin&unique=prints
+?q=t%3Agoblin&dir=foo
+?q=t%3Agoblin&dir=desc
+?q=t%3Agoblin&dir=asc&order=cmc
+?q=t%3Agoblin&order=released&dir=auto
+?q=t%3Agoblin&include_extras=maybe
+?q=t%3Agoblin&include_extras=False
+?q=t%3Agoblin&include_extras=1
+?q=t%3Agoblin&include_extras=0
+?q=t%3Agoblin&include_extras=
+?q=t%3Agoblin&include_variations=true
+?q=t%3Agoblin&format=text
+?q=t%3Agoblin&pretty=true
+?q=t%3Agoblin+order%3Acmc+unique%3Aprints
