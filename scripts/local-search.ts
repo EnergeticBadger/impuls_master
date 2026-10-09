@@ -341,6 +341,8 @@ export type Cards = {
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
+    // each set's parent set (tdc's is tdm), for order:released (also from the list of sets)
+    parents: Map<string, string>,
     // every promo type there is, for is:prerelease and the like
     promoTypes: Set<string>,
 };
@@ -430,9 +432,12 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
             for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
         }
     }
-    const blocks = new Map<string, string>();
+    const blocks = new Map<string, string>(), parents = new Map<string, string>();
     if (setsPath && existsSync(setsPath)) {
-        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
+        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) {
+            if (s.block_code) blocks.set(s.code, s.block_code);
+            if (s.parent_set_code) parents.set(s.code, s.parent_set_code);
+        }
     }
     // Scryfall's oracle_cards file holds a printing for each card, "the most up-to-date recognizable version": the
     // one its search shows, every card of 1,925 checked against a search for every card (mv>=0, 9 Oct 2026)
@@ -446,7 +451,7 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         }
     }
     const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
-    return { cards, prints, tags, setDates, blocks, promoTypes };
+    return { cards, prints, tags, setDates, blocks, parents, promoTypes };
 }
 
 // ---- the query language ----
@@ -1084,7 +1089,8 @@ const KEPT_SETS = new Set(["gnt", "gn2", "oana", "inr"]);
 // printings come after every other, but the cards new in those sets are preferred); and the old frames on a
 // printing from 2015 on (Cloudshredder Sliver's Time Spiral Remastered one, The Brothers' War Commander's
 // artifacts), though not on Masters Edition or Innistrad Remastered's
-const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched", "fullart", "textless", "shatteredglass", "colorshifted"]);
+// (Planar Chaos's colorshifted cards are preferred: Sinew Sliver's plc/30 before plst/PLC-30)
+const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched", "fullart", "textless", "shatteredglass"]);
 // and these sets, though nothing in the bulk files tells their printings from others': Cemetery Reaper's mic,
 // scd, drc and fdc printings differ in nothing but the set, yet mic's is shown and the other three come after
 // every older printing. Mostly reprint products (Jumpstart 2022 and Foundations Jumpstart, Mystery Booster 2,
@@ -1266,9 +1272,10 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
     const keys = new Map(entries.map((p) => [p, how.key(data.prints[p], data.cards[data.prints[p].card])]));
     const tie = (a: number, b: number) => {
         const p = data.prints[a], q = data.prints[b];
-        // released: the same day by set code, then collector number, turned round with the dates but the set codes
-        // not (direction:desc lists tdc/309, then tdm/400, 321, 319…)
-        if (how.byDate) return p.set.localeCompare(q.set) || (cnNumber(p) - cnNumber(q)) * flip;
+        // released: on the same day a set comes before its parent set, whichever the direction (tdc/309 before
+        // tdm/400 descending, tsb/8 before tsp/37 ascending, hoc before hob), otherwise by set code; then by
+        // collector number, turned round with the dates (direction:desc lists tdm/400, 321, 319…)
+        if (how.byDate) return Number(data.parents.get(q.set) === p.set) - Number(data.parents.get(p.set) === q.set) || p.set.localeCompare(q.set) || (cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
         return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };
