@@ -836,9 +836,17 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     old: (p) => p.frame === "1993" || p.frame === "1997",
     new: (p) => p.frame === "2015",
     scryfallpreview: (p) => p.scryfallPreview,
+    // printings from introductory products, as Scryfall lists them (nothing in the bulk files says so; wider than the
+    // intropack promo type): Duels of the Planeswalkers (dpa), the Rivals of Ixalan Quick Start decks (rqs), Assassin's
+    // Creed 274–305 and fourteen of Foundations' Beginner Box cards. 224 printings, 9 Oct 2026
+    intro: (p) => p.set === "dpa" || p.set === "rqs" || (p.set === "acr" && Number(p.cn) >= 274 && Number(p.cn) <= 305)
+        || (p.set === "fdn" && INTRO_FDN.has(p.cn)),
     atypical: (p) => atypical(p),
     default: (p) => !atypical(p),
 };
+const INTRO_FDN = new Set(["490", "493", "495", "497", "499", "500", "501", "516", "524", "525", "529", "530", "531", "564"]);
+// is:atypical: a frame treatment other than the usual one: borderless, showcase, extended art, inverted, etched,
+// full art, shattered glass (checked printing by printing on NEO and M21); is:default is every other printing
 const atypical = (p: Printing) => p.border === "borderless" || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass"].some((f) => p.frameEffects.has(f)) || p.fullArt;
 
 // Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those

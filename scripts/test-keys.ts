@@ -63,6 +63,16 @@ const keys: string[] = [
     ...values(data, (i) => printsOf(i).map((p) => p.stamp), 1).map((v) => `stamp:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.watermarks])).map((v) => `wm:${quote(v)}`),
     ...[...data.tags].filter(([, cards]) => cards.size >= MIN_CARDS).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `otag:${t}`),
+    // the art tags, by how many pictures they have (those with the most cards would all be in the thousands)
+    ...[...data.artTags].filter(([t, arts]) => arts.size >= MIN_CARDS && /^[a-z0-9-]+$/.test(t)).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `atag:${t}`),
+    // every language, as lang: and in:, and the keys about printings in them
+    ...(data.languages ? values(data, (i) => [...data.cards[i].printings, ...data.languages!.byCard.get(i) ?? []].map((p) => data.prints[p].lang), 1).flatMap((l) => [`lang:${l}`, `in:${l}`]) : []),
+    ...(data.languages ? ["lang:any", "-lang:en", "new:language", "lang:any new:language"] : []),
+    ...["art", "artist", "flavor", "frame", "rarity"].map((v) => `new:${v}`),
+    "artists>1", "illustrations>1", "illustrations>=5",
+    ...["arena", "grixis", "legacy", "chuck", "twisted", "april", "protour", "uncommon", "modern", "amaz", "tinkerer", "livethedream", "chromatic", "vintage", "apcube"].map((c) => `cube:${c}`),
+    // set families: the biggest ones
+    ...values(data, (i) => printsOf(i).map((p) => data.groups.get(p.set) ?? ""), 300).slice(0, 15).map((g) => `g:${g}`),
 ].filter((k) => k.includes(ONLY));
 
 // a key split by mana value, and a big slice by color, so each part is small enough to fetch whole
