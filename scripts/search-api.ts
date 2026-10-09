@@ -9,7 +9,8 @@
 // What the engine can't answer throws Unsupported, so a caller can ask Scryfall instead.
 
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
-import { Unsupported, isValues, parse, searchPrintings, sortCards, type Cards, type Node } from "./local-search.ts";
+import KEYWORD_WORDS from "./keyword-words.json" with { type: "json" };
+import { Unsupported, isValues, parse, revealed, searchPrintings, sortCards, type Cards, type Node } from "./local-search.ts";
 
 export const PAGE_SIZE = 175;
 
@@ -28,6 +29,7 @@ const NOT_FOUND = "Your query didn’t match any cards. Adjust your search terms
 const NOTHING_TO_SEARCH = "You didn‘t enter anything to search for.";
 const UNCLOSED = "Your search contains unclosed parentheses.";
 const ALL_IGNORED = "All of your terms were ignored.";
+const TOO_MANY_REGEXES = "Too many regular expression operators used";
 const DISPLAY_IN_BRACKETS = "Display options may not be specified inside parentheses.";
 const PAST_THE_END = "You have paginated beyond the end of these results, reduce your `page` parameter or refer to the syntax guide at https://scryfall.com/docs/reference";
 
@@ -53,6 +55,7 @@ const flag = (v?: string) => v !== undefined && !/^(|0|f|false|off|no|n)$/i.test
 const ORDER_VALUES = new Set(["name", "set", "released", "rarity", "color", "usd", "tix", "eur", "cmc", "power", "toughness", "edhrec", "penny", "artist", "review"]);
 const UNIQUE_VALUES = new Set(["cards", "art", "prints"]);
 const DIR_VALUES = new Set(["auto", "asc", "desc"]);
+const ORDER_NAMES: Record<string, string> = { mv: "cmc", manavalue: "cmc" };
 
 export async function cardsSearch(data: Cards, params: SearchParams, options: ApiOptions): Promise<ApiResponse> {
     const base = options.base ?? "https://api.scryfall.com/";
@@ -75,7 +78,7 @@ export async function cardsSearch(data: Cards, params: SearchParams, options: Ap
     try {
         node = parse(read.rewritten);
     } catch (e) {
-        if (e instanceof Unsupported && e.message === "every term is one Scryfall ignores") {
+        if (e instanceof Unsupported && ["every term is one Scryfall ignores", "empty group"].includes(e.message)) {
             // with nothing left to search, a 400, warnings or not: "()" and "-mv>=3" alone too
             return badRequest(ALL_IGNORED, warnings);
         }
@@ -87,7 +90,7 @@ export async function cardsSearch(data: Cards, params: SearchParams, options: Ap
     const pages = Math.ceil(listed.length / PAGE_SIZE);
     if (page > pages) return pastTheEnd();
     const body: Record<string, unknown> = { object: "list", total_cards: listed.length, has_more: page < pages };
-    if (page < pages) body.next_page = nextPage(base, { q, page: page + 1, order, unique, dir, params });
+    if (page < pages) body.next_page = nextPage(base, { q, page: page + 1, order, unique, dir, extras: extras || revealed(node) > 0, params });
     if (warnings.length) body.warnings = warnings;
     body.data = await Promise.all(listed.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((p) => options.card(p)));
     return { status: 200, body };
@@ -95,23 +98,28 @@ export async function cardsSearch(data: Cards, params: SearchParams, options: Ap
 
 // next_page as Scryfall writes it: its parameters in alphabetical order, the search trimmed, order and unique as
 // used (the search's own order: and unique: win), dir only when it's asc or desc, and format always json
-function nextPage(base: string, { q, page, order, unique, dir, params }: { q: string, page: number, order: string, unique: string, dir: string, params: SearchParams }) {
-    const p = new URLSearchParams();
-    if (dir === "asc" || dir === "desc") p.set("dir", dir);
-    p.set("format", "json");
-    p.set("include_extras", String(flag(params.include_extras)));
-    p.set("include_multilingual", String(flag(params.include_multilingual)));
-    p.set("include_variations", String(flag(params.include_variations)));
-    p.set("order", order);
-    p.set("page", String(page));
-    p.set("q", q);
-    p.set("unique", unique);
-    return `${base}cards/search?${p}`;
+// include_extras is true there whenever the search itself shows extras (t:token, border:silver, is:reserved…), and
+// the search is written in lower case with single spaces ("t:goblin   OR t:elf" is "t:goblin or t:elf")
+function nextPage(base: string, { q, page, order, unique, dir, extras, params }: { q: string, page: number, order: string, unique: string, dir: string, extras: boolean, params: SearchParams }) {
+    const p: [string, string][] = [];
+    if (dir === "asc" || dir === "desc") p.push(["dir", dir]);
+    p.push(["format", "json"], ["include_extras", String(extras)], ["include_multilingual", String(flag(params.include_multilingual))],
+        ["include_variations", String(flag(params.include_variations))], ["order", order], ["page", String(page)],
+        ["q", q.toLowerCase().replace(/\s+/g, " ")], ["unique", unique]);
+    return `${base}cards/search?${p.map(([k, v]) => `${k}=${escape(v)}`).join("&")}`;
 }
+
+// a value in a URL the way Scryfall (Ruby's CGI.escape) writes it: letters, digits and _ . - ~ as they are, a space
+// as +, anything else as %XX of its UTF-8 bytes. (URLSearchParams would write ~ as %7E)
+const escape = (v: string) => [...new TextEncoder().encode(v)].map((b) => {
+    const ch = String.fromCharCode(b);
+    return /[A-Za-z0-9_.~-]/.test(ch) ? ch : ch === " " ? "+" : `%${b.toString(16).toUpperCase().padStart(2, "0")}`;
+}).join("");
 
 // ---- reading the search ----
 
-type Token = { kind: "(" | ")" | "-" | "or" | "and" | "word" | "term", start: number, end: number, key?: string, op?: string, value?: string, regex?: boolean };
+// `quoted` for a "value", `open` for a quote or regex that isn't closed
+type Token = { kind: "(" | ")" | "-" | "or" | "and" | "word" | "term", start: number, end: number, key?: string, op?: string, value?: string, regex?: boolean, quoted?: boolean, open?: boolean };
 const OPS = ["<=", ">=", "!=", ":", "=", "<", ">"];
 
 // the search in pieces, where each starts and ends, read the way the engine's tokenize reads it
@@ -130,25 +138,29 @@ function scan(q: string): Token[] {
             i = end;
             continue;
         }
-        const key = /^[a-z_]+/i.exec(q.slice(i))?.[0] ?? "";
+        // a key is letters, _ and -: foo-bar:baz is the unknown key “foo-bar”, but foo1:bar a word of a name
+        const key = /^[a-z_][a-z_-]*/i.exec(q.slice(i))?.[0] ?? "";
         const op = key ? OPS.find((o) => q.startsWith(o, i + key.length)) : undefined;
         if (key && op) {
-            let j = i + key.length + op.length, regex = false, value: string;
+            let j = i + key.length + op.length, regex = false, quoted = false, open = false, value: string;
             if (q[j] === "/") {
                 let end = j + 1;
                 while (end < q.length && q[end] !== "/") end += q[end] === "\\" ? 2 : 1;
                 value = q.slice(j + 1, end);
                 regex = true;
+                open = end >= q.length;
                 j = Math.min(end + 1, q.length);
             } else if (q[j] === "\"") {
                 const end = quotedEnd(j);
-                value = q.slice(j + 1, q[end - 1] === "\"" && end - 1 > j ? end - 1 : end);
+                open = q[end - 1] !== "\"" || end - 1 === j;
+                value = q.slice(j + 1, open ? end : end - 1);
+                quoted = true;
                 j = end;
             } else {
                 value = /^[^\s()]*/.exec(q.slice(j))![0];
                 j += value.length;
             }
-            out.push({ kind: "term", start: i, end: j, key: key.toLowerCase(), op, value, regex });
+            out.push({ kind: "term", start: i, end: j, key: key.toLowerCase(), op, value, regex, quoted, open });
             i = j;
             continue;
         }
@@ -175,7 +187,8 @@ function readSearch(q: string, data: Cards): Read {
         if (t.kind === ")" && --depth < 0) return { error: UNCLOSED, warnings: [] };
     }
     if (depth) return { error: UNCLOSED, warnings: [] };
-    const warnings: string[] = [], display: Display = { extras: false };
+    const warnings: string[] = [], displayWarnings: string[] = [], display: Display = { extras: false };
+    let regexes = 0;
     const words = vocabulary(data);
     let out = "", at = 0;
     for (const [n, t] of tokens.entries()) {
@@ -186,26 +199,43 @@ function readSearch(q: string, data: Cards): Read {
             out += q.slice(at, t.start) + `(${DROPPED})`;
             at = tokens[n + 1].end;
         }
+        const swap = (start: number, as: string) => { out += q.slice(at, start) + as; at = t.end; };
+        // an "or" with nothing on one side is left out: "t:sliver or", "or t:sliver", "t:sliver or or t:elf"
+        if (t.kind === "or" && (!tokens[n - 1] || ["(", "or", "-"].includes(tokens[n - 1].kind) || !tokens[n + 1] || ["or", ")"].includes(tokens[n + 1].kind))) {
+            swap(t.start, "");
+            continue;
+        }
+        if (t.kind === "word") {
+            const word = q.slice(t.start, t.end);
+            // a minus on its own finds nothing ("t:sliver -" is a 404); "!", "!\"" and ":" on their own are every card
+            if (word === "-") swap(t.start, NOTHING);
+            else if (/^!"?$/.test(word) || /^[:=<>]+$/.test(word)) swap(t.start, EVERYTHING);
+            continue;
+        }
         if (t.kind !== "term") continue;
         const negated = tokens[n - 1]?.kind === "-" && tokens[n - 1].end === t.start;
         const start = negated ? tokens[n - 1].start : t.start;
+        // at most six regexes in a search: "Too many regular expression operators used"
+        if (t.regex && ++regexes > 6) return { error: TOO_MANY_REGEXES, warnings: [] };
         let verdict: Verdict;
         if (DISPLAY_KEYS.has(t.key!)) {
             // "t:sliver (order:cmc)" is a 400
             if (depth > 0) return { error: DISPLAY_IN_BRACKETS, warnings: [] };
             verdict = displayOption(t, display);
-        } else verdict = judge(t, negated, q.slice(start, t.end), words);
-        if (verdict.warning) warnings.push(verdict.warning);
+        } else verdict = judge(t, negated, (negated ? "-" : "") + t.key + q.slice(t.start + t.key!.length, t.end), words);
+        if (verdict.warning) (DISPLAY_KEYS.has(t.key!) ? displayWarnings : warnings).push(verdict.warning);
         if (verdict.as === undefined) continue;
         out += q.slice(at, start) + verdict.as;
         at = t.end;
     }
-    return { rewritten: out + q.slice(at), warnings, display };
+    // a bad display option's warning comes before the others, wherever it is: "foo:bar t:sliver order:zzqx"
+    return { rewritten: out + q.slice(at), warnings: [...displayWarnings, ...warnings], display };
 }
 
 // a term the engine drops (see parse), and one that matches no card
 const DROPPED = "-mv>=0";
 const NOTHING = "!\"\u0001\"";
+const EVERYTHING = `-${NOTHING}`;
 const invalid = (raw: string, why: string) => `Invalid expression “${cut(raw)}” was ignored. ${why}`;
 // what a warning quotes is cut short past 20 characters, "…" the 20th: “is:abcdefghijklmnopq” stays, but
 // “is:abcdefghijklmnopqr” is “is:abcdefghijklmnop…”. A key is cut at 21: “abcdefghijklmnopqrst…”
@@ -214,13 +244,14 @@ const cut = (s: string, n = 20) => s.length > n ? `${s.slice(0, n - 1)}…` : s;
 type Verdict = { as?: string, warning?: string };
 const ignore = (raw: string, why: string): Verdict => ({ as: DROPPED, warning: invalid(raw, why) });
 
-// the words some keys take, from the cards themselves: every keyword a card has, every format, frame, stamp…
+// the words some keys take, from the cards themselves: every keyword a card has (and Scryfall's catalogs of them,
+// keyword-words.json), every format, frame, stamp…
 type Words = { keywords: Set<string>, formats: Set<string>, frames: Set<string>, stamps: Set<string>, games: Set<string>, langs: Set<string>, setTypes: Set<string>, sets: Set<string>, is: Set<string> };
 const vocabularies = new WeakMap<Cards, Words>();
 function vocabulary(data: Cards): Words {
     let w = vocabularies.get(data);
     if (w) return w;
-    w = { keywords: new Set(), formats: new Set(), frames: new Set(), stamps: new Set(), games: new Set(), langs: new Set(), setTypes: new Set(), sets: new Set(data.setDates.keys()), is: new Set([...isValues(data), ...IS_WORDS]) };
+    w = { keywords: new Set(KEYWORD_WORDS), formats: new Set(), frames: new Set(), stamps: new Set(), games: new Set(), langs: new Set(), setTypes: new Set(), sets: new Set(data.setDates.keys()), is: new Set([...isValues(data), ...IS_WORDS]) };
     for (const c of data.cards) {
         for (const k of c.keywords) w.keywords.add(k);
         for (const f of [...c.legal, ...c.banned, ...c.restricted]) w.formats.add(f);
@@ -258,13 +289,30 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     // word, and the engine does that. With = or : Scryfall says why: for mana value the value's wrong ("-mv=3",
     // "-mv:zzqx"), for the others the key is unknown, minus and all (“-pow”), and for cn it's kept
     if (negated && MINUS_DROPPED.has(key) && !t.regex && !/^(even|odd)$/i.test(value)) {
-        if (t.op !== "=" && t.op !== ":") return {};
+        // not dropped but true for every card: -mv>=3 alone is all 33,650 cards, and (-mv<3 or t:sliver) too
+        if (t.op !== "=" && t.op !== ":") return { as: EVERYTHING };
         if (["mv", "cmc", "manavalue"].includes(key)) return ignore(raw, "The value must be a number, or “even”/“odd”");
-        if (["cn", "number"].includes(key)) return {};
+        // -cn=3 is read as meant (t:goblin -cn=3 has more goblins than t:goblin), where the engine would drop it
+        if (["cn", "number"].includes(key)) return { as: `-(${raw.slice(1)})` };
         return ignore(raw, `Unknown keyword “${cut(`-${key}`, 21)}”.`);
     }
-    // an unknown key with a minus is unknown with it: -foo:bar is “-foo”
-    if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${cut(negated ? `-${key}` : key, 21)}”.`);
+    // an unknown key with a minus is unknown with it: -foo:bar is “-foo”. With a regex (and an empty regex on any
+    // key: o://) it's an unknown "regular expression keyword": http://x is “http://”, then the word x
+    const named = cut(negated ? `-${key}` : key, 21);
+    if (t.regex && (!REGEX_KEYS.has(key) || (value === "" && !t.open))) return ignore(raw, `Unknown regular expression keyword “${named}”.`);
+    if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${named}”.`);
+    // o:"" is an unknown keyword too
+    if (t.quoted && value === "" && !t.open) return ignore(raw, `Unknown keyword “${named}”.`);
+    // with no value at all the key is a word of a name: t:sliver c: is the slivers with a c in their name
+    if (!t.quoted && !t.regex && value === "") return { as: (negated ? "-" : "") + key };
+    // a quote or regex left open finds nothing: t:sliver o:"draw
+    if (t.open) return { as: NOTHING };
+    if (t.regex) {
+        const why = regexProblem(value);
+        if (why) return ignore(raw, `Invalid regular expression: ${why}.`);
+    }
+    // < > and != only compare what can be compared: t>goblin, o>draw, is>foo find nothing, without a warning
+    if (!["=", ":"].includes(t.op!) && !COMPARE_KEYS.has(key) && !(t.op === "!=" && NOT_EQUAL_KEYS.has(key))) return { as: NOTHING };
     // the engine reads a key as letters only, so set_type:… would be a word of a name there: it gets its other name,
     // or isn't supported
     if (key.includes("_")) {
@@ -278,6 +326,9 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
         case "c": case "color": case "colors": case "id": case "identity": case "ci": case "commander": case "produces": {
             if (/^\d+$/.test(v) || COLOR_NAMES.has(v)) return {};
             const letters = [...new Set(v)].sort();
+            // m and other letters: c:mub is “Using “m” with other colors is no longer supported. Use c>bu instead.”
+            // (the others sorted, at most five: c:abcdefg…z says c>abcde)
+            if (letters.includes("m")) return ignore(raw, `Using “m” with other colors is no longer supported. Use ${key}>${letters.filter((l) => l !== "m").join("").slice(0, 5)} instead.`);
             // c:abc: the colourless c with colours is checked before the letters are
             if (key !== "produces" && letters.includes("c") && letters.some((l) => "wubrg".includes(l))) return ignore(raw, "A card cannot be both colored and colorless.");
             // the first unknown letter in alphabetical order: c:zzqx is "q", c:purple "e"
@@ -292,8 +343,11 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
             return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
         case "has":
             return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
-        case "kw": case "keyword": case "keywords":
-            return words.keywords.has(v) ? {} : ignore(raw, `Unknown keyword “${cut(value)}”`);
+        // (keywords: takes anything)
+        case "kw": case "keyword":
+            if (!words.keywords.has(v)) return ignore(raw, `Unknown keyword “${cut(value)}”`);
+            // known whatever the case, but kw:Flying finds nothing where kw:flying finds every flier
+            return value === v ? {} : { as: NOTHING };
         case "r": case "rarity":
             return RARITY_WORDS.has(v) ? {} : ignore(raw, `Unknown rarity “${cut(value)}.”`);
         case "new":
@@ -301,23 +355,31 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
         case "st": case "settype": case "set_type":
             return words.setTypes.has(SET_TYPE_NAMES[v.replace(/_/g, "")] ?? v) ? {} : ignore(raw, `Unknown set type “${cut(value)}”`);
         case "f": case "format": case "legal":
+            if (FORMAT_NAMES[v]) return { as: raw.replace(/:.*$|=.*$/, "") + t.op + FORMAT_NAMES[v] };
             return words.formats.has(v) ? {} : ignore(raw, `Unknown game format “${cut(value)}”`);
         case "banned": case "restricted":
             return words.formats.has(v) ? {} : ignore(raw, `Unknown constructed format “${cut(value)}”`);
         case "game":
-            return words.games.has(v) ? {} : ignore(raw, `Unknown game \`${value}\``);
+            return words.games.has(v) ? {} : ignore(raw, `Unknown game \`${cut(value)}\``);
         case "lang": case "language":
-            if (!words.langs.has(v) && v !== "any") return ignore(raw, `Unknown language \`${value}\``);
+            if (!words.langs.has(v) && v !== "any" && !LANGUAGE_NAMES.has(v)) return ignore(raw, `Unknown language \`${cut(value)}\``);
             // printings in other languages are in all_cards, which the engine doesn't load
             throw new Unsupported(`${key}:${value}`);
         case "frame":
+            if (FRAME_WORDS.has(v)) throw new Unsupported(`frame:${v}`);
             return words.frames.has(v) ? {} : ignore(raw, `Unknown frame “${cut(value)}”`);
         case "stamp":
             return words.stamps.has(v) ? {} : ignore(raw, `Unknown security stamp “${cut(value)}”`);
         case "cheapest":
             return ["usd", "eur", "tix"].includes(v) ? {} : ignore(raw, `Unknown currency “${cut(value)}”`);
         case "date":
-            return /^\d{4}-\d{2}-\d{2}$/.test(v) || words.sets.has(v) ? {} : ignore(raw, `Invalid date or unknown set code “${cut(value)}”`);
+            if (words.sets.has(v)) return {};
+            // date>=2020 is known; the engine takes whole dates only
+            if (/^\d{4}(-\d{2})?$/.test(v)) throw new Unsupported(`date ${v}`);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return ignore(raw, `Invalid date or unknown set code “${cut(value)}”`);
+            // a date that doesn't exist: date>2020-13-45
+            const day = new Date(`${v}T00:00:00Z`);
+            return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v) ? {} : ignore(raw, `Invalid date “${cut(value)}”`);
         case "oracleid": case "oracle_id": case "illustrationid": case "scryfallid": case "scryfall_id":
             return UUID.test(value) ? {} : ignore(raw, "You must provide a valid v4 UUID.");
         // (sic)
@@ -328,16 +390,43 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     return {};
 }
 
-// the first mana symbol Scryfall doesn't know in m:/devotion:, as it names it (capitals), or undefined
+// the mana symbols Scryfall doesn't know in m:/devotion:, run together as it names them (m:qk is “QK”), or undefined
 function manaProblem(value: string): string | undefined {
+    let bad = "";
     for (const m of value.matchAll(/\{([^}]*)\}|(\d+)|([^{}\d])/g)) {
         if (m[2]) continue;
         const sym = (m[1] ?? m[3]).toUpperCase();
         if (m[1] !== undefined ? sym.split("/").every((part) => /^(\d+|[WUBRGCXYZSPHE]|½|∞)$/.test(part)) : /^[WUBRGCXYZSPHE]$/.test(sym)) continue;
-        return sym;
+        // with its braces when it had them: m:{q}{k} is “{Q}{K}”
+        bad += m[1] !== undefined ? `{${sym}}` : sym;
     }
-    return undefined;
+    return bad || undefined;
 }
+
+// frame: and lang: words Scryfall knows beyond the bulk file's (found by asking it)
+const FRAME_WORDS = new Set(["old", "new"]);
+const LANGUAGE_NAMES = new Set(["english", "spanish", "french", "german", "italian", "portuguese", "japanese", "korean", "russian", "chinese"]);
+
+// keys that take a regex
+const REGEX_KEYS = new Set(["o", "oracle", "fo", "fulloracle", "t", "type", "name", "ft", "flavor", "flavortext", "a", "artist", "artists", "wm", "watermark", "kw", "keyword", "keywords"]);
+// keys that compare with < > <= >= (and !=)
+const COMPARE_KEYS = new Set([...NUMBER_KEYS, "cn", "number", "c", "color", "colors", "id", "identity", "ci", "commander", "produces", "r", "rarity",
+    "m", "mana", "devotion", "date"]);
+const NOT_EQUAL_KEYS = new Set<string>([]);
+
+// why Postgres (Scryfall's database) refuses a regex, in its words, by what JavaScript makes of it
+function regexProblem(body: string): string | undefined {
+    try { new RegExp(body); return undefined; } catch (e) {
+        const m = (e as Error).message;
+        if (/Unterminated group|Unmatched '\)'/.test(m)) return "parentheses () not balanced";
+        if (/Unterminated character class/.test(m)) return "brackets [] not balanced";
+        if (/Nothing to repeat/.test(m)) return "quantifier operand invalid";
+        throw new Unsupported(`regex ${body}: ${m}`);
+    }
+}
+
+// formats by their other names: f:edh is Commander
+const FORMAT_NAMES: Record<string, string> = { edh: "commander", pdh: "paupercommander" };
 
 // set types as people type them, as the engine reads them
 const SET_TYPE_NAMES: Record<string, string> = { draftinnovation: "draft_innovation", duel: "duel_deck", duels: "duel_deck", fromthevault: "from_the_vault", ftv: "from_the_vault", premium: "premium_deck", treasure: "treasure_chest" };
@@ -399,7 +488,8 @@ function displayOption(t: Token, display: Display): Verdict {
     const v = t.value!.toLowerCase();
     const unknown = (what: string): Verdict => ({ as: DROPPED, warning: `Unknown ${what} “${cut(t.value!)}” was ignored` });
     switch (t.key) {
-        case "order": case "sort": if (!ORDER_VALUES.has(v)) return unknown("order choice"); display.order = v; break;
+        // (order:mv is order:cmc)
+        case "order": case "sort": if (!ORDER_VALUES.has(ORDER_NAMES[v] ?? v)) return unknown("order choice"); display.order = ORDER_NAMES[v] ?? v; break;
         case "unique": if (!UNIQUE_VALUES.has(v)) return unknown("unique mode"); display.unique = v; break;
         case "direction": case "dir": if (!DIR_VALUES.has(v)) return unknown("direction choice"); display.dir = v; break;
         // (Scryfall calls a bad include: a direction too)
