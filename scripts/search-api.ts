@@ -76,8 +76,8 @@ export async function cardsSearch(data: Cards, params: SearchParams, options: Ap
         node = parse(read.rewritten);
     } catch (e) {
         if (e instanceof Unsupported && e.message === "every term is one Scryfall ignores") {
-            if (warnings.length) return badRequest(ALL_IGNORED, warnings);
-            return notFound();
+            // with nothing left to search, a 400, warnings or not: "()" and "-mv>=3" alone too
+            return badRequest(ALL_IGNORED, warnings);
         }
         throw e;
     }
@@ -181,6 +181,11 @@ function readSearch(q: string, data: Cards): Read {
     for (const [n, t] of tokens.entries()) {
         if (t.kind === "(") depth++;
         if (t.kind === ")") depth--;
+        // an empty pair of brackets is nothing at all: "t:sliver ()" is every sliver, "()" alone ignored
+        if (t.kind === "(" && tokens[n + 1]?.kind === ")") {
+            out += q.slice(at, t.start) + `(${DROPPED})`;
+            at = tokens[n + 1].end;
+        }
         if (t.kind !== "term") continue;
         const negated = tokens[n - 1]?.kind === "-" && tokens[n - 1].end === t.start;
         const start = negated ? tokens[n - 1].start : t.start;
@@ -201,7 +206,10 @@ function readSearch(q: string, data: Cards): Read {
 // a term the engine drops (see parse), and one that matches no card
 const DROPPED = "-mv>=0";
 const NOTHING = "!\"\u0001\"";
-const invalid = (raw: string, why: string) => `Invalid expression “${raw}” was ignored. ${why}`;
+const invalid = (raw: string, why: string) => `Invalid expression “${cut(raw)}” was ignored. ${why}`;
+// what a warning quotes is cut short past 20 characters, "…" the 20th: “is:abcdefghijklmnopq” stays, but
+// “is:abcdefghijklmnopqr” is “is:abcdefghijklmnop…”. A key is cut at 21: “abcdefghijklmnopqrst…”
+const cut = (s: string, n = 20) => s.length > n ? `${s.slice(0, n - 1)}…` : s;
 
 type Verdict = { as?: string, warning?: string };
 const ignore = (raw: string, why: string): Verdict => ({ as: DROPPED, warning: invalid(raw, why) });
@@ -246,9 +254,25 @@ const NUMBER_KEYS = new Set(["mv", "cmc", "manavalue", "pow", "power", "tou", "t
 // typed, with its minus, which the warning quotes
 function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
     const key = t.key!, value = t.value!, v = value.toLowerCase();
-    // -mv>=3 is dropped without a word (see MINUS_DROPPED); the engine does it
-    if (negated && MINUS_DROPPED.has(key) && !t.regex && !/^(even|odd)$/i.test(value)) return {};
-    if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${key}”.`);
+    // a minus before a number comparison (see MINUS_DROPPED): -mv>=3, -pow<2 and the like are dropped without a
+    // word, and the engine does that. With = or : Scryfall says why: for mana value the value's wrong ("-mv=3",
+    // "-mv:zzqx"), for the others the key is unknown, minus and all (“-pow”), and for cn it's kept
+    if (negated && MINUS_DROPPED.has(key) && !t.regex && !/^(even|odd)$/i.test(value)) {
+        if (t.op !== "=" && t.op !== ":") return {};
+        if (["mv", "cmc", "manavalue"].includes(key)) return ignore(raw, "The value must be a number, or “even”/“odd”");
+        if (["cn", "number"].includes(key)) return {};
+        return ignore(raw, `Unknown keyword “${cut(`-${key}`, 21)}”.`);
+    }
+    // an unknown key with a minus is unknown with it: -foo:bar is “-foo”
+    if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${cut(negated ? `-${key}` : key, 21)}”.`);
+    // the engine reads a key as letters only, so set_type:… would be a word of a name there: it gets its other name,
+    // or isn't supported
+    if (key.includes("_")) {
+        const alias = UNDERSCORE_KEYS[key];
+        if (!alias) throw new Unsupported(`${key}:`);
+        const verdict = judge({ ...t, key: alias }, negated, raw, words);
+        return verdict.as !== undefined ? verdict : { as: (negated ? "-" : "") + alias + raw.slice(raw.indexOf(t.op!, negated ? 1 : 0)) };
+    }
     if (t.regex) return {};
     switch (key) {
         case "c": case "color": case "colors": case "id": case "identity": case "ci": case "commander": case "produces": {
@@ -265,21 +289,21 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
             return bad ? ignore(raw, `Unknown mana symbols “${bad}”.`) : {};
         }
         case "is": case "not":
-            return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${value}” is not supported`);
+            return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
         case "has":
-            return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${value}” is not supported`);
+            return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(value)}” is not supported`);
         case "kw": case "keyword": case "keywords":
-            return words.keywords.has(v) ? {} : ignore(raw, `Unknown keyword “${value}”`);
+            return words.keywords.has(v) ? {} : ignore(raw, `Unknown keyword “${cut(value)}”`);
         case "r": case "rarity":
-            return RARITY_WORDS.has(v) ? {} : ignore(raw, `Unknown rarity “${value}.”`);
+            return RARITY_WORDS.has(v) ? {} : ignore(raw, `Unknown rarity “${cut(value)}.”`);
         case "new":
-            return NEW_WORDS.has(v) ? {} : ignore(raw, `Checking if cards have a new “${value}” is not supported`);
+            return NEW_WORDS.has(v) ? {} : ignore(raw, `Checking if cards have a new “${cut(value)}” is not supported`);
         case "st": case "settype": case "set_type":
-            return words.setTypes.has(SET_TYPE_NAMES[v.replace(/_/g, "")] ?? v) ? {} : ignore(raw, `Unknown set type “${value}”`);
+            return words.setTypes.has(SET_TYPE_NAMES[v.replace(/_/g, "")] ?? v) ? {} : ignore(raw, `Unknown set type “${cut(value)}”`);
         case "f": case "format": case "legal":
-            return words.formats.has(v) ? {} : ignore(raw, `Unknown game format “${value}”`);
+            return words.formats.has(v) ? {} : ignore(raw, `Unknown game format “${cut(value)}”`);
         case "banned": case "restricted":
-            return words.formats.has(v) ? {} : ignore(raw, `Unknown constructed format “${value}”`);
+            return words.formats.has(v) ? {} : ignore(raw, `Unknown constructed format “${cut(value)}”`);
         case "game":
             return words.games.has(v) ? {} : ignore(raw, `Unknown game \`${value}\``);
         case "lang": case "language":
@@ -287,13 +311,13 @@ function judge(t: Token, negated: boolean, raw: string, words: Words): Verdict {
             // printings in other languages are in all_cards, which the engine doesn't load
             throw new Unsupported(`${key}:${value}`);
         case "frame":
-            return words.frames.has(v) ? {} : ignore(raw, `Unknown frame “${value}”`);
+            return words.frames.has(v) ? {} : ignore(raw, `Unknown frame “${cut(value)}”`);
         case "stamp":
-            return words.stamps.has(v) ? {} : ignore(raw, `Unknown security stamp “${value}”`);
+            return words.stamps.has(v) ? {} : ignore(raw, `Unknown security stamp “${cut(value)}”`);
         case "cheapest":
-            return ["usd", "eur", "tix"].includes(v) ? {} : ignore(raw, `Unknown currency “${value}”`);
+            return ["usd", "eur", "tix"].includes(v) ? {} : ignore(raw, `Unknown currency “${cut(value)}”`);
         case "date":
-            return /^\d{4}-\d{2}-\d{2}$/.test(v) || words.sets.has(v) ? {} : ignore(raw, `Invalid date or unknown set code “${value}”`);
+            return /^\d{4}-\d{2}-\d{2}$/.test(v) || words.sets.has(v) ? {} : ignore(raw, `Invalid date or unknown set code “${cut(value)}”`);
         case "oracleid": case "oracle_id": case "illustrationid": case "scryfallid": case "scryfall_id":
             return UUID.test(value) ? {} : ignore(raw, "You must provide a valid v4 UUID.");
         // (sic)
@@ -320,8 +344,42 @@ const SET_TYPE_NAMES: Record<string, string> = { draftinnovation: "draft_innovat
 
 // is: values Scryfall knows besides those the engine does (isValues): an unknown one warns "Checking if cards are …
 // is not supported". Found by asking Scryfall about each
-const IS_WORDS = new Set<string>([]);
-const HAS_WORDS = new Set(["watermark", "indicator"]);
+const IS_WORDS = new Set<string>([
+    "adventure", "alchemy", "arenaleague", "art_series", "atypical", "augment", "battlebondland", "battleland",
+    "bbdland", "bear", "beginnerbox", "bicycleland", "bikeland", "bondland", "booster", "boosterfun", "borderless",
+    "bounceland", "boxtopper", "brawldeck", "brawler", "bringafriend", "bundle", "buyabox", "canland", "canopyland",
+    "checkland", "chocobotrackfoil", "class", "colorshifted", "commander", "commanderparty", "commanderpromo",
+    "companion", "concept", "confettifoil", "convention", "cosmicfoil", "creatureland", "crowdland", "cycleland",
+    "datestamped", "dazzlefoil", "default", "dfc", "digital", "dossier", "double_faced", "doubleexposure",
+    "doublefaced", "doublerainbow", "draculaseries", "draftweekend", "dragonscalefoil", "dual", "duels", "embossed",
+    "etched", "event", "extended", "extendedart", "facetfoil", "fastland", "fetchland", "ffi", "ffii", "ffiii",
+    "ffiv", "ffix", "ffv", "ffvi", "ffvii", "ffviii", "ffx", "ffxi", "ffxii", "ffxiii", "ffxiv", "ffxv", "ffxvi",
+    "filterland", "firstplacefoil", "firstprint", "firstprinting", "flip", "fnm", "foil", "fracturefoil",
+    "frenchvanilla", "front_card", "full", "fullart", "funny", "future", "gainland", "galaxyfoil", "gamechanger",
+    "gameday", "giftbox", "gilded", "gleaminggold", "glossy", "godzillaseries", "halofoil", "headliner", "hires",
+    "historic", "horizonland", "host", "hybrid", "imagine", "instore", "intro", "intropack", "invisibleink",
+    "japanshowcase", "jpwalker", "judge", "judgegift", "karoo", "league", "leveler", "magnified", "manafoil",
+    "manland", "masterpiece", "mdfc", "mediainsert", "meld", "meldpart", "meldresult", "metal", "modal", "modal_dfc",
+    "modern", "moonlitland", "neonink", "new", "nonfoil", "normal", "oilslick", "old", "openhouse", "outlaw",
+    "oversized", "painland", "partner", "party", "pathway", "permanent", "phyrexian", "planar", "planeswalkerdeck",
+    "plastic", "playerrewards", "playpromo", "playtest", "portrait", "poster", "premiereshop", "prepare",
+    "prerelease", "promo", "promopack", "pwdeck", "rainbowfoil", "raisedfoil", "ravnicacity", "rebalanced",
+    "release", "reprint", "resale", "reserved", "reversible", "ripplefoil", "schinesealtart", "scroll",
+    "scryfallpreview", "scryland", "serialized", "setextension", "setpromo", "shadowland", "shockland", "showcase",
+    "silverfoil", "silverscroll", "singularityfoil", "sldbonus", "slowland", "snarl", "sourcematerial", "spell",
+    "spellbook", "split", "spotlight", "stamped", "standardshowdown", "startercollection", "starterdeck",
+    "stepandcompleat", "storageland", "storechampionship", "surgefoil", "surveilland", "tangoland", "tdfc",
+    "textless", "textured", "themepack", "thick", "token", "tombstone", "tourney", "transform", "tricycleland",
+    "trikeland", "triland", "triome", "ub", "unique", "universesbeyond", "upsidedown", "upsidedownback", "vanguard",
+    "vanilla", "vault", "wizardsplaynetwork"
+]);
+// (has: warns in the same words as is:)
+const HAS_WORDS = new Set([
+    "artist", "etched", "flavor", "flavor_name", "flavorname", "foil", "hires", "illustration", "image", "indicator",
+    "nonfoil", "promo", "reprint", "securitystamp", "stamp", "watermark"
+]);
+
+const UNDERSCORE_KEYS: Record<string, string> = { set_type: "settype", flavor_text: "flavor", oracle_tag: "oracletag", art_tag: "arttag" };
 
 // keys that say how to show the results, not which cards: not allowed in brackets
 const DISPLAY_KEYS = new Set(["unique", "order", "sort", "direction", "dir", "display", "prefer", "include"]);
@@ -339,7 +397,7 @@ const KNOWN_KEYS = new Set(["c", "color", "colors", "id", "identity", "ci", "com
 // value Scryfall doesn't know is ignored with a warning of its own, not "Invalid expression"
 function displayOption(t: Token, display: Display): Verdict {
     const v = t.value!.toLowerCase();
-    const unknown = (what: string): Verdict => ({ as: DROPPED, warning: `Unknown ${what} “${t.value}” was ignored` });
+    const unknown = (what: string): Verdict => ({ as: DROPPED, warning: `Unknown ${what} “${cut(t.value!)}” was ignored` });
     switch (t.key) {
         case "order": case "sort": if (!ORDER_VALUES.has(v)) return unknown("order choice"); display.order = v; break;
         case "unique": if (!UNIQUE_VALUES.has(v)) return unknown("unique mode"); display.unique = v; break;
