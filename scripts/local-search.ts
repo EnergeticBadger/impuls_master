@@ -1091,14 +1091,14 @@ const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched",
 // Starter Commander Decks) and some commander decks; learned from oracle_cards, so a new set may need adding
 const LOW_SETS = new Set(["anb", "blc", "drc", "fdc", "h2r", "j22", "j25", "m3c", "mb2", "onc", "plst", "punk", "scd", "tblc", "tdft", "tdrc", "tlcc", "tncc", "tscd", "ttdc", "woc", "ymid", "yotj"]);
 export function preferred(p: Printing): boolean {
-    if (KEPT_SETS.has(p.set)) return true;
-    return p.lang === "en" && !p.promo && !SPECIAL_SET_TYPES.has(p.setType) && !LOW_SETS.has(p.set)
+    return p.lang === "en" && !p.promo && (!SPECIAL_SET_TYPES.has(p.setType) || KEPT_SETS.has(p.set)) && !LOW_SETS.has(p.set)
         && ![...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) && (p.border === "black" || p.border === "white") && !p.fullArt
         && !(p.games.size === 1 && p.games.has("arena")) && !(p.stamp === "triangle" && p.reprint)
-        && !((p.frame === "1993" || p.frame === "1997") && p.released >= "2015");
+        && !((p.frame === "1993" || p.frame === "1997") && p.released >= "2015" && !KEPT_SETS.has(p.set));
 }
-// the number in a collector number: 1 for "1a", "S1" or "1★"
-const cnNumber = (p: Printing) => Number(/\d+/.exec(p.cn)?.[0] ?? 0);
+// the number in a collector number, its digits together: 1 for "1a", "S1" or "1★", 252 for The List's "MH2-52"
+// (order:set lists plst/CNS-35, AFC-50 … ISD-129, then MH2-52)
+const cnNumber = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
 // Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, and on the
 // same day the lower collector number (Secret Lair's 83, 84, 85, 86; 1638 before 1638★). Among the rest on one
 // day Scryfall's order has no rule found yet: one/310, 353, 444 come before pone/125p, but pwoe/145p before woe/350
@@ -1197,10 +1197,13 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
     for (const [c, list] of byCard) {
         if (v.unique === "prints") { entries.push(...list); continue; }
         if (v.unique === "cards") { entries.push(pick(c, list)); continue; }
-        // an art each: the printings with the same illustration, and the one of them the card would be shown with
+        // an art each: the printings with the same illustration, each shown with its first preferred printing (see
+        // preferred), not the newest: Phyrexian Metamorph's nph/42 and 2xm/341, Cogwork Assembler's aer/145,
+        // Talara's Battalion's eve/77, not their reprints. prefer: and a price order still pick their own
         const arts = new Map<string, number[]>();
         for (const p of list) { const a = data.prints[p].art || data.prints[p].id; arts.set(a, [...arts.get(a) ?? [], p]); }
-        for (const group of arts.values()) entries.push(pick(c, group));
+        const first = (group: number[]) => group.reduce((best, p) => (Number(preferred(data.prints[best])) - Number(preferred(data.prints[p])) || data.prints[p].released.localeCompare(data.prints[best].released) || order(p, best)) < 0 ? p : best);
+        for (const group of arts.values()) entries.push(v.prefer || how.price ? pick(c, group) : first(group));
     }
     return sortEntries(entries, data, how, v, order);
 }
@@ -1263,7 +1266,9 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
     const keys = new Map(entries.map((p) => [p, how.key(data.prints[p], data.cards[data.prints[p].card])]));
     const tie = (a: number, b: number) => {
         const p = data.prints[a], q = data.prints[b];
-        if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
+        // released: the same day by set code, then collector number, turned round with the dates but the set codes
+        // not (direction:desc lists tdc/309, then tdm/400, 321, 319…)
+        if (how.byDate) return p.set.localeCompare(q.set) || (cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
         return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };
