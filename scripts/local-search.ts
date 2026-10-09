@@ -834,7 +834,8 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     colorshifted: (p) => p.frameEffects.has("colorshifted"),
     // the 1993 and 1997 frames
     old: (p) => p.frame === "1993" || p.frame === "1997",
-    new: (p) => p.frame === "2015",
+    // and the newer ones: 2003, 2015 and future
+    new: (p) => p.frame === "2003" || p.frame === "2015" || p.frame === "future",
     scryfallpreview: (p) => p.scryfallPreview,
     // printings from introductory products, as Scryfall lists them (nothing in the bulk files says so; wider than the
     // intropack promo type): Duels of the Planeswalkers (dpa), the Rivals of Ixalan Quick Start decks (rqs), Assassin's
@@ -845,9 +846,18 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     default: (p) => !atypical(p),
 };
 const INTRO_FDN = new Set(["490", "493", "495", "497", "499", "500", "501", "516", "524", "525", "529", "530", "531", "564"]);
-// is:atypical: a frame treatment other than the usual one: borderless, showcase, extended art, inverted, etched,
-// full art, shattered glass (checked printing by printing on NEO and M21); is:default is every other printing
-const atypical = (p: Printing) => p.border === "borderless" || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass"].some((f) => p.frameEffects.has(f)) || p.fullArt;
+// is:atypical, a printing that isn't in the usual frame, and is:default, one that is. Found set by set against
+// Scryfall's printings (9 Oct 2026): a frame treatment (borderless, showcase, extended art, inverted, etched frame,
+// full art, shattered glass), a booster-fun variant (Dominaria Remastered's retro frames), a stamped promo
+// (prerelease, promo pack, date stamp; not Pro Tour promos), Future Sight's frame and Planar Chaos' colorshifted
+// one (on The List too), and a special foil (MH3's ripple-foil-only cards; not the Universes Beyond decks' surge
+// foils). Exact on NEO, M21, 2X2, CMM, LTC, C21, UST; over all cards 10,324 here against Scryfall's 10,553 (some
+// Commander and box printings still missed), so this is close but not exact
+const SPECIAL_FOIL = /foil$|^(textured|serialized|doublerainbow|gilded|embossed|neonink|invisibleink|oilslick)$/;
+const atypical = (p: Printing) => p.border === "borderless" || p.fullArt || p.frame === "future"
+    || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass", "colorshifted"].some((f) => p.frameEffects.has(f))
+    || ["boosterfun", "stamped", "datestamped", "promopack", "prerelease"].some((t) => p.promoTypes.has(t))
+    || [...p.promoTypes].some((t) => t !== "surgefoil" && SPECIAL_FOIL.test(t));
 
 // Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
 // are wider than the intropack and mediainsert promo types
