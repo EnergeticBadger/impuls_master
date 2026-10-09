@@ -92,9 +92,9 @@ export function autocompleteKey(asked: string, name: string): string {
 // what matching needs of a name, worked out once
 type Folded = { e: NameEntry, full: string, faces: string[], compact: string };
 
-// of names that match as well, the one Scryfall gives: a card before a token
+// of names that match as well, the one Scryfall gives: a card a search shows, then any card, then a token
 function best(hits: Folded[]): NameEntry | undefined {
-    return (hits.find((f) => f.e.card) ?? hits[0])?.e;
+    return (hits.find((f) => f.e.card && f.e.visible) ?? hits.find((f) => f.e.card) ?? hits[0])?.e;
 }
 
 const API = "https://api.scryfall.com/";
@@ -255,7 +255,9 @@ export class Lookups {
     // exact: the whole name or a face's, as fold() compares them; not art series cards
     exactName(asked: string): NameEntry | undefined {
         const q = fold(asked);
-        return best(this.folded.filter((f) => !f.e.art && (f.full === q || f.faces.includes(q))));
+        // a whole name before a face's: "Smelt" is Smelt, not Smelt // Herd // Saw
+        return best(this.folded.filter((f) => !f.e.art && f.full === q))
+            ?? best(this.folded.filter((f) => !f.e.art && f.faces.includes(q)));
     }
 
     // Fuzzy, in Scryfall's order (found by comparing 1,400 fuzzy lookups with Scryfall, 9 Oct 2026):

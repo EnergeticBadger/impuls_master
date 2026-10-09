@@ -14,7 +14,7 @@
 //
 // The catalogs come from the cards where they can (card-names, word-bank, watermarks, powers, toughnesses,
 // loyalties, artist-names); the lists Scryfall keeps by hand come from scripts/catalogs.json (npm run catalogs),
-// checked against the cards (see buildCatalogs).
+// checked against the cards: a type or keyword on a legal card that they lack is reported (see buildCatalogs).
 
 import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -142,7 +142,7 @@ function buildCatalogs(got: Collected, kept: Record<string, string[]>, warn: (li
     for (const a of kept["artist-names"]) if (!got.credited.has(a)) artists.add(a);
     out["artist-names"] = [...artists].sort(byCollation);
 
-    // the lists Scryfall keeps by hand, plus any type a card has that they don't
+    // the lists Scryfall keeps by hand, as catalogs.json has them
     for (const name of ["supertypes", "card-types", "artifact-types", "battle-types", "creature-types", "enchantment-types",
         "land-types", "planeswalker-types", "spell-types", "keyword-abilities", "keyword-actions", "ability-words", "flavor-words"]) {
         out[name] = [...kept[name]];
