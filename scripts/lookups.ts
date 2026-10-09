@@ -20,12 +20,14 @@ export const CATALOG_NAMES = [
 // one name a printing has, and what has it
 export type NameEntry = {
     name: string,
-    // the name as fuzzy matching compares it (see nameKey)
-    key: string,
     // a card with more than one face: each face's name
     faces: string[],
     // in catalog/card-names: a card, not a token or an art card
     card: boolean,
+    // only on art series cards
+    art: boolean,
+    // a search shows it without include:extras (see extraKind in scripts/local-search.ts)
+    visible: boolean,
     oracles: string[],
     // every printing with this name in default_cards
     prints: string[],
@@ -55,9 +57,20 @@ export type Answer = { status: number, body: string };
 // which cards/ file a card is in
 export const cardKey = (id: string) => id.slice(0, 3);
 
-// a name as fuzzy matching compares it
-export function nameKey(name: string) {
-    return name.toLowerCase();
+// A name as Scryfall compares names: case, accents and punctuation ignored ("Adewale, Breaker of Chains" is
+// Adéwalé, "runners bane" is Runner's Bane, "goblin" is _____ Goblin), words kept apart
+const LETTERS: Record<string, string> = { "æ": "ae", "œ": "oe", "ø": "o", "ß": "ss", "đ": "d", "ł": "l", "þ": "th", "ð": "d", "ı": "i" };
+export function fold(name: string) {
+    return name.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[æœøßđłþðı]/g, (c) => LETTERS[c])
+        .replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// what matching needs of a name, worked out once
+type Folded = { e: NameEntry, full: string, faces: string[], compact: string };
+
+// of names that match as well, the one Scryfall gives: a card before a token
+function best(hits: Folded[]): NameEntry | undefined {
+    return (hits.find((f) => f.e.card) ?? hits[0])?.e;
 }
 
 const API = "https://api.scryfall.com/";
@@ -71,17 +84,21 @@ function error(status: number, details: string, type?: string): Answer {
     return { status, body: JSON.stringify(body, null, 2) };
 }
 const NOT_FOUND = () => error(404, "The requested object or REST method was not found.");
+const NO_CARD = () => error(404, "No card found with the given ID or set code and collector number.");
 
 export class Lookups {
     private files = new Map<string, Promise<string | undefined>>();
-    private byName = new Map<string, NameEntry>();
     private store: Store;
     readonly index: Index;
+    private folded: Folded[];
 
     private constructor(store: Store, index: Index) {
         this.store = store;
         this.index = index;
-        for (const e of index.names) this.byName.set(e.name, e);
+        this.folded = index.names.map((e) => {
+            const full = fold(e.name);
+            return { e, full, faces: e.faces.map(fold), compact: full.replace(/ /g, "") };
+        });
     }
 
     static async open(store: Store): Promise<Lookups> {
@@ -164,7 +181,7 @@ export class Lookups {
         if (text) return { status: 200, body: text };
         // a card in another language isn't here without all_cards: Scryfall may know it
         if (!this.index.languages) return undefined;
-        return error(404, "No card found with the given ID");
+        return NOT_FOUND();
     }
 
     async bySetNumber(set: string, number: string, lang?: string): Promise<Answer | undefined> {
@@ -176,13 +193,15 @@ export class Lookups {
         else hit = here.find(([, l]) => l === "en") ?? here[0];
         if (!hit) {
             if (lang && !this.index.languages && lang.toLowerCase() !== "en") return undefined;
-            return error(404, "No card found with the given set code and collector number");
+            return NO_CARD();
         }
         return { status: 200, body: (await this.cardText(hit[2]))! };
     }
 
     // ---- rulings ----
     async rulingsOf(card: Answer | undefined): Promise<Answer | undefined> {
+        // an unknown card is the message a missing set and number gets, even for an id
+        if (card?.status === 404) return NO_CARD();
         if (!card || card.status !== 200) return card;
         const c = JSON.parse(card.body);
         const oracle: string | undefined = c.oracle_id ?? c.card_faces?.[0]?.oracle_id;
@@ -198,7 +217,8 @@ export class Lookups {
     // ---- names ----
     async named(params: URLSearchParams): Promise<Answer | undefined> {
         const exact = params.get("exact"), fuzzy = params.get("fuzzy"), set = params.get("set")?.toLowerCase();
-        const asked = exact ?? fuzzy;
+        // the errors quote the name as asked, without spaces around it
+        const asked = (exact ?? fuzzy)?.trim();
         if (asked == null) return undefined;
         const found = exact != null ? this.exactName(exact) : this.fuzzyName(fuzzy!);
         if (found === "ambiguous") return error(404, `Too many cards match ambiguous name “${asked}”. Add more words to refine your search.`, "ambiguous");
@@ -208,24 +228,48 @@ export class Lookups {
         return { status: 200, body: (await this.cardText(id))! };
     }
 
+    // exact: the whole name or a face's, as fold() compares them; not art series cards
     exactName(asked: string): NameEntry | undefined {
-        const key = nameKey(asked);
-        return this.index.names.find((e) => e.key === key);
+        const q = fold(asked);
+        return best(this.folded.filter((f) => !f.e.art && (f.full === q || f.faces.includes(q))));
     }
 
+    // fuzzy: an exact name first, else the one name with every word of the question in it
     fuzzyName(asked: string): NameEntry | "ambiguous" | undefined {
-        return this.exactName(asked);
+        const exact = this.exactName(asked);
+        if (exact) return exact;
+        const words = fold(asked).split(" ").filter(Boolean);
+        if (!words.length) return undefined;
+        const hits = this.folded.filter((f) => !f.e.art && words.every((w) => f.compact.includes(w)));
+        if (hits.length > 1) return "ambiguous";
+        return hits[0]?.e;
     }
 
-    // the card's printing in a set
+    // the card's printing in a set: the lowest collector number when it has several (Scheming Fence in SNC is
+    // 219, not the showcase 349)
     async printingIn(e: NameEntry, set: string): Promise<string | undefined> {
         const file = await this.read(`prints/${set}.json`);
         if (!file) return undefined;
         const ids = new Set(e.prints);
-        return (JSON.parse(file) as [string, string, string][]).find(([, , id]) => ids.has(id))?.[2];
+        const here = (JSON.parse(file) as [string, string, string][]).filter(([, , id]) => ids.has(id));
+        here.sort(([a], [b]) => (parseInt(a) || 0) - (parseInt(b) || 0) || (a < b ? -1 : a > b ? 1 : 0));
+        return here[0]?.[2];
     }
 
+    // Up to 20 card names with the question in them, spaces, punctuation, accents and case ignored ("nebe" finds
+    // Dune Beetle): cards a search shows (not tokens, art cards or playtest cards; all of those with
+    // include_extras), the names that start with it first. Under two letters, none
     async autocomplete(params: URLSearchParams): Promise<Answer | undefined> {
-        return undefined;
+        const q = fold(params.get("q") ?? "").replace(/ /g, "");
+        const extras = params.get("include_extras") === "true";
+        let data: string[] = [];
+        if (q.length >= 2) {
+            const pool = this.folded.filter((f) => (extras ? !f.e.art : f.e.card && f.e.visible) && f.compact.includes(q));
+            const byLength = (a: Folded, b: Folded) => a.compact.length - b.compact.length;
+            const starts = pool.filter((f) => f.compact.startsWith(q)).sort(byLength);
+            const rest = pool.filter((f) => !f.compact.startsWith(q)).sort(byLength);
+            data = [...starts, ...rest].slice(0, 20).map((f) => f.e.name);
+        }
+        return { status: 200, body: JSON.stringify({ object: "catalog", total_values: data.length, data }) };
     }
 }

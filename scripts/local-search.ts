@@ -120,7 +120,7 @@ const HIDDEN_FUNNY = new Set(["Gleemox", "Sticker sheet"]);
 const FUNNY_CARDS = new Set([...HIDDEN_FUNNY, "Baldur's Gate Wilderness"]);
 const EXTRA_LAYOUTS = new Set(["token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard"]);
 const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel)$/;
-function extraKind(c: any): Printing["extra"] {
+export function extraKind(c: any): Printing["extra"] {
     const games: string[] = c.games ?? [];
     const type: string = c.type_line ?? c.card_faces?.[0]?.type_line ?? "";
     const legalNowhere = !Object.values(c.legalities ?? {}).some((v) => v === "legal" || v === "restricted");

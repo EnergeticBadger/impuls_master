@@ -20,7 +20,8 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFil
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { join, resolve } from "node:path";
-import { CATALOG_NAMES, type Index, type NameEntry, cardKey, nameKey } from "./lookups.ts";
+import { CATALOG_NAMES, type Index, type NameEntry, cardKey } from "./lookups.ts";
+import { extraKind } from "./local-search.ts";
 
 // a copy of a string cut from a longer one, which would otherwise keep the longer one in memory
 const fresh = (s: string) => JSON.parse(JSON.stringify(s)) as string;
@@ -194,24 +195,36 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
     // every name a printing has, for cards/named and autocomplete
     const names = new Map<string, NameEntry>();
     const defaults = new Set<string>();
+    // each card's colors, as letters ("", "B", "GR")
+    const colors = new Map<string, string>();
     // each set's printings that aren't variations, for sets/{code}'s card_count
     const counts: Record<string, number> = {};
     let count = 0;
+    // all_cards, when it's there, gives every card object, English too: it's made a few minutes after
+    // default_cards, so it's nearer what the API says (a card's all_parts can point at a newer token)
+    const all = existsSync(join(bulk, "all_cards.jsonl.gz"));
     for await (const line of lines(join(bulk, "default_cards.jsonl.gz"))) {
         const c = JSON.parse(line);
-        keep(c.id, line);
+        if (!all) keep(c.id, line);
         defaults.add(c.id);
         addPrint(c.set, c.collector_number, c.lang, c.id);
         if (!c.variation) counts[c.set] = (counts[c.set] ?? 0) + 1;
         collect(got, c);
         let e = names.get(c.name);
-        if (!e) names.set(c.name, e = { name: c.name, key: nameKey(c.name), faces: (c.card_faces ?? []).map((f: any) => f.name), card: isCardName(c), oracles: [], prints: [] });
+        if (!e) names.set(c.name, e = { name: c.name, faces: (c.card_faces ?? []).map((f: any) => f.name), card: false, art: true, visible: false, oracles: [], prints: [] });
+        if (isCardName(c)) e.card = true;
+        if (c.layout !== "art_series") e.art = false;
+        if (extraKind(c) === "") e.visible = true;
         const oracle = c.oracle_id ?? c.card_faces?.[0]?.oracle_id;
         if (oracle && !e.oracles.includes(oracle)) e.oracles.push(oracle);
+        if (oracle && !colors.has(oracle)) colors.set(oracle, (c.colors ?? [...new Set(c.card_faces?.flatMap((f: any) => f.colors ?? []))].sort()).join(""));
         e.prints.push(c.id);
         count++;
     }
     say(`${count} printings in default_cards`);
+    // A name several cards have (tokens: "Knight", "Beast") gives the one first by its colors, as letters: the
+    // colorless Beast, the black Knight before the white ones, the blue Angel. Found by comparing with Scryfall
+    for (const e of names.values()) e.oracles.sort((a, b) => colors.get(a)! < colors.get(b)! ? -1 : colors.get(a)! > colors.get(b)! ? 1 : 0);
 
     // the printing Scryfall shows a card with: the one in oracle_cards ("the most up-to-date recognizable version")
     const shown: Record<string, string> = {};
@@ -226,17 +239,15 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
     }
 
     // other languages, when all_cards is there
-    let languages = false;
-    if (existsSync(join(bulk, "all_cards.jsonl.gz"))) {
-        languages = true;
+    if (all) {
         let other = 0;
         for await (const line of lines(join(bulk, "all_cards.jsonl.gz"))) {
             // a copy, as a piece cut from the line would keep the whole line in memory
             const id = fresh(/"id":"([^"]+)"/.exec(line)![1]);
+            keep(id, line);
             if (defaults.has(id)) continue;
             // only three fields are needed, so the line isn't parsed: 400,000 parses is most of the build's memory
             const field = (name: string) => JSON.parse(new RegExp(`"${name}":("(?:[^"\\\\]|\\\\.)*")`).exec(line)![1]);
-            keep(id, line);
             addPrint(field("set"), field("collector_number"), field("lang"), id);
             other++;
         }
@@ -264,7 +275,7 @@ export async function build(bulk: string, out: string, say: (line: string) => vo
 
     const index: Index = {
         built: new Date().toISOString(),
-        languages,
+        languages: all,
         catalogs,
         names: [...names.values()],
         shown,
