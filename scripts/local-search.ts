@@ -184,21 +184,32 @@ const TYPES = new Set<string>(JSON.parse(readFileSync(new URL("./types.json", im
 export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[], text: string[], fullPrinted: string[], fullText: string[] } {
     const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
     const fullName: string = c.name;
-    // the card's names, longest first, become ~: the whole name, each face's, and a legend's short name
-    // ("Baxter" in "Baxter, Fly in the Ointment", "Círdan" in "Círdan the Shipwright")
+    // the card's names, longest first, become ~: the whole name, each face's, and each one's short name, the part
+    // before the first ",", " of " or " the ". Every card's, not only a legend's: "Baxter" in "Baxter, Fly in the
+    // Ointment", "Staff" in "Staff of Eden, Vault's Key" (its "When Staff of Eden enters" is "When ~ of Eden
+    // enters"), "Case" in "Case of the Gorgon's Kiss" ("When this ~ enters"), "Turn" in "Turn the Tide"
     const own: string[] = [fullName, ...faces.map((f) => f.name)];
-    const legend = /legendary/i.test(c.type_line ?? faces[0]?.type_line ?? "");
-    // ("MJ" counts; a name with a dot in it doesn't: J. Jonah Jameson stays, but Nick Fury, Agent of
-    // S.H.I.E.L.D. is Nick Fury). Right for 2,087 of the 2,099 legends their text names only partly; for the
-    // rest, which Scryfall seems to pick by hand (Ryan Sinclair is "Ryan"), its own choice is in shortNames
-    const short = shortNames[fullName] ?? own.flatMap((n) => [n.split(",")[0], ...(legend ? [n.split(/ (?:the|of) /)[0]] : [])]);
-    const names = [...new Set([...own, ...short])].filter((n) => n && n.length > 1 && !n.includes(".")).sort((a, b) => b.length - a.length);
-    // as whole words, so Khaaaaaaaaaaaannn!'s name, ending in "!", stays as it is
-    const self = names.length ? new RegExp(`\\b(?:${names.map((n) => escapeRe(fold(n))).join("|")})\\b`, "g") : null;
+    // ("X" counts; a name with a dot in it doesn't: J. Jonah Jameson stays, but Nick Fury, Agent of
+    // S.H.I.E.L.D. is Nick Fury). For the few Scryfall seems to pick by hand (Ryan Sinclair is "Ryan"), its own
+    // choice is in shortNames
+    const short = shortNames[fullName] ?? own.map((n) => n.split(/,| (?:the|of) /)[0]);
+    // as whole words, so Khaaaaaaaaaaaannn!'s name, ending in "!", stays as it is. A whole name only as it's
+    // written ("has lifelink" stays on Lifelink, "lose 1 life" on Life // Death), a short name in any case
+    // ("until end of turn" is "until end of ~" on Turn the Tide)
+    const words = (list: string[], flags: string) => {
+        const kept = [...new Set(list)].filter((n) => n && !n.includes(".")).sort((a, b) => b.length - a.length);
+        return kept.length ? new RegExp(`\\b(?:${kept.map((n) => escapeRe(fold(n))).join("|")})\\b`, flags) : null;
+    };
+    const whole = words(own, "g"), part = words(short.filter((n) => !own.includes(n)), "gi");
     // a card with more than two faces has no text Scryfall searches: o: and fo: never find Who // What // When //
     // Where // Why, Smelt // Herd // Saw or There // They're // Their, whatever the words
-    const raw = faces.length > 2 ? [] : faces.map((f) => fold((f.oracle_text ?? c.oracle_text ?? "") as string));
-    const tilde = (t: string) => (self ? t.replace(self, "~") : t).replace(THIS, "~");
+    // a cleave card's text is found with its words in square brackets and without the brackets: "Destroy target
+    // [attacking] creature." by o:"[attacking]" and by o:"destroy target attacking creature" (not Elspeth's
+    // Talent's "[+1]:", which isn't cleave). So each line with brackets comes again after the text without them
+    const cleave = (t: string) => c.keywords?.includes("Cleave") && t.includes("[")
+        ? `${t}\n${t.split("\n").filter((l) => l.includes("[")).map((l) => l.replace(/[[\]]/g, "")).join("\n")}` : t;
+    const raw = faces.length > 2 ? [] : faces.map((f) => cleave(fold((f.oracle_text ?? c.oracle_text ?? "") as string)));
+    const tilde = (t: string) => [whole, part].reduce((s, re) => re ? s.replace(re, "~") : s, t).replace(THIS, "~");
     const printed = raw.map((t) => t.replace(/ ?\([^)]*\)/g, ""));
     return { printed, text: printed.map(tilde), fullPrinted: raw, fullText: raw.map(tilde) };
 }
