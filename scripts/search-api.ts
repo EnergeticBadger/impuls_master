@@ -61,6 +61,8 @@ export async function cardsSearch(data: Cards, params: SearchParams, options: Ap
     const base = options.base ?? "https://api.scryfall.com/";
     const q = (params.q ?? "").trim();
     if (!q) return badRequest(NOTHING_TO_SEARCH);
+    // format=csv answers in CSV; anything else (text, nonsense) is JSON as usual
+    if (params.format === "csv") throw new Unsupported("format=csv");
     const read = readSearch(q, data);
     if ("error" in read) return badRequest(read.error, read.warnings);
     const { warnings, display } = read;

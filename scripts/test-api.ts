@@ -9,6 +9,7 @@
 //   - response: the shape, status, paging, warnings and error text, which are search-api.ts's job
 //   - cards: which cards, printings and order, which are the engine's (local-search.ts)
 //   --out <dir>   default fuzz-results/api      --refresh   ask Scryfall again      --only <text>   cases containing it
+//   --mutations <n>   how many broken variants of the searches (default 300), --seed <n> which ones
 //   --fetch-only   only ask Scryfall (no engine), to fill the cache   --offline   only the cases already asked
 // <out>/api-summary.md lists what differs; exit code 1 if a response differs.
 
@@ -34,8 +35,49 @@ const PAGE = 175;
 
 // a case is a search on its own, or "?" and the whole query string as sent (for page, order, unique…)
 const FILES = ["syntax", "panel", "api"];
-const lines = [...new Set(FILES.flatMap((f) => readFileSync(new URL(`./${f}-cases.txt`, import.meta.url), "utf8").split("\n"))
-    .map((l) => l.replace(/\r$/, "")).filter((l) => l.trim() && !l.trimStart().startsWith("#") && l.includes(ONLY)))];
+const fileLines = FILES.flatMap((f) => readFileSync(new URL(`./${f}-cases.txt`, import.meta.url), "utf8").split("\n"))
+    .map((l) => l.replace(/\r$/, "")).filter((l) => l.trim() && !l.trimStart().startsWith("#"));
+
+// and --mutations <n> (default 300) of the working searches broken or bent at random, the same ones every run
+// (--seed): an unknown key, a typo in a value, a bracket too many, a display option, a bad regex, capitals, extra
+// spaces, a negated number, and the API's parameters, so the rules are tried together and not one at a time
+const MUTATIONS = Number(option("mutations", "300"));
+function mutations(n: number, seed: number): string[] {
+    let x = seed >>> 0;
+    const rand = () => { x = (Math.imul(x ^ (x >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0; return x / 2 ** 32; };
+    const pick = <T>(list: readonly T[]) => list[Math.floor(rand() * list.length)];
+    const searches = fileLines.filter((l) => !l.startsWith("?") && l.length < 80);
+    const bends: ((q: string) => string)[] = [
+        (q) => `${q} ${pick(["foo:bar", "zz:1", "cmd:x", "text:draw", "-foo:bar", "foo-bar:baz", "Types:elf"])}`,
+        (q) => `${pick(["is:comander", "is:fetch", "has:pt", "not:foo", "r:mythics", "f:edhh", "st:expansions", "game:mtga", "frame:2020", "stamp:star", "cheapest:gbp", "new:name", "lang:xx", "kw:fly"])} ${q}`,
+        (q) => `${q} ${pick(["c:q", "c:wm", "id:wbc", "c:purple", "m:{q}", "m:2k", "devotion:{x}{z}", "produces:q"])}`,
+        (q) => `${q} ${pick(["o:/(/", "o:/[a/", "o:/*draw/", "t:/(?=x/", "o://", "kw:/fly/", "a:/x/"])}`,
+        (q) => `${q} ${pick(["-mv>=3", "-pow=2", "-mv=1", "-usd<1", "-cn=1", "-year:2000", "-edhrec>100", "mv>abc", "pow:x", "-mv:even"])}`,
+        (q) => `${q} ${pick(["order:cmc", "order:zz", "unique:prints", "unique:arts", "dir:desc", "direction:up", "include:extras", "include:all", "display:text", "sort:rarity"])}`,
+        (q) => pick([`(${q}`, `${q})`, `(${q}))`, `(${q}) ()`, `${q} (order:cmc)`]),
+        (q) => q.replace(/:/, pick([">", "<", "!=", ">="])),
+        (q) => pick([q.toUpperCase(), `  ${q.replace(/ /g, "   ")}  `, `${q} or`, `or ${q}`, `${q} and`, `${q} -`, `${q} !`, `${q} "`]),
+        (q) => q.replace(/([a-z]+):([^\s()"]+)/, (_, k, v) => `${k}:${pick(["", "\"\"", `"${v}`, `/${v}`])}`),
+    ];
+    const params = () => {
+        const p: Record<string, string> = {};
+        if (rand() < 0.4) p.page = pick(["0", "2", "3", "-1", "abc", "2.5", "50"]);
+        if (rand() < 0.3) p.order = pick(["cmc", "usd", "released", "CMC", "zz", "power", "rarity"]);
+        if (rand() < 0.2) p.dir = pick(["asc", "desc", "auto", "up"]);
+        if (rand() < 0.2) p.unique = pick(["prints", "art", "cards", "zz"]);
+        if (rand() < 0.15) p.include_extras = pick(["true", "1", "false", "yes"]);
+        return p;
+    };
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+        let q = pick(searches);
+        const times = 1 + Math.floor(rand() * 2);
+        for (let k = 0; k < times; k++) q = pick(bends)(q);
+        out.push(`?${new URLSearchParams({ q, ...params() })}`);
+    }
+    return out;
+}
+const lines = [...new Set([...fileLines, ...mutations(MUTATIONS, Number(option("seed", "1")))])].filter((l) => l.includes(ONLY));
 // a line from api-cases.txt is kept as written (spaces matter there), the others trimmed
 const caseQuery = (line: string) => line.startsWith("?") ? line.slice(1) : new URLSearchParams({ q: line.trim() }).toString();
 
