@@ -1198,12 +1198,17 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
     }
     // sorted by a price, a card is shown with its cheapest printing that has one, whatever the direction: Eater of
     // the Dead with its mb2 printing (1.31 euros, not drk's 5.15 or me1's none), Wall of Roots by tix with its 2013
-    // promo (3.80, the least of five). Otherwise see pickPrinting
+    // promo (3.80, the least of five). Between printings as cheap, and when none has a price, the one that comes
+    // last in Scryfall's order (see byPreference): Mordor Trebuchet's ltr/548 rather than ltr/97 at 0.03 tix, Whip
+    // Vine's all/103b rather than 103a. Otherwise see pickPrinting
     const pick = (c: number, list: number[]) => {
         const key = how.price;
-        const priced = key && !v.prefer ? list.filter((p) => data.prints[p][key] !== undefined) : [];
-        if (!key || !priced.length) return pickPrinting(data.cards[c], list, data, v.prefer, order);
-        return priced.reduce((best, p) => (data.prints[p][key]! - data.prints[best][key]! || order(p, best)) < 0 ? p : best);
+        if (!key || v.prefer) return pickPrinting(data.cards[c], list, data, v.prefer, order);
+        const price = (p: number) => data.prints[p][key] ?? Infinity;
+        // as cheap: the ones that aren't preferred first, newest first, the higher number first
+        const last = (a: number, b: number) => Number(preferred(data.prints[a])) - Number(preferred(data.prints[b]))
+            || data.prints[b].released.localeCompare(data.prints[a].released) || cnNumber(data.prints[b]) - cnNumber(data.prints[a]);
+        return list.reduce((best, p) => (price(p) - price(best) || last(p, best)) < 0 ? p : best);
     };
     const entries: number[] = [];
     for (const [c, list] of byCard) {
@@ -1279,9 +1284,9 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
     const tie = (a: number, b: number) => {
         const p = data.prints[a], q = data.prints[b];
         // released: on the same day a set comes before its parent set, whichever the direction (tdc/309 before
-        // tdm/400 descending, tsb/8 before tsp/37 ascending, hoc before hob), otherwise by set code; then by
-        // collector number, turned round with the dates (direction:desc lists tdm/400, 321, 319…)
-        if (how.byDate) return Number(data.parents.get(q.set) === p.set) - Number(data.parents.get(p.set) === q.set) || p.set.localeCompare(q.set) || (cnNumber(p) - cnNumber(q)) * flip;
+        // tdm/400 descending, tsb/8 before tsp/37 ascending, hoc before hob); otherwise by set code and collector
+        // number, turned round with the dates (direction:desc lists spg before ecc, tdm/400, 321, 319…)
+        if (how.byDate) return Number(data.parents.get(q.set) === p.set) - Number(data.parents.get(p.set) === q.set) || (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
         return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };
