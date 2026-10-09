@@ -1146,14 +1146,20 @@ function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string
     }
     const group = PREFER_GROUPS[prefer];
     if (group) return first((a, b) => Number(group(data.prints[b])) - Number(group(data.prints[a])) || order(a, b));
-    if (prefer && prefer !== "default") throw new Unsupported(`prefer:${prefer}`);
+    if (prefer) throw new Unsupported(`prefer:${prefer}`);
     if (c.shown !== undefined && among.includes(c.shown)) return c.shown;
     return first(order);
 }
 // prefer: kinds of printing put first
 const ub = (p: Printing) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond");
+// an atypical frame treatment, as prefer:atypical and prefer:default read it: borderless, full art, textless,
+// showcase, extended art and the like, a booster-fun printing, the Future Sight frame (Bonded Fetch's fut/50, not
+// its tsr/54) or a date stamp (Jan Jansen's prerelease pclb/277s before its showcase clb/424)
+const atypical = (p: Printing) => (p.border !== "black" && p.border !== "white") || p.fullArt || p.textless || p.frame === "future"
+    || [...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) || ["boosterfun", "datestamped", "stamped"].some((t) => p.promoTypes.has(t));
 const PREFER_GROUPS: Record<string, (p: Printing) => boolean> = {
     promo: (p) => p.promo,
+    atypical, default: (p) => !atypical(p),
     ub, universesbeyond: ub,
     notub: (p) => !ub(p), notuniversesbeyond: (p) => !ub(p),
 };
