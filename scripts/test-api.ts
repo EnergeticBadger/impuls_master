@@ -52,17 +52,18 @@ const say = (line: string) => live ? process.stdout.write(`\r\x1b[2K${line}`) : 
 const raw = new RawAnswers(join(OUT, "raw"), say);
 
 // the requests for a case: page 1 (or the page it asks for), and for a longer answer a page at random and, for one
-// in three, the last one
+// in five, the last one
 async function requests(line: string, ask: (query: string) => Promise<Raw>): Promise<string[]> {
     const first = caseQuery(line);
     const out = [first];
     if (new URLSearchParams(first).has("page")) return out;
     const r = await ask(first);
     if (r.status !== 200 || !r.body?.has_more) return out;
+    // (for half the longer answers, to go easy on Scryfall)
     const last = Math.ceil(r.body.total_cards / PAGE);
     const h = hash(line);
-    out.push(withPage(first, 2 + (h % (last - 1))));
-    if (h % 3 === 0 && last > 2) out.push(withPage(first, last));
+    if (h % 2 === 0 || line.startsWith("?")) out.push(withPage(first, 2 + (h % (last - 1))));
+    if (h % 5 === 0 && last > 2) out.push(withPage(first, last));
     return [...new Set(out)];
 }
 
@@ -153,7 +154,10 @@ console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.t
 // a difference is the response's (search-api.ts) or the cards' (the engine: which cards, printings, order)
 type Diff = { query: string, pile: "response" | "cards", what: string };
 const diffs: Diff[] = [];
-let compared = 0, unsupported = 0, sameCards = 0, pagesWithData = 0, objectsChecked = 0;
+let compared = 0, unsupported = 0, pagesWithData = 0, objectsChecked = 0;
+// each page of cards: the same printings, the same cards on other printings, the same cards in another order, or
+// other cards
+const pageKinds = { same: 0, printing: 0, order: 0, cards: 0 };
 const unsupportedList: string[] = [];
 const objectDiffs = new Map<string, number>();
 const show = (v: unknown) => JSON.stringify(v);
@@ -193,14 +197,16 @@ for (const { queries } of all) {
         if (Array.isArray(theirs.data) && Array.isArray(o.data)) {
             pagesWithData++;
             const ids = (list: any[]) => list.map((c) => c.id).join();
-            if (ids(theirs.data) === ids(o.data)) sameCards++;
+            if (ids(theirs.data) === ids(o.data)) pageKinds.same++;
             else {
-                // by card: the same cards in another order, or with other printings, or other cards
                 const oracle = (c: any) => c.oracle_id ?? c.card_faces?.[0]?.oracle_id;
                 const name = (list: any[], i: number) => list[i] ? `${list[i].name} (${list[i].set} ${list[i].collector_number})` : "nothing";
                 const at = theirs.data.findIndex((c: any, i: number) => c.id !== o.data[i]?.id);
-                const sameOracle = theirs.data.map(oracle).join() === o.data.map(oracle).join();
-                d("cards", `data${sameOracle ? " (same cards, another printing)" : ""}: from #${at + 1}, Scryfall ${name(theirs.data, at)}, here ${name(o.data, at)}`);
+                const kind = theirs.data.map(oracle).join() === o.data.map(oracle).join() ? "printing"
+                    : theirs.data.map(oracle).sort().join() === o.data.map(oracle).sort().join() ? "order" : "cards";
+                pageKinds[kind]++;
+                const what = { printing: "the same cards, another printing", order: "the same cards, another order", cards: "other cards" }[kind];
+                d("cards", `data, ${what}: from #${at + 1}, Scryfall ${name(theirs.data, at)}, here ${name(o.data, at)}`);
             }
             // the card objects themselves, where the printing's the same: the bulk file's are the API's, but for
             // what changes daily (prices) and what the bulk file's day missed
@@ -231,7 +237,7 @@ const summary = [
     `# cards/search: search-api.ts against Scryfall`, ``,
     `${new Date().toISOString()} · ${all.length} cases, ${responses} responses: ${compared} compared, ${unsupported} not supported here`, ``,
     `- **Response** (status, fields, totals, paging, warnings, error text): ${compared - badResponse.size} of ${compared} match (${pct(compared - badResponse.size, compared)})`,
-    `- **Cards** (which cards, printings, order; the engine's): ${compared - badCards.size} of ${compared} match; ${sameCards} of ${pagesWithData} pages of cards the same, card for card`,
+    `- **Cards** (which cards, printings, order; the engine's): ${compared - badCards.size} of ${compared} match; of ${pagesWithData} pages of cards, ${pageKinds.same} are the same printings, ${pageKinds.printing} the same cards on other printings, ${pageKinds.order} the same cards in another order, ${pageKinds.cards} other cards`,
     `- **Card objects**: ${objectsChecked} cards on the same printing compared field by field; fields that differed: ${[...objectDiffs].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ") || "none"}`, ``,
     `## Response differs`, ``, ...(responseDiffs.length ? list(responseDiffs) : ["None."]), ``,
     `## Cards differ (the engine's)`, ``, ...(cardDiffs.length ? list(cardDiffs) : ["None."]), ``,
