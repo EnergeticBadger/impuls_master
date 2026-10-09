@@ -311,14 +311,20 @@ export function blockToken(b: RuleBlock): string {
         if (!target) return /[\s()]/.test(words) ? `o:"${words.replace(/"/g, '')}"` : `o:${words.replace(/"/g, '')}`
         return `o:/${what}/`
     }
+    // a list longer than `wide` is halved too, and the halves aren't packed back together (see MAX_OPTIONS)
+    const regexes = (wide: number, ...pieces: (string | undefined)[]) => {
+        const split = fit(pieces.filter((p): p is string => !!p), wide)
+        return wide === Infinity ? pack(split) : split
+    }
+    const any = (list: string[]) => list.length > 1 ? `(${list.map((r) => `o:/${r}/`).join(' or ')})` : `o:/${list[0]}/`
     // the lookahead is a group of its own, so a target may only be one group deep: Scryfall rejects or
     // misreads groups nested three deep
-    const regexes = (...pieces: (string | undefined)[]) => pack(fit(pieces.filter((p): p is string => !!p)))
-    const any = (list: string[]) => list.length > 1 ? `(${list.map((r) => `o:/${r}/`).join(' or ')})` : `o:/${list[0]}/`
-    const whole = regexes(trigger?.re, effect && what ? `(?=[^.]*${what})` : '', effect?.re ?? what)
+    const look = effect && what ? `(?=[^.]*${what})` : ''
+    const wide = !look ? Infinity : groups(what) > 1 ? MAX_OPTIONS - 2 : MAX_OPTIONS
+    const whole = regexes(wide, trigger?.re, look, effect?.re ?? what)
     if (whole.length <= MAX_BLOCK_REGEXES || !effect || !what) return any(whole)
     // too long to keep who/what in the same sentence without running out of regexes: it only has to be on the card
-    return `(${any(regexes(trigger?.re, effect.re))} o:/${what}/)`
+    return `(${any(regexes(Infinity, trigger?.re, effect.re))} o:/${what}/)`
 }
 
 // a whole Scryfall query may only hold a few regexes, so one block keeps to half and leaves room for the others
@@ -327,16 +333,31 @@ const MAX_BLOCK_REGEXES = MAX_REGEXES / 2
 // a long block is split into several regexes joined with `or`, each kept a little under Scryfall's limit
 const MAX_REGEX = MAX_REGEX_CHARS - 10
 
+// Scryfall refuses some regexes well under the length limit as "too complex": a lookahead, then a list of 14
+// or 15 options ("gives flying, first strike… or protection", "untap target, up to, each…"), mostly after a
+// trigger. fuzz-rules saw 346 searches refused, as short as 171 characters, while lists of 9 (any-copy) ran
+// every time and lists halved to 8 or fewer always ran. Next to a lookahead a list is kept to this many
+// options, two fewer when the lookahead has groups of its own ("(each|all) (other )?creatures?" refused 3
+// lists of 8)
+const MAX_OPTIONS = 9
+
+// how many groups a regex has, escaped brackets aside
+const groups = (re: string) => re.match(/(?<!\\)\(/g)?.length ?? 0
+
 // one sentence's pieces as regexes short enough for Scryfall: if they're too long together, the longest
-// piece's biggest alternation is halved and each half tried on its own. X(a|b)Y finds the same cards as X(a)Y or X(b)Y
-function fit(pieces: string[]): string[] {
+// piece's biggest alternation is halved and each half tried on its own. X(a|b)Y finds the same cards as X(a)Y or X(b)Y.
+// A list wider than `wide` is halved the same way, however short the regex
+function fit(pieces: string[], wide: number): string[] {
     const re = pieces.join('[^.]*')
-    if (re.length <= MAX_REGEX) return [re]
-    const i = pieces.reduce((longest, p, n) => p.length > pieces[longest].length ? n : longest, 0)
+    const widest = pieces.reduce((most, p, n) => optionCount(p) > optionCount(pieces[most]) ? n : most, 0)
+    const i = re.length > MAX_REGEX
+        ? pieces.reduce((longest, p, n) => p.length > pieces[longest].length ? n : longest, 0)
+        : optionCount(pieces[widest]) > wide ? widest : -1
+    if (i < 0) return [re]
     const halves = halve(pieces[i])
     // nothing left to split: send it anyway and let Scryfall say so
     if (!halves) return [re]
-    return halves.flatMap((h) => fit(pieces.map((p, n) => n === i ? h : p)))
+    return halves.flatMap((h) => fit(pieces.map((p, n) => n === i ? h : p), wide))
 }
 
 // regexes that fit together go back into one, so the query stays as short as it can
@@ -353,6 +374,21 @@ function pack(regexes: string[]): string[] {
 // the regex's biggest alternation cut in two: a(b|c|d) → a(b|c) and a(d); null when it has none.
 // A lookahead (?=b|c) splits the same way; a negative one wouldn't, so pieces don't use them
 function halve(re: string): [string, string] | null {
+    const best = widestGroup(re)
+    if (!best) return null
+    const cuts = [best.start, ...best.bars, best.end]
+    const options = cuts.slice(1).map((cut, n) => re.slice(cuts[n] + 1, cut))
+    const half = Math.ceil(options.length / 2)
+    const { start, end } = best
+    const keep = (list: string[]) => `${re.slice(0, start + 1)}${list.join('|')}${re.slice(end)}`
+    return [keep(options.slice(0, half)), keep(options.slice(half))]
+}
+
+// how many options the regex's biggest alternation has: 3 for a(b|c|d), 1 for none
+const optionCount = (re: string) => (widestGroup(re)?.bars.length ?? 0) + 1
+
+// the group with the most options, where it starts and ends and where its | are
+function widestGroup(re: string) {
     const open: { start: number, bars: number[] }[] = []
     let best: { start: number, bars: number[], end: number } | undefined
     let inClass = false
@@ -369,13 +405,7 @@ function halve(re: string): [string, string] | null {
             if (group?.bars.length && group.bars.length > (best?.bars.length ?? 0)) best = { ...group, end: i }
         }
     }
-    if (!best) return null
-    const cuts = [best.start, ...best.bars, best.end]
-    const options = cuts.slice(1).map((cut, n) => re.slice(cuts[n] + 1, cut))
-    const half = Math.ceil(options.length / 2)
-    const { start, end } = best
-    const keep = (list: string[]) => `${re.slice(0, start + 1)}${list.join('|')}${re.slice(end)}`
-    return [keep(options.slice(0, half)), keep(options.slice(half))]
+    return best
 }
 
 // a piece's regex and every half fit() could have cut it into
