@@ -11,8 +11,9 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
+import { politeFetch } from "./scryfall-answers.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -59,10 +60,14 @@ export type LocalCard = {
     // is:funny: see FUNNY_CARDS
     funny: boolean,
     printings: number[],
+    // the printing Scryfall shows the card with when the search doesn't say otherwise (see byPreference)
+    shown?: number,
 };
 
 // one printing: what's particular to it
 export type Printing = {
+    // Scryfall's id for it
+    id: string,
     card: number,
     // a reversible printing has its own name ("Birds of Paradise // Birds of Paradise") and layout
     name: string,
@@ -253,6 +258,7 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
 
 function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
+        id: c.id,
         card,
         name: c.name,
         flavorName: c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // "),
@@ -307,7 +313,7 @@ async function* jsonLines(path: string) {
     for await (const line of lines) if (line.trim()) yield JSON.parse(line);
 }
 
-export type BulkType = "default_cards" | "oracle_tags";
+export type BulkType = "default_cards" | "oracle_tags" | "oracle_cards";
 
 // the bulk file of this type: from SCRYFALL_BULK_DIR (as <type>.jsonl.gz, like scripts/card-data.ts), or
 // downloaded into `cache` and kept a day, since Scryfall rebuilds them daily
@@ -317,7 +323,8 @@ export async function bulkFile(type: BulkType, cache: string): Promise<string> {
     const path = join(cache, `${type}.jsonl.gz`);
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const list = await (await fetch("https://api.scryfall.com/bulk-data", { headers: HEADERS })).json() as { data: { type: string, jsonl_download_uri?: string }[] };
+    // through the shared queue for Scryfall's API (see scripts/scryfall-answers.ts); the file itself isn't on the API
+    const list = await (await politeFetch("https://api.scryfall.com/bulk-data")).json() as { data: { type: string, jsonl_download_uri?: string }[] };
     const url = list.data.find((f) => f.type === type)?.jsonl_download_uri;
     if (!url) throw new Error(`Scryfall has no ${type} bulk file`);
     const res = await fetch(url, { headers: HEADERS });
@@ -346,7 +353,7 @@ export async function setsFile(cache: string): Promise<string> {
     const path = join(cache, "sets.json");
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const res = await fetch("https://api.scryfall.com/sets", { headers: HEADERS });
+    const res = await politeFetch("https://api.scryfall.com/sets");
     if (!res.ok) throw new Error(`sets: ${res.status}`);
     writeFileSync(path, await res.text());
     return path;
@@ -364,8 +371,9 @@ const TAG_LAG = {
 };
 
 // every card and printing (default_cards), each Tagger tag's cards (a tag's cards include its child tags', as
-// on Scryfall), and the sets' blocks
-export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string): Promise<Cards> {
+// on Scryfall), the sets' blocks, and the printing Scryfall shows each card with (oracle_cards, by default the one
+// next to default_cards; see byPreference)
+export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string, shownPath = join(dirname(printsPath), "oracle_cards.jsonl.gz")): Promise<Cards> {
     const cards: LocalCard[] = [], prints: Printing[] = [];
     const byOracle = new Map<string, number>();
     const funnyPrinting = new Set<number>();
@@ -425,6 +433,17 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
     const blocks = new Map<string, string>();
     if (setsPath && existsSync(setsPath)) {
         for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
+    }
+    // Scryfall's oracle_cards file holds a printing for each card, "the most up-to-date recognizable version": the
+    // one its search shows, every card of 1,925 checked against a search for every card (mv>=0, 9 Oct 2026)
+    if (shownPath && existsSync(shownPath)) {
+        const byId = new Map(prints.map((p, i) => [p.id, i]));
+        const lines = createInterface({ input: createReadStream(shownPath).pipe(createGunzip()), crlfDelay: Infinity });
+        // a card's own id is the first in its line; parsing each whole would take seconds
+        for await (const line of lines) {
+            const p = byId.get(/"id":"([^"]+)"/.exec(line)?.[1] ?? "");
+            if (p !== undefined) cards[prints[p].card].shown = p;
+        }
     }
     const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
     return { cards, prints, tags, setDates, blocks, promoTypes };
@@ -1048,108 +1067,190 @@ export function searchPrintings(node: Node, data: Cards, among?: number[]): numb
     return evaluate(node, data, prints, revealed(node));
 }
 
-// what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each
-// card's art once for unique:art. Returns the oracle id of each entry, in no particular order
-export function listed(node: Node, data: Cards): string[] {
-    const unique = findTerm(node, "unique")?.toLowerCase() ?? "cards";
-    if (unique === "cards") return search(node, data).map((c) => data.cards[c].oracleId);
-    const prints = searchPrintings(node, data);
-    if (unique === "prints") return prints.map((p) => data.cards[data.prints[p].card].oracleId);
-    if (unique !== "art") throw new Unsupported(`unique:${unique}`);
-    const arts = new Map<string, string>();
-    for (const p of prints) { const q = data.prints[p]; arts.set(`${q.card}|${q.art || p}`, data.cards[q.card].oracleId); }
-    return [...arts.values()];
+// ---- which printing each card is shown with ----
+
+// Scryfall goes through a card's printings in one order to pick the one it shows: its "preferred" printings
+// newest first, then the rest newest first. That order is plain in a unique:prints search (by name, each card's
+// printings come in it: Lightning Bolt's msc, clu, 2x2, clb, jmp … lea, then plst, fdc, slz, sld …), and the
+// first is the printing the card is shown with: oracle_cards' printing (see loadCards), where it has one.
+// What isn't preferred, found by comparing with oracle_cards' 21,434 cards with more than one printing and with
+// unique:prints searches: other languages; promos, The List, and these kinds of set
+const SPECIAL_SET_TYPES = new Set(["box", "masterpiece", "memorabilia", "treasure_chest", "from_the_vault", "premium_deck", "spellbook", "promo", "token", "minigame"]);
+// a printing without a non-foil finish, special frames, borderless or full art, and Arena-only printings
+const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched", "fullart", "textless", "shatteredglass", "colorshifted"]);
+// and these sets, though nothing in the bulk files tells their printings from others': Cemetery Reaper's mic,
+// scd, drc and fdc printings differ in nothing but the set, yet mic's is shown and the other three come after
+// every older printing. Mostly reprint products (Jumpstart 2022 and Foundations Jumpstart, Mystery Booster 2,
+// Starter Commander Decks) and some commander decks; learned from oracle_cards, so a new set may need adding
+const LOW_SETS = new Set(["anb", "blc", "drc", "fdc", "fem", "h2r", "j22", "j25", "m3c", "mb2", "plst", "punk", "scd", "tblc", "tdft", "tdrc", "tlcc", "tncc", "tscd", "ttdc", "woc", "ymid", "yotj"]);
+export function preferred(p: Printing): boolean {
+    return p.lang === "en" && !p.promo && !SPECIAL_SET_TYPES.has(p.setType) && !LOW_SETS.has(p.set) && p.finishes.has("nonfoil")
+        && ![...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) && (p.border === "black" || p.border === "white") && !p.fullArt
+        && !(p.games.size === 1 && p.games.has("arena"));
 }
+// the number in a collector number: 1 for "1a", "S1" or "1★"
+const cnNumber = (p: Printing) => Number(/\d+/.exec(p.cn)?.[0] ?? 0);
+// Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, and on the
+// same day the lower collector number (Secret Lair's 83, 84, 85, 86; 1638 before 1638★)
+function byPreference(data: Cards) {
+    const good = new Map<number, boolean>();
+    const isGood = (i: number) => { let g = good.get(i); if (g === undefined) good.set(i, g = preferred(data.prints[i])); return g; };
+    return (a: number, b: number) => {
+        const p = data.prints[a], q = data.prints[b];
+        return Number(isGood(b)) - Number(isGood(a)) || q.released.localeCompare(p.released) || cnNumber(p) - cnNumber(q) || p.cn.localeCompare(q.cn);
+    };
+}
+
+// the printing (of `among`, a card's printings that match) Scryfall shows a card with: the one it always shows,
+// when it matches, otherwise the first that matches in its order (see byPreference); `prefer:` changes this
+function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string, order: (a: number, b: number) => number): number {
+    if (among.length === 1) return among[0];
+    const first = (cmp: (a: number, b: number) => number) => among.reduce((best, i) => cmp(i, best) < 0 ? i : best);
+    const date = (i: number) => data.prints[i].released;
+    switch (prefer) {
+        case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || order(a, b));
+        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || order(a, b));
+    }
+    const price = /^(usd|eur|tix)-(low|high)$/.exec(prefer);
+    if (price) {
+        const key = price[1] as "usd" | "eur" | "tix", sign = price[2] === "low" ? 1 : -1;
+        return first((a, b) => {
+            const x = data.prints[a][key], y = data.prints[b][key];
+            if (x === y) return order(a, b);
+            if (x === undefined) return 1;
+            if (y === undefined) return -1;
+            return (x - y) * sign;
+        });
+    }
+    const group = PREFER_GROUPS[prefer];
+    if (group) return first((a, b) => Number(group(data.prints[b])) - Number(group(data.prints[a])) || order(a, b));
+    if (prefer && prefer !== "default") throw new Unsupported(`prefer:${prefer}`);
+    if (c.shown !== undefined && among.includes(c.shown)) return c.shown;
+    return first(order);
+}
+// prefer: kinds of printing put first
+const ub = (p: Printing) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond");
+const PREFER_GROUPS: Record<string, (p: Printing) => boolean> = {
+    promo: (p) => p.promo,
+    ub, universesbeyond: ub,
+    notub: (p) => !ub(p), notuniversesbeyond: (p) => !ub(p),
+};
+
+// ---- what's listed, and in what order ----
+
+// how a search's results are shown: the API's own parameters (the app sends order, dir and unique), or the same
+// as keys in the search (order:, direction:, unique:, prefer:), which win
+export type View = { order?: string, dir?: string, unique?: string, prefer?: string };
 
 // the value of a key anywhere in the search (order:, unique:…)
-function findTerm(node: Node, key: string): string | undefined {
-    if ("term" in node) return node.term.key === key ? node.term.value : undefined;
-    if ("not" in node) return findTerm(node.not, key);
-    for (const part of "and" in node ? node.and : node.or) { const v = findTerm(part, key); if (v !== undefined) return v; }
-    return undefined;
+function findTerm(node: Node, keys: string[]): string | undefined {
+    if ("term" in node) return keys.includes(node.term.key) ? node.term.value.toLowerCase() : undefined;
+    if ("not" in node) return findTerm(node.not, keys);
+    let found: string | undefined;
+    for (const part of "and" in node ? node.and : node.or) found = findTerm(part, keys) ?? found;
+    return found;
 }
 
-// ---- order ----
+function viewOf(node: Node, view: View): Required<View> {
+    return {
+        order: findTerm(node, ["order", "sort"]) ?? view.order?.toLowerCase() ?? "name",
+        dir: findTerm(node, ["direction", "dir"]) ?? view.dir?.toLowerCase() ?? "auto",
+        unique: findTerm(node, ["unique"]) ?? view.unique?.toLowerCase() ?? "cards",
+        prefer: findTerm(node, ["prefer"]) ?? view.prefer?.toLowerCase() ?? "",
+    };
+}
+
+// what Scryfall lists for a search, in its order: a printing each (as indexes into `prints`), one a card (the
+// default), every printing for unique:prints, or each card's art once for unique:art
+export function results(node: Node, data: Cards, view: View = {}): number[] {
+    const v = viewOf(node, view);
+    const how = ORDERS[v.order];
+    if (!how) throw new Unsupported(`order:${v.order}`);
+    if (!["cards", "prints", "art"].includes(v.unique)) throw new Unsupported(`unique:${v.unique}`);
+    const order = byPreference(data);
+    const byCard = new Map<number, number[]>();
+    for (const p of searchPrintings(node, data)) {
+        const c = data.prints[p].card;
+        const list = byCard.get(c);
+        if (list) list.push(p); else byCard.set(c, [p]);
+    }
+    const entries: number[] = [];
+    for (const [c, list] of byCard) {
+        if (v.unique === "prints") { entries.push(...list); continue; }
+        if (v.unique === "cards") { entries.push(pickPrinting(data.cards[c], list, data, v.prefer, order)); continue; }
+        // an art each: the printings with the same illustration, and the one of them the card would be shown with
+        const arts = new Map<string, number[]>();
+        for (const p of list) { const a = data.prints[p].art || data.prints[p].id; arts.set(a, [...arts.get(a) ?? [], p]); }
+        for (const group of arts.values()) entries.push(pickPrinting(data.cards[c], group, data, v.prefer, order));
+    }
+    return sortEntries(entries, data, how, v, order);
+}
+
+// a card each (the default), or a printing or art each: their cards' oracle ids, for comparing what was found
+export function listed(node: Node, data: Cards, view: View = {}): string[] {
+    return results(node, data, view).map((p) => data.cards[data.prints[p].card].oracleId);
+}
 
 // a card's name as Scryfall sorts it: letters only, accents and case aside
 const byName = new Intl.Collator("en", { sensitivity: "base", ignorePunctuation: true }).compare;
 const WUBRG = ["w", "u", "b", "r", "g"];
-// the printings of a card the search shows
-const shownPrints = (c: LocalCard, data: Cards) => c.printings.map((p) => data.prints[p]).filter((p) => !p.extra);
-const lowest = (list: (number | undefined)[]) => {
-    const known = list.filter((v): v is number => v !== undefined);
-    return known.length ? Math.min(...known) : undefined;
-};
+// rarities as order:rarity ranks them: special between rare and mythic (Essence Sliver's tsb printing comes
+// after the mythics and before the rares)
+const RARITY_RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, special: 3, mythic: 4, bonus: 5 };
 
-// each order: what a card sorts by, ascending as Scryfall's table puts it (released is newest first). Cards
-// without one (no price, no power) go last, or first for power and toughness, whichever the direction
-// `high` when direction:auto (the default) lists the highest first: the dearest, mythic first
-type Order = { key: (c: LocalCard, data: Cards) => number | string | undefined, missingFirst?: boolean, high?: boolean };
+// each order: what an entry sorts by (its card's or its printing's), ascending as Scryfall's table puts it.
+// `high`: direction:auto lists the highest first. `missingFirst`: what has no value goes first (power), else last
+// `byDate`: ties go by set and collector number, turned round with the rest (order:released); else by name
+type Order = { key: (p: Printing, c: LocalCard) => number | string | undefined, missingFirst?: boolean, high?: boolean, byDate?: boolean };
 const ORDERS: Record<string, Order> = {
     name: { key: () => 0 },
-    cmc: { key: (c) => c.mv },
-    power: { key: (c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
-    toughness: { key: (c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
+    cmc: { key: (_, c) => c.mv },
+    power: { key: (_, c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
+    toughness: { key: (_, c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
     // WUBRG one color at a time, then multicolor (white-blue before black-red), then colorless
-    color: { key: (c) => {
+    color: { key: (_, c) => {
         const colors = WUBRG.map((l, i) => c.faceColors.some((f) => f.has(l)) ? String(i) : "").join("");
         return colors.length === 0 ? "9" : colors.length > 1 ? `5${colors}` : colors;
     } },
-    edhrec: { key: (c) => c.edhrec },
-    penny: { key: (c) => c.penny },
-    // its lowest known price, dearest first
-    usd: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.usd)), high: true },
-    eur: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.eur)), high: true },
-    tix: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.tix)), high: true },
-    // the rest by the printing a card is shown with (see shownPrinting)
-    // newest first: its date as a number that grows older
-    released: { key: (c, data) => -(Date.parse(shownPrinting(c, data)?.released ?? "") || 0) },
-    rarity: { key: (c, data) => rarityOf(shownPrinting(c, data)?.rarity ?? ""), high: true },
-    set: { key: (c, data) => { const p = shownPrinting(c, data); return p && `${p.set}/${p.cn.padStart(6, "0")}`; } },
-    artist: { key: (c, data) => shownPrinting(c, data)?.artist.toLowerCase() },
+    edhrec: { key: (_, c) => c.edhrec },
+    penny: { key: (_, c) => c.penny },
+    // the printing's price, dearest first
+    usd: { key: (p) => p.usd, high: true },
+    eur: { key: (p) => p.eur, high: true },
+    tix: { key: (p) => p.tix, high: true },
+    // newest first
+    released: { key: (p) => p.released, high: true, byDate: true },
+    rarity: { key: (p) => RARITY_RANK[p.rarity] ?? -1, high: true },
+    // by set code, then collector number
+    set: { key: (p) => `${p.set}/${String(cnNumber(p)).padStart(6, "0")}/${p.cn}` },
+    artist: { key: (p) => fold(p.artist).toLowerCase() },
 };
-
-// the printing a card is shown with, as near as a rule gets (right for about 3 in 4, checked against what
-// Scryfall shows): the newest, lowest collector number first, but promos, special products (Secret Lair, The
-// List, Premium Decks, From the Vault, masterpieces) and Arena-only printings only when there's nothing else
-const SPECIAL_SETS = new Set(["box", "premium_deck", "alchemy", "from_the_vault", "masterpiece", "spellbook"]);
-function shownPrinting(c: LocalCard, data: Cards): Printing | undefined {
-    const special = (p: Printing) => p.promo || SPECIAL_SETS.has(p.setType) || p.set === "plst" || [...p.games].every((g) => g === "arena");
-    const cn = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
-    return shownPrints(c, data).sort((a, b) => Number(special(a)) - Number(special(b)) || b.released.localeCompare(a.released) || cn(a) - cn(b))[0];
-}
 ORDERS.mv = ORDERS.manavalue = ORDERS.cmc;
 ORDERS.pow = ORDERS.power;
 ORDERS.tou = ORDERS.toughness;
 
-// the order: and direction: in a search, wherever they are in it
-function orderTerms(node: Node): { order?: string, dir?: string } {
-    if ("term" in node) {
-        const { key, value } = node.term;
-        if (key === "order" || key === "sort") return { order: value.toLowerCase() };
-        if (key === "direction" || key === "dir") return { dir: value.toLowerCase() };
-        return {};
-    }
-    if ("not" in node) return orderTerms(node.not);
-    return Object.assign({}, ...("and" in node ? node.and : node.or).map(orderTerms));
-}
-
-// the cards (from search) in the order Scryfall lists them: order:<key> (by name if none) and direction:asc or
-// desc, ties by name
-export function sortCards(node: Node, data: Cards, cards: number[]): number[] {
-    const { order = "name", dir = "auto" } = orderTerms(node);
-    const how = ORDERS[order];
-    if (!how) throw new Unsupported(`order:${order}`);
-    const flip = dir === "desc" || (dir === "auto" && how.high) ? -1 : 1;
-    const keys = new Map(cards.map((i) => [i, how.key(data.cards[i], data)]));
-    return [...cards].sort((a, b) => {
+function sortEntries(entries: number[], data: Cards, how: Order, v: Required<View>, order: (a: number, b: number) => number): number[] {
+    const flip = v.dir === "desc" || (v.dir === "auto" && how.high) ? -1 : 1;
+    const keys = new Map(entries.map((p) => [p, how.key(data.prints[p], data.cards[data.prints[p].card])]));
+    const tie = (a: number, b: number) => {
+        const p = data.prints[a], q = data.prints[b];
+        if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
+        // by name (turned round only for order:name), then a card's printings in Scryfall's own order
+        return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
+    };
+    return [...entries].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);
         if (x !== y) {
             if (x === undefined) return how.missingFirst ? -flip : 1;
             if (y === undefined) return how.missingFirst ? flip : -1;
             return (x < y ? -1 : 1) * flip;
         }
-        return byName(data.cards[a].name, data.cards[b].name) * (order === "name" ? flip : 1);
+        return tie(a, b);
     });
 }
 
+// the cards (from search) in the order Scryfall lists them, for a search shown a card each
+export function sortCards(node: Node, data: Cards, cards: number[], view: View = {}): number[] {
+    const wanted = new Set(cards);
+    return results(node, data, { ...view, unique: "cards" }).map((p) => data.prints[p].card).filter((c) => wanted.has(c));
+}

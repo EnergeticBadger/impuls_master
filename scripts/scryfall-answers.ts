@@ -36,10 +36,16 @@ async function withLock<T>(run: () => Promise<T>): Promise<T> {
         try { mkdirSync(LOCK); break; } catch {
             // a holder that died leaves the lock behind; a request never takes a minute
             try { if (Date.now() - statSync(LOCK).mtimeMs > 60_000) rmSync(LOCK, { recursive: true, force: true }); } catch {}
-            await sleep(100 + Math.random() * 200);
+            // a short wait: with a long one, a script asking again straight after its own request always got
+            // the lock first, and the others waited minutes for a turn
+            await sleep(10 + Math.random() * 30);
         }
     }
-    try { return await run(); } finally { rmSync(LOCK, { recursive: true, force: true }); }
+    try { return await run(); } finally {
+        rmSync(LOCK, { recursive: true, force: true });
+        // and step back a moment after a turn, so a waiting script gets the next one
+        await sleep(100);
+    }
 }
 
 // fetch from Scryfall's API politely: waits its turn, keeps the gap, and on a 429 pauses every script for 90s
