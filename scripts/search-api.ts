@@ -187,15 +187,16 @@ type Read = { error: string, warnings: string[] } | { rewritten: string, warning
 // matches nothing, and the display options (order:, unique:…) are taken out and read here
 function readSearch(q: string, data: Cards): Read {
     const tokens = scan(q);
-    // brackets first: a display option in brackets ("t:sliver (order:cmc)", or after a bracket never closed) and then
-    // an unclosed or unopened bracket fail the whole search, before anything else is read
-    let depth = 0, unbalanced = false;
+    // brackets first, left to right: a ")" with no "(" or a display option in brackets ("t:sliver (order:cmc)", or
+    // after a bracket never closed), whichever comes first, then a bracket never closed, fail the whole search
+    // before anything else is read: "(t:sliver c:rgm)) (order:cmc)" is unclosed, "(t:/wall order:name))" display
+    let depth = 0;
     for (const t of tokens) {
         if (t.kind === "(") depth++;
-        if (t.kind === ")" && --depth < 0) { unbalanced = true; depth = 0; }
+        if (t.kind === ")" && --depth < 0) return { error: UNCLOSED, warnings: [] };
         if (t.kind === "term" && isDisplay(t) && depth > 0) return { error: DISPLAY_IN_BRACKETS, warnings: [] };
     }
-    if (unbalanced || depth) return { error: UNCLOSED, warnings: [] };
+    if (depth) return { error: UNCLOSED, warnings: [] };
     const warnings: string[] = [], displayWarnings: string[] = [], display: Display = { extras: false };
     let regexes = 0;
     const words = vocabulary(data);
@@ -325,7 +326,11 @@ function judgeValue(t: Token, negated: boolean, raw: string, words: Words): Verd
     const named = cut(negated ? `-${key}` : key, 21);
     if (t.regex && KNOWN_KEYS.has(key) && !REGEX_KEYS.has(key) && !NO_REGEX_KEYS.has(key)) throw new Unsupported(`${key}:/regex/`);
     if (t.regex && (!REGEX_KEYS.has(key) || (value === "" && !t.open))) return ignore(raw, `Unknown regular expression keyword “${named}”.`);
+    // FOO>bar is a word of a name, like t>sliver (see below)
+    if (!KNOWN_KEYS.has(key) && t.op !== ":" && t.op !== "=") return { as: t.op!.length === 1 ? nameWords(raw) : NOTHING };
     if (!KNOWN_KEYS.has(key)) return ignore(raw, `Unknown keyword “${named}”.`);
+    // is: (not:, has:) takes a word: is:/fetch and is:"spotlight are an unknown keyword “is”
+    if (["is", "not", "has"].includes(key) && !/^[\p{L}\p{N}_-]*$/u.test(value)) return ignore(raw, `Unknown keyword “${named}”.`);
     // o:"" is an unknown keyword too
     if (t.quoted && value === "" && !t.open) return ignore(raw, `Unknown keyword “${named}”.`);
     // with no value at all the key is a word of a name: t:sliver c: is the slivers with a c in their name
