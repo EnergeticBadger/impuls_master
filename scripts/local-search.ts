@@ -1123,6 +1123,12 @@ function byPreference(data: Cards) {
     };
 }
 
+// between printings as cheap: the ones that aren't preferred first, newest first, the higher number first
+function lastOf(data: Cards, a: number, b: number): number {
+    return Number(preferred(data.prints[a])) - Number(preferred(data.prints[b]))
+        || data.prints[b].released.localeCompare(data.prints[a].released) || cnNumber(data.prints[b]) - cnNumber(data.prints[a]);
+}
+
 // the printing (of `among`, a card's printings that match) Scryfall shows a card with: the one it always shows,
 // when it matches, otherwise the first that matches in its order (see byPreference); `prefer:` changes this
 function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string, order: (a: number, b: number) => number): number {
@@ -1138,7 +1144,7 @@ function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string
         const key = price[1] as "usd" | "eur" | "tix", sign = price[2] === "low" ? 1 : -1;
         return first((a, b) => {
             const x = data.prints[a][key], y = data.prints[b][key];
-            if (x === y) return order(a, b);
+            if (x === y) return lastOf(data, a, b);
             if (x === undefined) return 1;
             if (y === undefined) return -1;
             return (x - y) * sign;
