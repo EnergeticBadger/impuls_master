@@ -10,7 +10,7 @@
 
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 import KEYWORD_WORDS from "./keyword-words.json" with { type: "json" };
-import { Unsupported, isValues, parse, revealed, searchPrintings, sortCards, type Cards, type Node } from "./local-search.ts";
+import { Unsupported, isValues, parse, results, revealed, type Cards, type Node } from "./local-search.ts";
 
 export const PAGE_SIZE = 175;
 
@@ -543,35 +543,8 @@ const PREFER_VALUES = new Set(["oldest", "newest", "usd-low", "usd-high", "eur-l
 // ---- the cards ----
 
 // the printings Scryfall lists, in its order: a card each, a printing each (unique=prints) or an art each
-// (unique=art). This is where the engine's choice of printing and order comes in
+// (unique=art), with the printing each card is shown with, all from the engine (see results in local-search.ts)
 function entries(node: Node, data: Cards, how: { order: string, dir: string, unique: string, extras: boolean }): number[] {
-    const terms: Node[] = [
-        { term: { key: "order", op: ":", value: how.order } },
-        { term: { key: "direction", op: ":", value: how.dir } },
-        ...(how.extras ? [{ term: { key: "include", op: ":", value: "extras" } }] : []),
-    ];
-    const full: Node = { and: [...terms, node] };
-    const prints = searchPrintings(full, data);
-    const byCard = new Map<number, number[]>();
-    for (const p of prints) {
-        const c = data.prints[p].card;
-        byCard.set(c, [...(byCard.get(c) ?? []), p]);
-    }
-    const cards = sortCards(full, data, [...byCard.keys()]);
-    return cards.flatMap((c) => pick(byCard.get(c)!, data, how.unique));
-}
-
-// which of a card's matching printings are listed. A stand-in until the engine has its own: newest first, a
-// card's special printings (promos, Secret Lair, The List…) after the rest
-const SPECIAL_SETS = new Set(["box", "premium_deck", "alchemy", "from_the_vault", "masterpiece", "spellbook"]);
-function pick(prints: number[], data: Cards, unique: string): number[] {
-    const special = (i: number) => { const p = data.prints[i]; return p.promo || SPECIAL_SETS.has(p.setType) || p.set === "plst" || [...p.games].every((g) => g === "arena"); };
-    const cn = (i: number) => Number(data.prints[i].cn.replace(/\D/g, "")) || 0;
-    const sorted = [...prints].sort((a, b) => Number(special(a)) - Number(special(b)) || data.prints[b].released.localeCompare(data.prints[a].released) || cn(a) - cn(b));
-    if (unique === "prints") return sorted;
-    if (unique === "art") {
-        const seen = new Set<string>();
-        return sorted.filter((i) => { const art = data.prints[i].art || String(i); return !seen.has(art) && !!seen.add(art); });
-    }
-    return sorted.slice(0, 1);
+    const full: Node = how.extras ? { and: [{ term: { key: "include", op: ":", value: "extras" } }, node] } : node;
+    return results(full, data, { order: how.order, dir: how.dir, unique: how.unique });
 }
