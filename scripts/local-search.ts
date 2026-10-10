@@ -1220,7 +1220,7 @@ const NEEDS: Record<Printing["extra"], number> = { "": 0, extra: 1, setOnly: 2 }
 // Naming a set shows its hidden printings to its own part of the search only ("set"): (s:neo or t:sorcery)
 // doesn't show the hidden sorceries, s:neo t:dragon does show NEO's dragon tokens. Everything else shows them to
 // the whole search ("all"): r:uncommon or o:draw wm:phyrexian shows hidden uncommons too
-function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
+export function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
     if ("term" in node) {
         const { key, value } = node.term;
         // naming a set, or a set's family (g:fin finds its tokens and art cards); -s:tsp doesn't

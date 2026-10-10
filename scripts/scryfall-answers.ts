@@ -24,9 +24,12 @@ export class SlowDown extends Error {}
 // ---- one request at a time, across every script on this machine ----
 // Two scripts asking Scryfall at once got 429s and a warning about a network block, so every request from any
 // process goes through a lock in a shared folder: one at a time, GAP apart, and after a 429 everyone waits.
-// SCRYFALL_LOCK_DIR moves the folder; SCRYFALL_GAP (ms) changes the gap
+// SCRYFALL_LOCK_DIR moves the folder; SCRYFALL_GAP (ms) changes the gap. SCRYFALL_POLL (ms) is how often a waiting
+// script tries the lock: a script that asks again straight away takes the lock back before others' next try, so
+// with several running a lower value gets a fairer share (the gap between requests stays the same)
 const LOCKS = process.env.SCRYFALL_LOCK_DIR ?? join(homedir(), ".cache", "impuls_master", "scryfall");
 const GAP = Number(process.env.SCRYFALL_GAP ?? 1200);
+const POLL = Number(process.env.SCRYFALL_POLL ?? 10);
 const LOCK = join(LOCKS, "lock"), LAST = join(LOCKS, "last"), PAUSE = join(LOCKS, "pause-until");
 const readTime = (file: string) => { try { return Number(readFileSync(file, "utf8")) || 0; } catch { return 0; } };
 
@@ -36,9 +39,9 @@ async function withLock<T>(run: () => Promise<T>): Promise<T> {
         try { mkdirSync(LOCK); break; } catch {
             // a holder that died leaves the lock behind; a request never takes a minute
             try { if (Date.now() - statSync(LOCK).mtimeMs > 60_000) rmSync(LOCK, { recursive: true, force: true }); } catch {}
-            // a short wait: with a long one, a script asking again straight after its own request always got
-            // the lock first, and the others waited minutes for a turn
-            await sleep(10 + Math.random() * 30);
+            // a short wait (SCRYFALL_POLL ms): with a long one, a script asking again straight after its own
+            // request always got the lock first, and the others waited minutes for a turn
+            await sleep(POLL + Math.random() * 3 * POLL);
         }
     }
     try { return await run(); } finally {
