@@ -130,7 +130,7 @@ export class Answers {
             warnings = body.warnings ?? undefined;
             for (const c of body.data) {
                 const card: NonNullable<Answer["cards"]>[number] = [c.oracle_id ?? c.card_faces?.[0]?.oracle_id, c.name, c.id, c.set, c.collector_number];
-                if (this.prices) card.push(["usd", "usd_foil", "eur", "eur_foil", "tix"].map((k) => c.prices?.[k] ?? "").join("|"));
+                if (this.prices) card.push(["usd", "usd_foil", "usd_etched", "eur", "eur_foil", "tix"].map((k) => c.prices?.[k] ?? "").join("|"));
                 cards.push(card);
             }
             if (pages === 0) break;

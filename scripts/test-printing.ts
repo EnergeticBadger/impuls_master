@@ -82,12 +82,12 @@ const describe = (i: number | undefined) => i === undefined ? "nothing" : `${dat
 // `kind`: where the first difference is: another printing of the same card, another card, or not the same cards
 // `moved`: it goes by prices, and Scryfall's differ from the bulk file's (see the top)
 type Row = { label: string, group: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string, moved?: string };
-// a printing's prices as Scryfall's answer gives them (see Answers): the regular price where there is one,
-// otherwise the foil one, as the engine keeps them
+// a printing's prices as Scryfall's answer gives them (see Answers), read as the engine reads the bulk file's:
+// the regular price, or else the foil (or etched) one
 const pricesMatch = (p: Printing, given: string) => {
-    const [usd, usdFoil, eur, eurFoil, tix] = given.split("|").map((v) => v === "" ? undefined : Number(v));
-    return (usd ?? usdFoil) === p.usd && (usd !== undefined || usdFoil === undefined) === p.plain.usd
-        && (eur ?? eurFoil) === p.eur && (eur !== undefined || eurFoil === undefined) === p.plain.eur && tix === p.tix;
+    const [usd, usdFoil, usdEtched, eur, eurFoil, tix] = given.split("|").map((v) => v === "" ? undefined : Number(v));
+    return (usd ?? usdFoil ?? usdEtched) === p.usd && (usd !== undefined) === p.plain.usd
+        && (eur ?? eurFoil) === p.eur && (eur !== undefined) === p.plain.eur && tix === p.tix;
 };
 const rows: Row[] = [];
 for (const c of cases) {
@@ -99,7 +99,7 @@ for (const c of cases) {
     const row: Row = { label, group, entries: theirs.total, exact: 0, sameCard: 0, error: theirs.error };
     rows.push(row);
     if (/^(usd|eur|tix)$/.test(order) || /\b(prefer:(usd|eur|tix)|usd|eur|tix|cheapest)\b/.test(c.q)) {
-        const moved = (theirs.cards ?? []).find(([, , id, , , prices]) => prices !== undefined && byId.has(id!) && !pricesMatch(data.prints[byId.get(id!)!], prices));
+        const moved = (theirs.cards ?? []).find(([, , id, , , prices]) => prices?.split("|").length === 6 && byId.has(id!) && !pricesMatch(data.prints[byId.get(id!)!], prices));
         if (moved) row.moved = `${moved[1]} (${moved[3]}/${moved[4]}) is ${moved[5]} on Scryfall`;
     }
     if (theirs.error || !theirs.cards) { row.why ??= theirs.error ? undefined : `${theirs.total} entries: more than ${PAGES} pages`; continue; }
