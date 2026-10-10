@@ -189,7 +189,10 @@ const bulk = join(OUT, "bulk");
 const printsFile = await bulkFile("default_cards", bulk);
 const data = await loadCards(printsFile, await bulkFile("oracle_tags", bulk).catch(() => undefined), await setsFile(bulk).catch(() => undefined));
 const store = await CardStore.open(printsFile, OUT);
-if (store.count !== data.prints.length) throw new Error(`card store has ${store.count} printings, the engine ${data.prints.length}`);
+// the printings in other languages (languages.jsonl.gz, when it's there) come after default_cards' in the engine,
+// and only a search naming a language reaches them, which search-api.ts leaves to Scryfall for now
+const otherLanguages = [...data.languages?.byCard.values() ?? []].reduce((n, list) => n + list.length, 0);
+if (store.count !== data.prints.length - otherLanguages) throw new Error(`card store has ${store.count} printings, the engine ${data.prints.length - otherLanguages}`);
 console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
 // ---- comparing ----

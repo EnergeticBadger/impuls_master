@@ -415,8 +415,8 @@ const tagKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 // (otag:protects-self), and the tags moved under it still count under their old parent (otag:protection finds
 // gains-hexproof's cards). Found by asking Scryfall, 7 Oct 2026; drop an entry once Scryfall has caught up
 const TAG_LAG = {
-    unknown: ["protects-self"],
-    parents: { "gains-hexproof": "protection", "gains-shroud": "protection", "gains-protection": "protection" } as Record<string, string>,
+    unknown: [] as string[],
+    parents: {} as Record<string, string>,
 };
 
 // each Tagger tag's oracle ids (oracle_tags) or illustration ids (art_tags), by its slug, and by its aliases

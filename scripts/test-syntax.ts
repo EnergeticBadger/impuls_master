@@ -59,8 +59,11 @@ const data = await loadCards(await bulkFile("default_cards", join(OUT, "bulk")),
 console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
 // `order` is where the two lists first part, when they hold the same cards: Scryfall's card and ours there
-type Row = { q: string, local?: number, scryfall: number, onlyHere: string[], onlyThere: string[], why?: string, error?: string, warnings?: string[], order?: { at: number, theirs: string, ours: string } };
+type Row = { q: string, local?: number, scryfall: number, onlyHere: string[], onlyThere: string[], newer?: number, why?: string, error?: string, warnings?: string[], order?: { at: number, theirs: string, ours: string } };
 const rows: Row[] = [];
+// every card in the bulk file: a card Scryfall lists that isn't is newer than the file (a preview added since it
+// was built), so it's timing, not a difference in the search
+const known = new Set(data.cards.map((c) => c.oracleId));
 for (const q of cases) {
     const theirs = (await answers.ask(q, PAGES))!;
     const row: Row = { q, scryfall: theirs.total, onlyHere: [], onlyThere: [], error: theirs.error, warnings: theirs.warnings };
@@ -83,6 +86,7 @@ for (const q of cases) {
             const here = new Set(found.map((i) => data.cards[i].oracleId));
             row.onlyHere = found.filter((i) => !there.has(data.cards[i].oracleId)).map((i) => data.cards[i].name);
             row.onlyThere = theirs.cards.filter(([id]) => !here.has(id)).map(([, name]) => name);
+            row.newer = theirs.cards.filter(([id]) => !known.has(id)).length;
             if (!row.onlyHere.length && !row.onlyThere.length) {
                 const ours = sortCards(node, data, found);
                 const at = theirs.cards.findIndex(([id], i) => data.cards[ours[i]].oracleId !== id);
@@ -97,7 +101,9 @@ for (const q of cases) {
 }
 
 const exact = rows.filter((r) => !r.error && r.local !== undefined && r.local === r.scryfall && !r.onlyHere.length && !r.onlyThere.length);
-const differ = rows.filter((r) => !r.error && r.local !== undefined && !exact.includes(r))
+// the same but for cards newer than the bulk file
+const newerOnly = rows.filter((r) => !exact.includes(r) && r.newer && !r.onlyHere.length && r.onlyThere.length === r.newer && r.local! + r.newer === r.scryfall);
+const differ = rows.filter((r) => !r.error && r.local !== undefined && !exact.includes(r) && !newerOnly.includes(r))
     .sort((a, b) => Math.abs(b.local! - b.scryfall) - Math.abs(a.local! - a.scryfall));
 const unsupported = rows.filter((r) => r.why !== undefined);
 const errors = rows.filter((r) => r.error);
@@ -106,7 +112,7 @@ const names = (list: string[]) => list.slice(0, 6).join(", ") + (list.length > 6
 
 const lines = [
     `# Search syntax against Scryfall`, ``,
-    `${new Date().toISOString()} · ${rows.length} searches: ${exact.length} exact, ${differ.length} differ, ${unsupported.length} not supported here, ${errors.length} Scryfall errors`, ``,
+    `${new Date().toISOString()} · ${rows.length} searches: ${exact.length} exact, ${newerOnly.length} exact but for cards newer than the bulk file, ${differ.length} differ, ${unsupported.length} not supported here, ${errors.length} Scryfall errors`, ``,
     `## Differ`, ``,
     ...(differ.length ? differ.flatMap((r) => [
         `- \`${r.q}\`: here ${r.local}, Scryfall ${r.scryfall}${r.onlyHere.length + r.onlyThere.length ? "" : " (counts only: too many to list)"}`,
@@ -124,6 +130,6 @@ const lines = [
     `## Exact`, ``, exact.map((r) => `\`${r.q}\` (${r.scryfall})`).join(" · "), ``,
 ];
 writeFileSync(join(OUT, SUMMARY), lines.join("\n"));
-console.log(`${rows.length} searches: ${exact.length} exact, ${differ.length} differ, ${unsupported.length} not supported here, ${errors.length} Scryfall errors`);
+console.log(`${rows.length} searches: ${exact.length} exact, ${newerOnly.length} exact but for newer cards, ${differ.length} differ, ${unsupported.length} not supported here, ${errors.length} Scryfall errors`);
 console.log(`Summary: ${join(OUT, SUMMARY)}`);
 process.exitCode = differ.length || unsupported.length ? 1 : 0;
