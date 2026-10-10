@@ -855,13 +855,14 @@ const INTRO_FDN = new Set(["490", "493", "495", "497", "499", "500", "501", "516
 // full art, shattered glass), a booster-fun variant (Dominaria Remastered's retro frames), a stamped promo
 // (prerelease, promo pack, date stamp; not Pro Tour promos), Future Sight's frame and Planar Chaos' colorshifted
 // one (on The List too), and a special foil (MH3's ripple-foil-only cards; not the Universes Beyond decks' surge
-// foils). Exact on NEO, M21, 2X2, CMM, LTC, C21, UST; over all cards 10,324 here against Scryfall's 10,553 (some
+// foils). Exact on NEO, M21, 2X2, CMM, LTC, C21, UST; over all cards close to Scryfall (some
 // Commander and box printings still missed), so this is close but not exact
 const SPECIAL_FOIL = /foil$|^(textured|serialized|doublerainbow|gilded|embossed|neonink|invisibleink|oilslick)$/;
 const atypical = (p: Printing) => p.border === "borderless" || p.fullArt || p.frame === "future"
     || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass", "colorshifted"].some((f) => p.frameEffects.has(f))
     || ["boosterfun", "stamped", "datestamped", "promopack", "prerelease"].some((t) => p.promoTypes.has(t))
-    || [...p.promoTypes].some((t) => t !== "surgefoil" && SPECIAL_FOIL.test(t));
+    || (p.setType !== "commander" && [...p.promoTypes].some((t) => t !== "surgefoil" && SPECIAL_FOIL.test(t)))
+    || (p.promoTypes.has("surgefoil") && ["40k", "pip"].includes(p.set));
 
 // Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
 // are wider than the intropack and mediainsert promo types
