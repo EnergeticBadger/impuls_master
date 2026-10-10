@@ -369,7 +369,8 @@ function judgeValue(t: Token, negated: boolean, raw: string, words: Words): Verd
             return bad ? ignore(raw, `Unknown mana symbols “${bad}”.`) : {};
         }
         case "is": case "not":
-            return words.is.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(v)}” is not supported`);
+            // underscores don't count, as in the engine: is:planeswalker_deck is is:planeswalkerdeck
+            return words.is.has(v) || words.is.has(v.replace(/_/g, "")) ? {} : ignore(raw, `Checking if cards are “${cut(v)}” is not supported`);
         case "has":
             return HAS_WORDS.has(v) ? {} : ignore(raw, `Checking if cards are “${cut(v)}” is not supported`);
         // (keywords: takes anything)
@@ -509,7 +510,7 @@ const isDisplay = (t: Token) => DISPLAY_KEYS.has(t.key!) && (t.op === ":" || t.o
 // keys that say how to show the results
 const DISPLAY_KEYS = new Set(["unique", "order", "sort", "direction", "dir", "display", "prefer", "include"]);
 // every key Scryfall knows, found by asking it about each: an unknown one warns "Unknown keyword"
-const KNOWN_KEYS = new Set(["c", "color", "colors", "id", "identity", "ci", "commander", "t", "type", "o", "oracle", "fo", "fulloracle",
+const KNOWN_KEYS = new Set(["g", "group", "c", "color", "colors", "id", "identity", "ci", "commander", "t", "type", "o", "oracle", "fo", "fulloracle",
     "m", "mana", "mv", "cmc", "manavalue", "devotion", "produces", "pow", "power", "tou", "toughness", "pt", "powtou", "loy", "loyalty",
     "is", "not", "has", "kw", "keyword", "keywords", "r", "rarity", "new", "in", "s", "e", "set", "edition", "cn", "number", "collector",
     "collectornumber", "b", "block", "st", "settype", "set_type", "f", "format", "legal", "banned", "restricted", "game", "year", "date",
