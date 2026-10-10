@@ -11,9 +11,9 @@ const WEEK = 7 * 24 * 3600_000;
 export const PAGE = 175;
 
 // `cards` is there when the whole answer was fetched: each card's oracle id and name, then the printing Scryfall
-// shows it with (id, set, collector number; older answers don't have these). `warnings` when Scryfall ignored
-// part of the search
-export type Answer = { at: number, total: number, cards?: [string, string, string?, string?, string?][], error?: string, warnings?: string[] };
+// shows it with (id, set, collector number; older answers don't have these), and with the `prices` option its
+// prices as "usd|usd_foil|eur|eur_foil|tix" (see Answers). `warnings` when Scryfall ignored part of the search
+export type Answer = { at: number, total: number, cards?: [string, string, string?, string?, string?, string?][], error?: string, warnings?: string[] };
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -85,12 +85,16 @@ export class Answers {
     private file: string;
     private say: (line: string) => void;
     private stopOnLimit: boolean;
+    private prices: boolean;
     // `say` reports waiting on Scryfall, so a status line can show it. With `stopOnLimit`, a 429 throws SlowDown
-    // instead of waiting and trying again. (`delay` is kept for old callers; the gap is SCRYFALL_GAP now)
-    constructor(file: string, say: (line: string) => void = console.log, { stopOnLimit = false }: { delay?: number, stopOnLimit?: boolean } = {}) {
+    // instead of waiting and trying again. With `prices`, each card keeps the prices Scryfall gave it: they change
+    // daily, so a test can tell an answer from a day the bulk file's prices weren't. (`delay` is kept for old
+    // callers; the gap is SCRYFALL_GAP now)
+    constructor(file: string, say: (line: string) => void = console.log, { stopOnLimit = false, prices = false }: { delay?: number, stopOnLimit?: boolean, prices?: boolean } = {}) {
         this.file = file;
         this.say = say;
         this.stopOnLimit = stopOnLimit;
+        this.prices = prices;
         this.all = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
     }
 
@@ -124,7 +128,11 @@ export class Answers {
             if (!body.data) return this.keep(key, { at: Date.now(), total: 0, error: body.details ?? `HTTP ${res.status}` });
             total = body.total_cards;
             warnings = body.warnings ?? undefined;
-            for (const c of body.data) cards.push([c.oracle_id ?? c.card_faces?.[0]?.oracle_id, c.name, c.id, c.set, c.collector_number]);
+            for (const c of body.data) {
+                const card: NonNullable<Answer["cards"]>[number] = [c.oracle_id ?? c.card_faces?.[0]?.oracle_id, c.name, c.id, c.set, c.collector_number];
+                if (this.prices) card.push(["usd", "usd_foil", "eur", "eur_foil", "tix"].map((k) => c.prices?.[k] ?? "").join("|"));
+                cards.push(card);
+            }
             if (pages === 0) break;
             url = body.has_more ? body.next_page : undefined;
         }

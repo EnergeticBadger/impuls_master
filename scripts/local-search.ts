@@ -141,7 +141,10 @@ export function extraKind(c: any): Printing["extra"] {
     const type: string = c.type_line ?? c.card_faces?.[0]?.type_line ?? "";
     const legalNowhere = !Object.values(c.legalities ?? {}).some((v) => v === "legal" || v === "restricted");
     if (WITHDRAWN.has(c.name) || (c.border_color === "gold" && c.set_type === "memorabilia")
-        || (games.length > 0 && games.every((g) => g === "sega"))) return "setOnly";
+        || (games.length > 0 && games.every((g) => g === "sega"))
+        // Jumpstart: Historic Horizons' 16 reprints outside its packs (Lightning Bolt's j21/787, Tropical Island's
+        // j21/792), shown for e:j21 but not for is:dual or !"Lightning Bolt" unique:prints (10 Oct 2026)
+        || (c.set === "j21" && c.reprint && !c.booster)) return "setOnly";
     // dungeons are shown, even Undercity // The Initiative, a double-faced token
     const dungeon = /^dungeon\b/i.test(type);
     if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
@@ -956,7 +959,17 @@ function firstArts(data: Cards): Set<number> {
         const f = first.get(p.art);
         if (f === undefined || p.released < data.prints[f].released || (p.released === data.prints[f].released && i < f)) first.set(p.art, i);
     }
-    FIRST_ARTS.set(data, firsts = new Set(first.values()));
+    // and the same card's other printings of the picture that day: Angelic Captain's bfz/208 as well as its
+    // prerelease pbfz/208s (shown with bfz/208, as Scryfall shows new:art t:angel)
+    firsts = new Set(first.values());
+    for (const f of first.values()) {
+        const p = data.prints[f];
+        for (const i of data.cards[p.card].printings) {
+            const q = data.prints[i];
+            if (q.art === p.art && q.released === p.released && q.setType !== "memorabilia") firsts.add(i);
+        }
+    }
+    FIRST_ARTS.set(data, firsts);
     return firsts;
 }
 
@@ -1393,10 +1406,12 @@ function byPreference(data: Cards) {
     };
 }
 
-// between printings as cheap: the ones that aren't preferred first, newest first, the higher number first
-function lastOf(data: Cards, a: number, b: number): number {
-    return Number(preferred(data.prints[a])) - Number(preferred(data.prints[b]))
-        || data.prints[b].released.localeCompare(data.prints[a].released) || cnNumber(data.prints[b]) - cnNumber(data.prints[a]);
+// between printings as cheap (or with no price): the newest, then the lower Scryfall id. Checked against prices
+// from the same day as Scryfall's answers (they change daily, so a day-old bulk file disagrees with a third of
+// usd prices): Champion of the Weird's ecl/241 rather than its extended-art ecl/378 at 0.02 tix, Goblin Lackey's
+// fdn/631 rather than woe/351
+function asCheap(data: Cards, a: number, b: number): number {
+    return data.prints[b].released.localeCompare(data.prints[a].released) || (data.prints[a].id < data.prints[b].id ? -1 : 1);
 }
 
 // the printing (of `among`, a card's printings that match) Scryfall shows a card with: the one it always shows,
@@ -1405,16 +1420,20 @@ function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string
     if (among.length === 1) return among[0];
     const first = (cmp: (a: number, b: number) => number) => among.reduce((best, i) => cmp(i, best) < 0 ? i : best);
     const date = (i: number) => data.prints[i].released;
+    // the lower Scryfall id first: no rule found for printings out the same day, and this is right for 2 in 3
+    // (prefer:oldest takes Lazotep Sliver's cmm/764, prefer:newest Betor's ptdm/172p), against 1 in 3 for
+    // Scryfall's order or the collector number
+    const byId = (a: number, b: number) => data.prints[a].id < data.prints[b].id ? -1 : 1;
     switch (prefer) {
-        case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || order(a, b));
-        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || lastOf(data, a, b));
+        case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || byId(a, b));
+        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || byId(a, b));
     }
     const price = /^(usd|eur|tix)-(low|high)$/.exec(prefer);
     if (price) {
         const key = price[1] as "usd" | "eur" | "tix", sign = price[2] === "low" ? 1 : -1;
         return first((a, b) => {
             const x = data.prints[a][key], y = data.prints[b][key];
-            if (x === y) return lastOf(data, a, b);
+            if (x === y) return asCheap(data, a, b);
             if (x === undefined) return 1;
             if (y === undefined) return -1;
             return (x - y) * sign;
@@ -1480,19 +1499,15 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
     }
     // sorted by a price, a card is shown with its cheapest printing that has one, whatever the direction: Eater of
     // the Dead with its mb2 printing (1.31 euros, not drk's 5.15 or me1's none), Wall of Roots by tix with its 2013
-    // promo (3.80, the least of five). Between printings as cheap, and when none has a price, the one that comes
-    // last in Scryfall's order (see byPreference): Mordor Trebuchet's ltr/548 rather than ltr/97 at 0.03 tix, Whip
-    // Vine's all/103b rather than 103a. Otherwise see pickPrinting
+    // promo (3.80, the least of five). Between printings as cheap, and when none has a price, see asCheap.
+    // Otherwise see pickPrinting
     const pick = (c: number, list: number[]) => {
         const key = how.price;
         if (!key || v.prefer) return pickPrinting(data.cards[c], list, data, v.prefer, order);
         const price = (p: number) => data.prints[p][key] ?? Infinity;
         const plain = (p: number) => key === "tix" || data.prints[p].plain[key];
         if (list.some(plain)) list = list.filter(plain);
-        // as cheap: the ones that aren't preferred first, newest first, the higher number first
-        const last = (a: number, b: number) => Number(preferred(data.prints[a])) - Number(preferred(data.prints[b]))
-            || data.prints[b].released.localeCompare(data.prints[a].released) || cnNumber(data.prints[b]) - cnNumber(data.prints[a]);
-        return list.reduce((best, p) => (price(p) - price(best) || last(p, best)) < 0 ? p : best);
+        return list.reduce((best, p) => (price(p) - price(best) || asCheap(data, p, best)) < 0 ? p : best);
     };
     const entries: number[] = [];
     for (const [c, list] of byCard) {
@@ -1538,9 +1553,17 @@ const ORDERS: Record<string, Order> = {
     power: { key: (_, c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missing: "low" },
     toughness: { key: (_, c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missing: "low" },
     color: { key: (_, c) => {
-        // the front face's (a split card's are both halves'): Heliod, the Radiant Dawn is white, not white-blue
-        const colors = [...c.faceColors[0] ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
-        return colors ? COLOR_GROUPS.indexOf(colors) : 99;
+        // colored cards by the front face's colors (a split card's are both halves'): Heliod, the Radiant Dawn is
+        // white, not white-blue. Then colorless cards, then lands (Dryad Arbor too, though green), each by color
+        // identity, none last: Wall of Tanglecord (green identity) before Amaranthine Wall, Dowsing Dagger //
+        // Lost Vale before Abandoned Air Temple, Ancient Tomb after The World Tree
+        const group = (colors: Set<string> | undefined) => {
+            const key = [...colors ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
+            return key ? COLOR_GROUPS.indexOf(key) : 99;
+        };
+        if (/\bland\b/.test(c.faceTypes[0] ?? "")) return 20000 + group(c.identity);
+        const colors = group(c.faceColors[0]);
+        return colors < 99 ? colors * 100 : 10000 + group(c.identity);
     } },
     // unranked cards count as the highest rank: last, or first with direction:desc (Cosmic Sovereign, an Alchemy
     // card, leads f:timeless t:dragon order:edhrec direction:desc)
@@ -1567,10 +1590,11 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
     const keys = new Map(entries.map((p) => [p, how.key(data.prints[p], data.cards[data.prints[p].card])]));
     const tie = (a: number, b: number) => {
         const p = data.prints[a], q = data.prints[b];
-        // released: on the same day a set comes before its parent set, whichever the direction (tdc/309 before
-        // tdm/400 descending, tsb/8 before tsp/37 ascending, hoc before hob); otherwise by set code and collector
-        // number, turned round with the dates (direction:desc lists spg before ecc, tdm/400, 321, 319…)
-        if (how.byDate) return Number(data.parents.get(q.set) === p.set) - Number(data.parents.get(p.set) === q.set) || (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
+        // released: on the same day, by set code and collector number, turned round with the dates (nec/18 before
+        // neo/141 ascending, ecl/95 before ecc/52 descending). Scryfall's own order there has no rule found: of 31
+        // places two sets out the same day meet (10 Oct 2026), this is right for 23; it puts afr before afc, tdm
+        // before tdc and fin before fic ascending, against the code, but nec before neo and lcc before lci
+        if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
         return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };

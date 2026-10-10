@@ -9,13 +9,16 @@
 // Scryfall's answers are kept in <out>/scryfall-printing.json (a week, or until --refresh), so a run after the
 // first is offline. Each entry of Scryfall's list is compared with ours at the same position: the same printing
 // (Scryfall's id) is exact. <out>/printing-summary.md lists what differs, first difference of each search first.
+// Prices change daily, and the bulk file has one day's: a search that goes by prices (a price order, a price
+// prefer:, usd>=…) whose answer lists a printing at another price than the bulk file's is counted apart, as
+// "prices moved". Download the bulk files and ask Scryfall the same day (prices change about 09:00 UTC).
 //   --out <dir>   default fuzz-results      --refresh   ask Scryfall again      --only <text>   lines containing it
 //   --pages <n>   compare searches whose whole answer fits in n pages (175 entries each), default 4
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Answers, PAGE } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, loadCards, parse, results, setsFile, type View } from "./local-search.ts";
+import { Unsupported, bulkFile, loadCards, parse, results, setsFile, type Printing, type View } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -61,7 +64,7 @@ const cases: Case[] = lines.flatMap((line): Case[] => {
 
 const live = !!process.stdout.isTTY;
 const say = (line: string) => live ? process.stdout.write(`\r\x1b[2K${line}`) : console.log(line);
-const answers = new Answers(join(OUT, "scryfall-printing.json"), say);
+const answers = new Answers(join(OUT, "scryfall-printing.json"), say, { prices: true });
 const missing = cases.filter((c) => REFRESH || !answers.known(c.q, PAGES, c.options));
 for (const [n, c] of missing.entries()) {
     say(`asking Scryfall ${n + 1}/${missing.length}: ${c.q} ${new URLSearchParams(c.options)}`);
@@ -77,7 +80,15 @@ const byId = new Map(data.prints.map((p, i) => [p.id, i]));
 const describe = (i: number | undefined) => i === undefined ? "nothing" : `${data.cards[data.prints[i].card].name} (${data.prints[i].set}/${data.prints[i].cn})`;
 
 // `kind`: where the first difference is: another printing of the same card, another card, or not the same cards
-type Row = { label: string, group: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string };
+// `moved`: it goes by prices, and Scryfall's differ from the bulk file's (see the top)
+type Row = { label: string, group: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string, moved?: string };
+// a printing's prices as Scryfall's answer gives them (see Answers): the regular price where there is one,
+// otherwise the foil one, as the engine keeps them
+const pricesMatch = (p: Printing, given: string) => {
+    const [usd, usdFoil, eur, eurFoil, tix] = given.split("|").map((v) => v === "" ? undefined : Number(v));
+    return (usd ?? usdFoil) === p.usd && (usd !== undefined || usdFoil === undefined) === p.plain.usd
+        && (eur ?? eurFoil) === p.eur && (eur !== undefined || eurFoil === undefined) === p.plain.eur && tix === p.tix;
+};
 const rows: Row[] = [];
 for (const c of cases) {
     const label = `${c.q}${Object.keys(c.options).length ? `  [${new URLSearchParams(c.options)}]` : ""}`;
@@ -87,6 +98,10 @@ for (const c of cases) {
     const group = /^(usd|eur|tix)$/.test(order) || /prefer:(usd|eur|tix)/.test(c.q) ? "a price order or prefer:" : `order:${order}${unique === "cards" ? "" : ` unique:${unique}`}`;
     const row: Row = { label, group, entries: theirs.total, exact: 0, sameCard: 0, error: theirs.error };
     rows.push(row);
+    if (/^(usd|eur|tix)$/.test(order) || /\b(prefer:(usd|eur|tix)|usd|eur|tix|cheapest)\b/.test(c.q)) {
+        const moved = (theirs.cards ?? []).find(([, , id, , , prices]) => prices !== undefined && byId.has(id!) && !pricesMatch(data.prints[byId.get(id!)!], prices));
+        if (moved) row.moved = `${moved[1]} (${moved[3]}/${moved[4]}) is ${moved[5]} on Scryfall`;
+    }
     if (theirs.error || !theirs.cards) { row.why ??= theirs.error ? undefined : `${theirs.total} entries: more than ${PAGES} pages`; continue; }
     try {
         const ours = results(parse(c.q), data, c.options as View);
@@ -112,7 +127,8 @@ for (const c of cases) {
     }
 }
 
-const compared = rows.filter((r) => !r.error && !r.why);
+const moved = rows.filter((r) => r.moved && !r.error && !r.why);
+const compared = rows.filter((r) => !r.error && !r.why && !r.moved);
 const entries = compared.reduce((n, r) => n + r.entries, 0), exact = compared.reduce((n, r) => n + r.exact, 0);
 const sameCard = compared.reduce((n, r) => n + r.sameCard, 0);
 const whole = compared.filter((r) => !r.first);
@@ -137,10 +153,11 @@ const lines2 = [
     ...section("Not the same cards (see test-syntax)", differ("cards")),
     ...section("Same cards, another order", differ("order")),
     ...section("Same cards in the same order, another printing", differ("printing")),
+    `## Prices moved since the bulk file (${moved.length}, not counted)`, ``, ...moved.map((r) => `- \`${r.label}\`: ${r.moved}`), ``,
     `## Not compared`, ``, ...rows.filter((r) => r.error || r.why).map((r) => `- \`${r.label}\`: ${r.error ?? r.why}`), ``,
     `## Exact`, ``, whole.map((r) => `\`${r.label}\` (${r.entries})`).join(" · "), ``,
 ];
 writeFileSync(join(OUT, "printing-summary.md"), lines2.join("\n"));
-console.log(headline);
+console.log(headline + (moved.length ? `; ${moved.length} searches by price not counted: prices moved since the bulk file` : ""));
 console.log(`Summary: ${join(OUT, "printing-summary.md")}`);
 process.exitCode = sameExact === sameEntries ? 0 : 1;
