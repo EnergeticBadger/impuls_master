@@ -1141,7 +1141,7 @@ function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string
     const date = (i: number) => data.prints[i].released;
     switch (prefer) {
         case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || order(a, b));
-        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || order(a, b));
+        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || lastOf(data, a, b));
     }
     const price = /^(usd|eur|tix)-(low|high)$/.exec(prefer);
     if (price) {
