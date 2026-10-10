@@ -82,6 +82,9 @@ export type Printing = {
     released: string,
     usd?: number,
     eur?: number,
+    // whether the price above is the regular one, not a foil's: a printing with the regular price is cheaper
+    // than one with only a foil price in price orders and prefer:
+    plain: { usd: boolean, eur: boolean },
     tix?: number,
     frame: string,
     frameEffects: Set<string>,
@@ -273,6 +276,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         usd: price(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched),
         eur: price(c.prices?.eur ?? c.prices?.eur_foil),
         tix: price(c.prices?.tix),
+        plain: { usd: c.prices?.usd != null, eur: c.prices?.eur != null },
         frame: c.frame ?? "",
         frameEffects: lower(c.frame_effects),
         border: c.border_color ?? "",
@@ -1217,6 +1221,8 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
         const key = how.price;
         if (!key || v.prefer) return pickPrinting(data.cards[c], list, data, v.prefer, order);
         const price = (p: number) => data.prints[p][key] ?? Infinity;
+        const plain = (p: number) => key === "tix" || data.prints[p].plain[key];
+        if (list.some(plain)) list = list.filter(plain);
         // as cheap: the ones that aren't preferred first, newest first, the higher number first
         const last = (a: number, b: number) => Number(preferred(data.prints[a])) - Number(preferred(data.prints[b]))
             || data.prints[b].released.localeCompare(data.prints[a].released) || cnNumber(data.prints[b]) - cnNumber(data.prints[a]);
