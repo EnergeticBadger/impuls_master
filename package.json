@@ -31,7 +31,10 @@
     "test-api": "node scripts/test-api.ts",
     "keyword-words": "node scripts/keyword-words.ts",
     "test-chips": "node --import ./scripts/app-paths.ts scripts/test-chips.ts",
-    "test-printing": "node scripts/test-printing.ts"
+    "test-printing": "node scripts/test-printing.ts",
+    "lookups-build": "node scripts/lookups-build.ts",
+    "test-lookups": "node scripts/test-lookups.ts",
+    "catalogs": "node scripts/catalogs.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",
