@@ -8,7 +8,7 @@ import {
 
 // Each refresh (scripts/upload-card-data.sh) uploads a whole new copy under v/<version>/ and only then points
 // `current` at it, so a page never mixes two days' files. An isolate asks which version is current at most
-// once a minute; the upload keeps the copies before it, so one still on the old version can finish.
+// once a minute; the upload deletes the copy before it only two minutes later, so one still on it can finish.
 const CURRENT = "current";
 const VERSION_TTL = 60_000;
 let version: { checked: number, value: Promise<string | undefined> } | undefined;

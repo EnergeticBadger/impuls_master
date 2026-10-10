@@ -139,7 +139,8 @@ async function search(c: Case): Promise<Result> {
 function mismatch(c: Case, cards: any[]): string | undefined {
     if (c.kind === "several" || c.query.includes(") o:/")) return undefined;
     const regexes = findRegexes(c.query).map((re) => { try { return scryfallRegex(re); } catch { return null; } });
-    if (regexes.includes(null)) return undefined;
+    // plain words (o:goblin) have no regex to check
+    if (!regexes.length || regexes.includes(null)) return undefined;
     // the text as Scryfall searches it: reminder text left out, and the card's names as ~ for a regex with ~ in
     // it (see cardText in scripts/local-search.ts)
     for (const card of cards.slice(0, 5)) {
@@ -217,7 +218,9 @@ function summarise(cases: Case[], offline: Map<string, string[]>, results: Resul
     };
     for (const o of Object.keys(meanings) as Outcome[]) lines.push(`| ${o} | ${count(o).toLocaleString()} | ${meanings[o]} |`);
     const mismatches = results.filter((r) => r.mismatch);
-    lines.push(``, `${mismatches.length} searches found a card none of their regexes match here.`, ``);
+    // checked with the local search as it was when each was searched: a run lasts days, so an early one can be
+    // out of date. npm run test-rules compares every count with the local search as it is now
+    lines.push(``, `${mismatches.length} searches found a card none of their regexes match here (checked when searched; \`npm run test-rules\` compares every count with today's local search).`, ``);
     const bad = results.filter((r) => !["cards", "empty"].includes(r.outcome));
     if (bad.length) lines.push(`## Not fine`, ``);
     for (const r of bad.slice(0, 300)) lines.push(`- **${r.outcome}** ${r.kind} \`${r.about}\` (${r.query.length} chars): ${r.details ?? ""} ${(r.warnings ?? []).join(" ")}`, `  \`${r.query}\``);
