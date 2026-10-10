@@ -19,6 +19,8 @@
     "test-rules": "node scripts/test-rules.ts",
     "test-syntax": "node scripts/test-syntax.ts",
     "land-cycles": "node scripts/land-cycles.ts",
+    "cubes": "node scripts/cubes.ts",
+    "languages": "node scripts/languages.ts",
     "panel-cases": "node --import ./scripts/app-paths.ts scripts/panel-cases.ts",
     "test-keys": "node scripts/test-keys.ts",
     "fuzz-syntax": "node scripts/fuzz-syntax.ts",
@@ -26,7 +28,13 @@
     "combo-cases": "node --import ./scripts/app-paths.ts scripts/combo-cases.ts",
     "test-combos": "node scripts/test-syntax.ts --cases combo --delay 3000 --stop-on-429",
     "types": "node scripts/types.ts",
-    "test-chips": "node --import ./scripts/app-paths.ts scripts/test-chips.ts"
+    "test-api": "node scripts/test-api.ts",
+    "keyword-words": "node scripts/keyword-words.ts",
+    "test-chips": "node --import ./scripts/app-paths.ts scripts/test-chips.ts",
+    "test-printing": "node scripts/test-printing.ts",
+    "lookups-build": "node scripts/lookups-build.ts",
+    "test-lookups": "node scripts/test-lookups.ts",
+    "catalogs": "node scripts/catalogs.ts"
   },
   "dependencies": {
     "@react-router/node": "7.14.0",

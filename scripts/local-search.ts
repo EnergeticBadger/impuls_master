@@ -11,8 +11,9 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
+import { politeFetch } from "./scryfall-answers.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -59,10 +60,14 @@ export type LocalCard = {
     // is:funny: see FUNNY_CARDS
     funny: boolean,
     printings: number[],
+    // the printing Scryfall shows the card with when the search doesn't say otherwise (see byPreference)
+    shown?: number,
 };
 
 // one printing: what's particular to it
 export type Printing = {
+    // Scryfall's id for it
+    id: string,
     card: number,
     // a reversible printing has its own name ("Birds of Paradise // Birds of Paradise") and layout
     name: string,
@@ -77,6 +82,9 @@ export type Printing = {
     released: string,
     usd?: number,
     eur?: number,
+    // whether the price above is the regular one, not a foil's: a printing with the regular price is cheaper
+    // than one with only a foil price in price orders and prefer:
+    plain: { usd: boolean, eur: boolean },
     tix?: number,
     frame: string,
     frameEffects: Set<string>,
@@ -103,6 +111,12 @@ export type Printing = {
     stamp: string,
     // the art, for new:art
     art: string,
+    // every face's art, for atag: and illustrations>1
+    illustrations: string[],
+    // how many artists it credits, for artists>1
+    artists: number,
+    // previewed on Scryfall's own card page, for is:scryfallpreview
+    scryfallPreview: boolean,
     // why it isn't shown unless asked for (see revealed): "setOnly" (only include:extras or its set shows it)
     // or "extra" (tokens, art cards, playtest cards…); "" is shown
     extra: "" | "setOnly" | "extra",
@@ -111,7 +125,9 @@ export type Printing = {
 // printings Scryfall's search doesn't show by default (found by comparing with it, see npm run test-syntax):
 // these layouts and memorabilia (but not dungeons), tokens, "Card"s, Alchemy's specialize variants (in Alchemy
 // sets but legal nowhere), Astral and Sega printings, playtest cards, Heroes of the Realm and holiday promos,
-// silver-bordered promos, Gleemox ("This card is banned.") and Secret Lair's sticker sheet. Only
+// silver-bordered promos, Gleemox ("This card is banned.") and Secret Lair's sticker sheet, and The List's
+// Un-cards (ulst: `!"Blast from the Past" year>=2022` is nothing there, but is:funny, border:silver, a name regex
+// or include:extras find it, 9 Oct 2026; st:funny doesn't). Only
 // include:extras or naming the set shows the seven cards Wizards banned in 2020 for racist content, and the
 // gold-bordered World Championship decks (border:gold finds nothing) and the Sega Dreamcast cards
 const WITHDRAWN = new Set(["Crusade", "Cleanse", "Imprison", "Invoke Prejudice", "Jihad", "Pradesh Gypsies", "Stone-Throwing Devils"]);
@@ -119,20 +135,31 @@ const HIDDEN_FUNNY = new Set(["Gleemox", "Sticker sheet"]);
 // is:funny though nothing in the bulk files says so (see isFunnyPrinting)
 const FUNNY_CARDS = new Set([...HIDDEN_FUNNY, "Baldur's Gate Wilderness"]);
 const EXTRA_LAYOUTS = new Set(["token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard"]);
-const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel)$/;
-function extraKind(c: any): Printing["extra"] {
+const EXTRA_SETS = /^(ph\d\d|phtr|hho|h17|pcel|ulst)$/;
+export function extraKind(c: any): Printing["extra"] {
     const games: string[] = c.games ?? [];
     const type: string = c.type_line ?? c.card_faces?.[0]?.type_line ?? "";
     const legalNowhere = !Object.values(c.legalities ?? {}).some((v) => v === "legal" || v === "restricted");
     if (WITHDRAWN.has(c.name) || (c.border_color === "gold" && c.set_type === "memorabilia")
-        || (games.length > 0 && games.every((g) => g === "sega"))) return "setOnly";
+        || (games.length > 0 && games.every((g) => g === "sega"))
+        // Jumpstart: Historic Horizons' 16 reprints outside its packs (Lightning Bolt's j21/787, Tropical Island's
+        // j21/792), shown for e:j21 but not for is:dual or !"Lightning Bolt" unique:prints (10 Oct 2026)
+        || (c.set === "j21" && c.reprint && !c.booster)) return "setOnly";
     // dungeons are shown, even Undercity // The Initiative, a double-faced token
     const dungeon = /^dungeon\b/i.test(type);
     if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
         || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
+    // the Arena-only reprints added to Alchemy sets outside their packs, with only a low-resolution picture: the
+    // Power Nine in Alchemy: Dominaria, Storm Crow in Alchemy: Secrets of Strixhaven, Lightning Bolt in Alchemy
+    // Horizons: Baldur's Gate (cn 902–928)… Of the 263 Alchemy-set reprints, Scryfall shows 225 (9 Oct 2026); the
+    // 38 it hides are exactly those neither in boosters nor scanned in high resolution
+    if (c.set_type === "alchemy" && c.reprint && !c.booster && !c.highres_image) return "extra";
     // silver-bordered promos too: Goblin Mime's Arena League one shows for e:pal04, not for r:rare (Secret
     // Lair's silver-bordered ponies are shown)
-    if (c.promo_types?.includes("playtest") || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name)
+    // Playtest cards, but not silver-bordered ones (Look at Me, I'm R&D in Unhinged is shown) or not out yet (Auspicious Aquarium, out
+    // 19 Oct 2026, is shown; In Residence, from the same set in April, isn't); Blacker Lotus's Secret Lair poster
+    if ((c.promo_types?.includes("playtest") && c.border_color !== "silver" && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
+        || EXTRA_SETS.test(c.set) || HIDDEN_FUNNY.has(c.name) || (c.set === "sld" && c.collector_number === "869")
         || (c.border_color === "silver" && c.set_type === "promo")) return "extra";
     return "";
 }
@@ -216,6 +243,15 @@ export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[],
 
 const lower = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
 const price = (v?: string | null) => v == null ? undefined : Number(v);
+// the same small set for every printing with the same values (games, finishes…): with every language's printings
+// loaded there are half a million of them. Never changed after loading
+const sets = new Map<string, Set<string>>();
+const shared = (list?: string[]) => {
+    const key = (list ?? []).join("\u0000").toLowerCase();
+    let set = sets.get(key);
+    if (!set) sets.set(key, set = lower(list));
+    return set;
+};
 
 function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     const legal = (want: string[]) => new Set(Object.entries(c.legalities ?? {}).filter(([, v]) => want.includes(v as string)).map(([k]) => k));
@@ -251,8 +287,14 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     };
 }
 
+// is:scryfallpreview is the cards Scryfall previewed on its own card pages: the preview's link is
+// scryfall.com/card/… (Kraul Stinger, Archmage's Charm; not the Secret Lair cards it lists as "Scryfall" with a
+// link to the set). Two of its six (9 Oct 2026) have no preview in the bulk files, so they're named here
+const SCRYFALL_PREVIEWS = new Set(["uma/50", "grn/103"]);
+
 function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
+        id: c.id,
         card,
         name: c.name,
         flavorName: c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // "),
@@ -267,14 +309,15 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         usd: price(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched),
         eur: price(c.prices?.eur ?? c.prices?.eur_foil),
         tix: price(c.prices?.tix),
+        plain: { usd: c.prices?.usd != null, eur: c.prices?.eur != null },
         frame: c.frame ?? "",
-        frameEffects: lower(c.frame_effects),
+        frameEffects: shared(c.frame_effects),
         border: c.border_color ?? "",
-        games: lower(c.games),
+        games: shared(c.games),
         cn: c.collector_number ?? "",
         lang: c.lang ?? "en",
         promo: !!c.promo,
-        promoTypes: lower(c.promo_types),
+        promoTypes: shared(c.promo_types),
         digital: !!c.digital,
         fullArt: !!c.full_art,
         textless: !!c.textless,
@@ -283,11 +326,14 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         oversized: !!c.oversized,
         booster: !!c.booster,
         hires: !!c.highres_image,
-        finishes: lower(c.finishes),
-        watermarks: lower([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
+        finishes: shared(c.finishes),
+        watermarks: shared([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
         flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
         stamp: c.security_stamp ?? "",
         art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
+        illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))],
+        artists: c.artist_ids?.length ?? 0,
+        scryfallPreview: /^https:\/\/scryfall\.com\/card\//.test(c.preview?.source_uri ?? "") || SCRYFALL_PREVIEWS.has(`${c.set}/${c.collector_number}`),
         extra: extraKind(c),
     };
 }
@@ -298,7 +344,9 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
 // Steamflogger Boss's Unstable printing doesn't make it funny: it's legal. Checked against all 1,476 of
 // Scryfall's
 function isFunnyPrinting(c: any): boolean {
-    return (c.set_type === "funny" && c.set !== "hho") || c.security_stamp === "acorn" || !!c.promo_types?.includes("playtest")
+    return (c.set_type === "funny" && c.set !== "hho") || c.security_stamp === "acorn"
+        // (a playtest card not out yet isn't, as it isn't hidden: Auspicious Aquarium)
+        || (!!c.promo_types?.includes("playtest") && (c.released_at ?? "") <= new Date().toISOString().slice(0, 10))
         || (c.border_color === "silver" && c.set_type !== "token");
 }
 
@@ -307,7 +355,7 @@ async function* jsonLines(path: string) {
     for await (const line of lines) if (line.trim()) yield JSON.parse(line);
 }
 
-export type BulkType = "default_cards" | "oracle_tags";
+export type BulkType = "default_cards" | "oracle_tags" | "oracle_cards" | "art_tags" | "all_cards";
 
 // the bulk file of this type: from SCRYFALL_BULK_DIR (as <type>.jsonl.gz, like scripts/card-data.ts), or
 // downloaded into `cache` and kept a day, since Scryfall rebuilds them daily
@@ -317,7 +365,8 @@ export async function bulkFile(type: BulkType, cache: string): Promise<string> {
     const path = join(cache, `${type}.jsonl.gz`);
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const list = await (await fetch("https://api.scryfall.com/bulk-data", { headers: HEADERS })).json() as { data: { type: string, jsonl_download_uri?: string }[] };
+    // through the shared queue for Scryfall's API (see scripts/scryfall-answers.ts); the file itself isn't on the API
+    const list = await (await politeFetch("https://api.scryfall.com/bulk-data")).json() as { data: { type: string, jsonl_download_uri?: string }[] };
     const url = list.data.find((f) => f.type === type)?.jsonl_download_uri;
     if (!url) throw new Error(`Scryfall has no ${type} bulk file`);
     const res = await fetch(url, { headers: HEADERS });
@@ -326,14 +375,24 @@ export async function bulkFile(type: BulkType, cache: string): Promise<string> {
     return path;
 }
 
+// each card's printings in other languages, as indexes into `prints`
+export type Languages = { byCard: Map<number, number[]> };
+
 export type Cards = {
     cards: LocalCard[],
     prints: Printing[],
     tags: Map<string, Set<string>>,
+    // each art tag's illustration ids, for atag: (empty without the art_tags file)
+    artTags: Map<string, Set<string>>,
     // each set's first release date, for date>set
     setDates: Map<string, string>,
     // each set's block, for b: (from Scryfall's list of sets; empty without it)
     blocks: Map<string, string>,
+    // each set's parent set (tdc's is tdm, tfin's is fin), for order:released and g: (from the list of sets
+    // too; see family)
+    parents: Map<string, string>,
+    // the printings in other languages, when languages.jsonl.gz is there (see readLanguages)
+    languages?: Languages,
     // every promo type there is, for is:prerelease and the like
     promoTypes: Set<string>,
 };
@@ -346,7 +405,7 @@ export async function setsFile(cache: string): Promise<string> {
     const path = join(cache, "sets.json");
     if (existsSync(path) && Date.now() - statSync(path).mtimeMs < 24 * 3600_000) return path;
     mkdirSync(cache, { recursive: true });
-    const res = await fetch("https://api.scryfall.com/sets", { headers: HEADERS });
+    const res = await politeFetch("https://api.scryfall.com/sets");
     if (!res.ok) throw new Error(`sets: ${res.status}`);
     writeFileSync(path, await res.text());
     return path;
@@ -359,13 +418,64 @@ const tagKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
 // (otag:protects-self), and the tags moved under it still count under their old parent (otag:protection finds
 // gains-hexproof's cards). Found by asking Scryfall, 7 Oct 2026; drop an entry once Scryfall has caught up
 const TAG_LAG = {
-    unknown: ["protects-self"],
-    parents: { "gains-hexproof": "protection", "gains-shroud": "protection", "gains-protection": "protection" } as Record<string, string>,
+    unknown: [] as string[],
+    parents: {} as Record<string, string>,
 };
 
+// each Tagger tag's oracle ids (oracle_tags) or illustration ids (art_tags), by its slug, and by its aliases
+// with punctuation ignored. A tag's include its child tags', as on Scryfall
+async function readTags(path: string, by: "oracle_id" | "illustration_id", lag?: typeof TAG_LAG): Promise<Map<string, Set<string>>> {
+    const byId = new Map<string, { slug: string, aliases: string[], children: string[], cards: string[] }>();
+    for await (const t of jsonLines(path)) {
+        byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g[by]) });
+    }
+    const idOf = new Map([...byId].map(([id, t]) => [t.slug, id]));
+    for (const [child, parent] of Object.entries(lag?.parents ?? {})) {
+        const c = idOf.get(child), p = byId.get(idOf.get(parent) ?? "");
+        if (c && p && !p.children.includes(c)) p.children.push(c);
+    }
+    const gather = (id: string, into: Set<string>, seen: Set<string>) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const t = byId.get(id);
+        if (!t) return;
+        for (const o of t.cards) into.add(o);
+        for (const child of t.children) gather(child, into, seen);
+    };
+    const tags = new Map<string, Set<string>>();
+    for (const [id, t] of byId) {
+        const into = new Set<string>();
+        if (!lag?.unknown.includes(t.slug)) gather(id, into, new Set());
+        tags.set(t.slug, into);
+        // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
+        for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
+    }
+    return tags;
+}
+
+// The printings in other languages, beside default_cards' (English, or the one language a printing came out in):
+// languages.jsonl.gz, a slice of the all_cards bulk file made by npm run languages. They join the search only
+// when it names a language (lang:ja, -lang:en, lang:any), and count for in:ja and new:language. They go at the end
+// of `prints`, kept out of each card's own `printings`, so prints=, sets= and the rest count English printings
+async function readLanguages(path: string, data: Cards, byOracle: Map<string, number>): Promise<Languages> {
+    const byCard = new Map<number, number[]>();
+    for await (const c of jsonLines(path)) {
+        const faces: any[] = c.card_faces?.length ? c.card_faces : [c];
+        const card = byOracle.get(c.oracle_id ?? faces[0]?.oracle_id);
+        if (card === undefined) continue;
+        // the legal formats only matter to extraKind (an Alchemy card legal nowhere), and are the card's
+        if (!c.legalities) c.legalities = Object.fromEntries([...data.cards[card].legal].map((f) => [f, "legal"]));
+        const at = data.prints.push(toPrinting(c, faces, card)) - 1;
+        if (!byCard.has(card)) byCard.set(card, []);
+        byCard.get(card)!.push(at);
+    }
+    return { byCard };
+}
+
 // every card and printing (default_cards), each Tagger tag's cards (a tag's cards include its child tags', as
-// on Scryfall), and the sets' blocks
-export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string): Promise<Cards> {
+// on Scryfall), the sets' blocks, and the printing Scryfall shows each card with (oracle_cards, by default the one
+// next to default_cards; see byPreference)
+export async function loadCards(printsPath: string, tagsPath?: string, setsPath?: string, shownPath = join(dirname(printsPath), "oracle_cards.jsonl.gz")): Promise<Cards> {
     const cards: LocalCard[] = [], prints: Printing[] = [];
     const byOracle = new Map<string, number>();
     const funnyPrinting = new Set<number>();
@@ -395,39 +505,34 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
     for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal.size && !c.banned.size);
-    const tags = new Map<string, Set<string>>();
-    if (tagsPath && existsSync(tagsPath)) {
-        const byId = new Map<string, { slug: string, aliases: string[], children: string[], cards: string[] }>();
-        for await (const t of jsonLines(tagsPath)) {
-            byId.set(t.id, { slug: t.slug, aliases: t.aliases ?? [], children: t.child_ids ?? [], cards: (t.taggings ?? []).map((g: any) => g.oracle_id) });
-        }
-        const idOf = new Map([...byId].map(([id, t]) => [t.slug, id]));
-        for (const [child, parent] of Object.entries(TAG_LAG.parents)) {
-            const c = idOf.get(child), p = byId.get(idOf.get(parent) ?? "");
-            if (c && p && !p.children.includes(c)) p.children.push(c);
-        }
-        const gather = (id: string, into: Set<string>, seen: Set<string>) => {
-            if (seen.has(id)) return;
-            seen.add(id);
-            const t = byId.get(id);
-            if (!t) return;
-            for (const o of t.cards) into.add(o);
-            for (const child of t.children) gather(child, into, seen);
-        };
-        for (const [id, t] of byId) {
-            const into = new Set<string>();
-            if (!TAG_LAG.unknown.includes(t.slug)) gather(id, into, new Set());
-            tags.set(t.slug, into);
-            // and by its aliases, punctuation aside: otag:board-wipe is sweeper, by its alias "boardwipe"
-            for (const name of [t.slug, ...t.aliases]) if (!tags.has(tagKey(name))) tags.set(tagKey(name), into);
+    const tags = tagsPath && existsSync(tagsPath) ? await readTags(tagsPath, "oracle_id", TAG_LAG) : new Map<string, Set<string>>();
+    // the other bulk files, read when they're beside default_cards: art tags (atag:) and every language's
+    // printings (lang:, see npm run languages)
+    const artPath = join(dirname(printsPath), "art_tags.jsonl.gz");
+    const artTags = existsSync(artPath) ? await readTags(artPath, "illustration_id") : new Map<string, Set<string>>();
+    const blocks = new Map<string, string>(), parents = new Map<string, string>();
+    if (setsPath && existsSync(setsPath)) {
+        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) {
+            if (s.block_code) blocks.set(s.code, s.block_code);
+            if (s.parent_set_code) parents.set(s.code, s.parent_set_code);
         }
     }
-    const blocks = new Map<string, string>();
-    if (setsPath && existsSync(setsPath)) {
-        for (const s of JSON.parse(readFileSync(setsPath, "utf8")).data ?? []) if (s.block_code) blocks.set(s.code, s.block_code);
+    // Scryfall's oracle_cards file holds a printing for each card, "the most up-to-date recognizable version": the
+    // one its search shows, every card of 1,925 checked against a search for every card (mv>=0, 9 Oct 2026)
+    if (shownPath && existsSync(shownPath)) {
+        const byId = new Map(prints.map((p, i) => [p.id, i]));
+        const lines = createInterface({ input: createReadStream(shownPath).pipe(createGunzip()), crlfDelay: Infinity });
+        // a card's own id is the first in its line; parsing each whole would take seconds
+        for await (const line of lines) {
+            const p = byId.get(/"id":"([^"]+)"/.exec(line)?.[1] ?? "");
+            if (p !== undefined) cards[prints[p].card].shown = p;
+        }
     }
     const promoTypes = new Set(prints.flatMap((p) => [...p.promoTypes]));
-    return { cards, prints, tags, setDates, blocks, promoTypes };
+    const data: Cards = { cards, prints, tags, artTags, setDates, blocks, parents, promoTypes, languages: undefined };
+    const langPath = join(dirname(printsPath), "languages.jsonl.gz");
+    if (existsSync(langPath)) data.languages = await readLanguages(langPath, data, byOracle);
+    return data;
 }
 
 // ---- the query language ----
@@ -488,6 +593,8 @@ function tokenize(q: string): (string | Term)[] {
             continue;
         }
         const word = /^[^\s()]+/.exec(q.slice(i))![0];
+        // ++ is unique:prints and @@ unique:art, from before those had names (the syntax guide)
+        if (word === "++" || word === "@@") { out.push({ key: "unique", op: ":", value: word === "++" ? "prints" : "art" }); i += 2; continue; }
         out.push(/^or$/i.test(word) ? "or" : /^and$/i.test(word) ? "and" : { key: "word", op: ":", value: word });
         i += word.length;
     }
@@ -526,8 +633,6 @@ export function parse(q: string): Node {
             const next = tokens[at];
             if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) { at++; return null; }
             if (typeof next === "object" && next.key === "date") return one();
-            // which cards have printings in other languages needs every language's (the all_cards bulk file)
-            if (typeof next === "object" && (next.key === "lang" || next.key === "language")) throw new Unsupported("-lang: needs every language's printings");
             const inner = one();
             return inner && { not: inner };
         }
@@ -646,6 +751,19 @@ const hasType = (c: LocalCard, re: RegExp) => anyFace(c, re) || c.keywords.has("
 
 
 // a commander by its type or text, whatever the ban list says (see is:commander)
+// Duel Commander's cards that can be in a deck but not lead it: not in the bulk files (it has one legality per
+// format), so taken from Scryfall's is:commander -is:duelcommander, 9 Oct 2026
+const DUEL_BANNED_COMMANDERS = new Set(["Ajani, Nacatl Pariah // Ajani, Nacatl Avenger", "Arahbo, Roar of the World", "Derevi, Empyrial Tactician",
+    "Dihada, Binder of Wills", "Edgar Markov", "Edric, Spymaster of Trest", "Eris, Roar of the Storm", "Ezio Auditore da Firenze", "Geist of Saint Traft",
+    "Hogaak, Arisen Necropolis", "Inalla, Archmage Ritualist", "Krark, the Thumbless", "Lumra, Bellow of the Woods", "Minsc & Boo, Timeless Heroes",
+    "Old Stickfingers", "Oloro, Ageless Ascetic", "Omnath, Locus of Creation", "Prime Speaker Vannifar", "Raffine, Scheming Seer", "Rograkh, Son of Rohgahh",
+    "Spider-Man 2099", "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar", "Urza, Lord High Artificer", "Vial Smasher the Fierce",
+    "Yuriko, the Tiger's Shadow"]);
+
+// is:brawler leaves these out though they're legal in Brawl and could lead (9 Oct 2026; not in the bulk files)
+const BRAWL_LEFT_OUT = new Set(["Ragavan, Nimble Pilferer", "Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar",
+    "Ajani, Nacatl Pariah // Ajani, Nacatl Avenger", "Wrenn and Six", "Old Stickfingers", "Rusko, Clockmaker", "Tajic, Legion's Valor"]);
+
 const canLead = (c: LocalCard) => c.meld !== "result" && (
     /\blegendary\b/.test(c.faceTypes[0]) && (/\b(creature|background)\b/.test(c.faceTypes[0]) || (/\b(vehicle|spacecraft)\b/.test(c.faceTypes[0]) && c.power[0] !== undefined))
     || c.text.some((t) => /can be your commander|isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(t)));
@@ -659,13 +777,16 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     commander: (c) => !c.banned.has("commander") && canLead(c),
     // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
     // a legendary planeswalker, legal in Brawl
-    brawler: (c) => c.legal.has("brawl") && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
+    // not a meld card's back (Urza, Planeswalker), nor the few Scryfall leaves out though Brawl allows them
+    brawler: (c) => c.legal.has("brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
+        && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
     // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
     // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
     // Conspiracies aren't
     spell: (c) => (["transform", "meld", "flip"].includes(c.layout) ? c.faceTypes.slice(0, 1) : c.faceTypes).some((t) =>
-        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
-    permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/),
+        /\b(artifact|creature|enchantment|instant|sorcery|planeswalker|battle|kindred|tribal|eaturecray)\b/.test(t) && !/\b(land|attraction|contraption|dungeon|conspiracy)\b/.test(t)),
+    // Unhinged's joke types too: Old Fogey's "Summon — Dinosaur" and Atinlay Igpay's "Eaturecray" are permanents
+    permanent: (c) => anyFace(c, /\b(artifact|creature|enchantment|land|planeswalker|battle|summon|eaturecray)\b/),
     historic: (c) => anyFace(c, /\b(legendary|artifact|saga)\b/),
     party: (c) => isCreature(c) && hasType(c, /\b(cleric|rogue|warrior|wizard)\b/),
     outlaw: (c) => hasType(c, /\b(assassin|mercenary|pirate|rogue|warlock)\b/),
@@ -697,6 +818,12 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // named card isn't one of them
     partner: (c) => /\blegendary\b/.test(c.faceTypes[0]) && (["partner", "partner with", "friends forever", "choose a background", "doctor's companion"].some((k) => c.keywords.has(k))
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
+    // could lead a Commander deck (Leovold, banned there, too), legal in Duel Commander, but not a Background, a
+    // Vehicle or a Spacecraft (Faceless One, a Background creature, is one), and not on Duel Commander's own "banned as commander" list (DUEL_BANNED_COMMANDERS)
+    duelcommander: (c) => c.legal.has("duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
+        && (/\bcreature\b/.test(c.faceTypes[0]) || !/\b(background|vehicle|spacecraft)\b/.test(c.faceTypes[0])),
+    // a planeswalker, legal in Oathbreaker; not Urza, Planeswalker, the back of a meld
+    oathbreaker: (c) => c.legal.has("oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
     companion: (c) => c.keywords.has("companion"),
     meldpart: (c) => c.meld === "part",
     meldresult: (c) => c.meld === "result",
@@ -735,7 +862,33 @@ const IS_PRINT: Record<string, (p: Printing) => boolean> = {
     hires: (p) => p.hires,
     masterpiece: (p) => p.setType === "masterpiece",
     colorshifted: (p) => p.frameEffects.has("colorshifted"),
+    // the 1993 and 1997 frames
+    old: (p) => p.frame === "1993" || p.frame === "1997",
+    // and the newer ones: 2003, 2015 and future
+    new: (p) => p.frame === "2003" || p.frame === "2015" || p.frame === "future",
+    scryfallpreview: (p) => p.scryfallPreview,
+    // printings from introductory products, as Scryfall lists them (nothing in the bulk files says so; wider than the
+    // intropack promo type): Duels of the Planeswalkers (dpa), the Rivals of Ixalan Quick Start decks (rqs), Assassin's
+    // Creed 274–305 and fourteen of Foundations' Beginner Box cards. 224 printings, 9 Oct 2026
+    intro: (p) => p.set === "dpa" || p.set === "rqs" || (p.set === "acr" && Number(p.cn) >= 274 && Number(p.cn) <= 305)
+        || (p.set === "fdn" && INTRO_FDN.has(p.cn)),
+    atypical: (p) => atypical(p),
+    default: (p) => !atypical(p),
 };
+const INTRO_FDN = new Set(["490", "493", "495", "497", "499", "500", "501", "516", "524", "525", "529", "530", "531", "564"]);
+// is:atypical, a printing that isn't in the usual frame, and is:default, one that is. Found set by set against
+// Scryfall's printings (9 Oct 2026): a frame treatment (borderless, showcase, extended art, inverted, etched frame,
+// full art, shattered glass), a booster-fun variant (Dominaria Remastered's retro frames), a stamped promo
+// (prerelease, promo pack, date stamp; not Pro Tour promos), Future Sight's frame and Planar Chaos' colorshifted
+// one (on The List too), and a special foil (MH3's ripple-foil-only cards; not the Universes Beyond decks' surge
+// foils). Exact on NEO, M21, 2X2, CMM, LTC, C21, UST; over all cards close to Scryfall (some
+// Commander and box printings still missed), so this is close but not exact
+const SPECIAL_FOIL = /foil$|^(textured|serialized|doublerainbow|gilded|embossed|neonink|invisibleink|oilslick)$/;
+const atypical = (p: Printing) => p.border === "borderless" || p.fullArt || p.frame === "future"
+    || ["showcase", "extendedart", "inverted", "etched", "fullart", "shatteredglass", "colorshifted"].some((f) => p.frameEffects.has(f))
+    || ["boosterfun", "stamped", "datestamped", "promopack", "prerelease"].some((t) => p.promoTypes.has(t))
+    || (p.setType !== "commander" && [...p.promoTypes].some((t) => t !== "surgefoil" && SPECIAL_FOIL.test(t)))
+    || (p.promoTypes.has("surgefoil") && ["40k", "pip"].includes(p.set));
 
 // Scryfall's is: names for promo types that differ from the bulk files' own. Not is:intro or is:media: those
 // are wider than the intropack and mediainsert promo types
@@ -751,15 +904,78 @@ const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland:
     battlebondland: "bondland", karoo: "bounceland", canland: "canopyland", snarl: "shadowland", battleland: "tangoland", trikeland: "tricycleland", triome: "tricycleland" };
 for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LAND_CYCLES[cycle];
 
+// the cubes (cube:vintage…): Scryfall's own lists, kept in cubes.json by npm run cubes
+const CUBES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
+    existsSync(new URL("./cubes.json", import.meta.url)) ? JSON.parse(readFileSync(new URL("./cubes.json", import.meta.url), "utf8")) as Record<string, string[]> : {},
+).map(([cube, names]) => [cube, new Set(names)]));
+
 // every is: value this search knows, for scripts/test-keys.ts to check one by one
 export const isValues = (data: Cards) => [...new Set([...Object.keys(IS_CARD), ...Object.keys(IS_PRINT), ...Object.keys(LAND_CYCLES), ...Object.keys(PROMO_NAMES), ...data.promoTypes])].sort();
 
 // keys that change how results are shown, not which cards match
-const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "lang", "sort"]);
+const DISPLAY = new Set(["unique", "order", "direction", "display", "prefer", "include", "sort"]);
 
-type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard) => boolean };
+// the languages, by Scryfall's code (lang:ja), the code printed on the card (lang:jp, lang:cs) or name
+// (lang:japanese); not lang:chinese. Checked against Scryfall, 9 Oct 2026
+const LANGUAGES: Record<string, string> = {
+    english: "en", spanish: "es", sp: "es", french: "fr", german: "de", italian: "it", portuguese: "pt", japanese: "ja", jp: "ja",
+    korean: "ko", kr: "ko", russian: "ru", simplifiedchinese: "zhs", cs: "zhs", traditionalchinese: "zht", ct: "zht", hebrew: "he",
+    latin: "la", ancientgreek: "grc", arabic: "ar", sanskrit: "sa", phyrexian: "ph", quenya: "qya",
+};
+const CODES = new Set(["en", "es", "fr", "de", "it", "pt", "ja", "ko", "ru", "zhs", "zht", "he", "la", "grc", "ar", "sa", "ph", "qya", "dw"]);
+// a language's code, "any" for lang:any, or undefined
+function languageOf(v: string): string | undefined {
+    const key = v.toLowerCase().replace(/[\s_]/g, "");
+    if (key === "any") return "any";
+    return CODES.has(key) ? key : LANGUAGES[key];
+}
+
+// g:ecc, the sets tied to Lorwyn Eclipsed Commander: itself, its parent ecl, its siblings (tecl, aecl…) and its
+// children (tecc), but no further: g:fin finds tfin's tokens, not tfic's (fic's tokens; fic is fin's child)
+const FAMILIES = new WeakMap<Cards, Map<string, Set<string>>>();
+function family(data: Cards, code: string): Set<string> {
+    if (!FAMILIES.has(data)) FAMILIES.set(data, new Map());
+    const known = FAMILIES.get(data)!;
+    let out = known.get(code);
+    if (out) return out;
+    const parent = data.parents.get(code);
+    out = new Set([code]);
+    if (parent) out.add(parent);
+    for (const [set, of] of data.parents) if (of === code || (parent && of === parent)) out.add(set);
+    known.set(code, out);
+    return out;
+}
+
+// for new:art, each picture's first printing (as an index into `prints`), over every card's printings but
+// memorabilia: by release, then by the bulk file's order. Worked out once per Cards
+const FIRST_ARTS = new WeakMap<Cards, Set<number>>();
+function firstArts(data: Cards): Set<number> {
+    let firsts = FIRST_ARTS.get(data);
+    if (firsts) return firsts;
+    const first = new Map<string, number>();
+    for (const c of data.cards) for (const i of c.printings) {
+        const p = data.prints[i];
+        if (!p.art || p.setType === "memorabilia") continue;
+        const f = first.get(p.art);
+        if (f === undefined || p.released < data.prints[f].released || (p.released === data.prints[f].released && i < f)) first.set(p.art, i);
+    }
+    // and the same card's other printings of the picture that day: Angelic Captain's bfz/208 as well as its
+    // prerelease pbfz/208s (shown with bfz/208, as Scryfall shows new:art t:angel)
+    firsts = new Set(first.values());
+    for (const f of first.values()) {
+        const p = data.prints[f];
+        for (const i of data.cards[p.card].printings) {
+            const q = data.prints[i];
+            if (q.art === p.art && q.released === p.released && q.setType !== "memorabilia") firsts.add(i);
+        }
+    }
+    FIRST_ARTS.set(data, firsts);
+    return firsts;
+}
+
+type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard, i: number) => boolean };
 const card = (fn: (c: LocalCard) => boolean): Test => ({ level: "card", fn });
-const print = (fn: (p: Printing, c: LocalCard) => boolean): Test => ({ level: "print", fn });
+const print = (fn: (p: Printing, c: LocalCard, i: number) => boolean): Test => ({ level: "print", fn });
 
 function compile(t: Term, data: Cards): Test {
     const plainOrRegex = (op: string) => {
@@ -839,6 +1055,9 @@ function compile(t: Term, data: Cards): Test {
         }
         case "is": case "not": {
             const negate = t.key === "not";
+            // underscores don't count: is:planeswalker_deck and is:judge_gift, as the syntax guide writes them,
+            // are is:planeswalkerdeck and is:judgegift
+            const v = t.value.toLowerCase().replace(/_/g, "");
             const onCard = IS_CARD[v], onPrint = IS_PRINT[v];
             if (onCard) return card((c) => onCard(c, data) !== negate);
             if (onPrint) return print((p) => onPrint(p) !== negate);
@@ -846,6 +1065,8 @@ function compile(t: Term, data: Cards): Test {
             if (lands) return card((c) => lands.has(c.name) !== negate);
             // the kinds of promo, as the printings' promo types name them (is:prerelease, is:fnm…)
             const promo = PROMO_NAMES[v] ?? v;
+            // is:starterdeck leaves out the Kaladesh and Aether Revolt planeswalker decks' cards (numbered with †)
+            if (promo === "starterdeck") return print((p) => (p.promoTypes.has(promo) && !p.cn.endsWith("†")) !== negate);
             if (data.promoTypes.has(promo)) return print((p) => p.promoTypes.has(promo) !== negate);
             throw new Unsupported(`is:${v}`);
         }
@@ -878,7 +1099,8 @@ function compile(t: Term, data: Cards): Test {
             return print((p) => p.cn.toLowerCase() === v);
         case "year": { const n = number(); return print((p) => !!p.released && compare(t.op, Number(p.released.slice(0, 4)), n)); }
         case "date": {
-            const day = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : data.setDates.get(v);
+            // a day, a set's first release, or now/today (Scryfall's day, in UTC)
+            const day = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : v === "now" || v === "today" ? new Date().toISOString().slice(0, 10) : data.setDates.get(v);
             if (!day) throw new Unsupported(`date ${v}`);
             return print((p) => !!p.released && compare(t.op, p.released < day ? -1 : p.released > day ? 1 : 0, 0));
         }
@@ -892,16 +1114,39 @@ function compile(t: Term, data: Cards): Test {
             return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
                 [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
         }
-        // a printing that's the first of its card with this rarity (promos aside), art, flavor text or frame
-        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Flavor text by its letters only:
-        // ". . ." is "...", and "Ætheric" "aetheric"
+        // a printing that's the first of its card with this rarity (promos aside), flavor text, frame or language
+        // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
+        // and art cards, Helvault promos, Arena starter decks) don't count as earlier: Avacyn, Angel of Hope's
+        // Helvault printing came first, but its Avacyn Restored one is new:language; a hidden promo does (Mise's
+        // Arena League one makes its Unhinged one not new:language). Flavor text is the front face's, by its letters
+        // only: ". . ." is "...", "Ætheric" "aetheric". Each checked by its count against Scryfall's, 9 Oct 2026
+        // (new:flavor 3 over and new:rarity 1 short, not yet explained)
         case "new": {
             const letters = (s: string) => fold(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, art: (p) => p.art, flavor: (p) => letters(p.flavor.join("")), frame: (p) => p.frame };
+            // new:art is the first printing of a picture on any card: Tiefling Outcasts' only printing isn't, since
+            // Elturel Survivors had the picture first, and of the four Killbots sharing one, only the first in
+            // Scryfall's own order (its bulk file's) is. 33,561 cards, as on Scryfall
+            if (v === "art") { const first = firstArts(data); return print((p, c, i) => first.has(i)); }
+            // new:artist only looks within the printing's set family (g:): 127 of M15's 127 reprints but its three
+            // basics drawn twice are new:artist there (Ajani's Pridemate, by the same artist in M11, is), and Phytotitan
+            // isn't, by its earlier prerelease promo (a promo-pack one doesn't count: Chasm Skulker's). Ties go by the
+            // bulk file's order. Close, not exact: Scryfall leaves out M15's John Avon Forest, which this can't explain
+            if (v === "artist") return print((p, c, i) => {
+                const group = family(data, p.set);
+                return !c.printings.some((j) => {
+                    const q = data.prints[j];
+                    return j !== i && q.artist === p.artist && group.has(q.set) && !q.promoTypes.has("promopack")
+                        && (q.released < p.released || (q.released === p.released && j < i));
+                });
+            });
+            const field: Record<string, (p: Printing) => string> = { rarity: (p) => p.rarity, flavor: (p) => letters(p.flavor[0] ?? ""),
+                frame: (p) => p.frame, language: (p) => p.lang };
             const of = field[v];
             if (!of) throw new Unsupported(`new:${v}`);
+            // new:language: the first printing in its language, of every language's printings
             return print((p, c) => {
-                const earlier = c.printings.map((i) => data.prints[i]).filter((q) => q.released < p.released && !(v === "rarity" && q.promo));
+                const earlier = (v === "language" ? everyLanguage(c, data) : c.printings).map((i) => data.prints[i])
+                    .filter((q) => q.released < p.released && q.setType !== "memorabilia" && !(v === "rarity" && q.promo));
                 return !!of(p) && !earlier.some((q) => of(q) === of(p));
             });
         }
@@ -922,9 +1167,15 @@ function compile(t: Term, data: Cards): Test {
         // From the Vault, all mythic: in:mythic isn't Swords to Plowshares)
         case "in": {
             const st = setType(v), r = rarityOf(v);
+            // or a language: in:ja, in:japanese, every language's printings counted (hidden ones too)
+            const lang = languageOf(v);
+            if (lang && lang !== "any") {
+                if (lang !== "en" && !data.languages) throw new Unsupported(`in:${v} without the languages file (npm run languages)`);
+                return card((c) => everyLanguage(c, data).some((i) => data.prints[i].lang === lang));
+            }
             return card((c) => c.printings.some((i) => {
                 const p = data.prints[i];
-                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r) || p.lang === v;
+                return p.set === v || p.setType === st || p.games.has(v) || (r >= 0 && !["masterpiece", "box", "from_the_vault"].includes(p.setType) && rarityOf(p.rarity) === r);
             }));
         }
         case "prints": case "sets": case "paperprints": case "papersets": {
@@ -933,6 +1184,39 @@ function compile(t: Term, data: Cards): Test {
                 const list = c.printings.map((i) => data.prints[i]).filter((p) => !t.key.startsWith("paper") || p.games.has("paper"));
                 return compare(t.op, t.key.endsWith("sets") ? new Set(list.map((p) => p.set)).size : list.length, n);
             });
+        }
+    }
+    switch (t.key) {
+        // what's in the art, from Tagger like otag: (a tag's child tags count too), by any face's illustration
+        case "atag": case "arttag": case "art": {
+            if (!data.artTags.size) throw new Unsupported("atag without the art_tags file");
+            const arts = data.artTags.get(v) ?? data.artTags.get(tagKey(v));
+            return print((p) => !!arts && p.illustrations.some((a) => arts.has(a)));
+        }
+        // a set's family (see family): g:ecc is ecl, ecc and their tokens, art cards and promos
+        case "g": case "group": {
+            if (!data.parents.size) throw new Unsupported("g: without Scryfall's list of sets");
+            const group = family(data, v);
+            return print((p) => group.has(p.set));
+        }
+        // the language a printing is in: lang:ja, lang:japanese, lang:any (see languageOf). Naming a language
+        // brings in every language's printings (see searchPrintings)
+        case "lang": case "language": {
+            const want = languageOf(v);
+            if (!want) throw new Unsupported(`lang:${v}`);
+            return want === "any" ? print(() => true) : print((p) => p.lang === want);
+        }
+        case "cube": {
+            const cube = CUBES[v];
+            if (!cube) throw new Unsupported(`cube:${v}`);
+            return card((c) => cube.has(c.name));
+        }
+        // how many artists a printing credits: artists>1 is the ones drawn by two
+        case "artists": { const n = number(); return print((p) => compare(t.op, p.artists, n)); }
+        // how many different pictures a card has had, over every printing (hidden ones too)
+        case "illustrations": {
+            const n = number();
+            return card((c) => compare(t.op, new Set(c.printings.map((i) => data.prints[i].art).filter(Boolean)).size, n));
         }
     }
     if (DISPLAY.has(t.key)) return card(() => true);
@@ -949,11 +1233,11 @@ const NEEDS: Record<Printing["extra"], number> = { "": 0, extra: 1, setOnly: 2 }
 // Naming a set shows its hidden printings to its own part of the search only ("set"): (s:neo or t:sorcery)
 // doesn't show the hidden sorceries, s:neo t:dragon does show NEO's dragon tokens. Everything else shows them to
 // the whole search ("all"): r:uncommon or o:draw wm:phyrexian shows hidden uncommons too
-function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
+export function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): number {
     if ("term" in node) {
         const { key, value } = node.term;
-        // -s:tsp doesn't
-        if (["s", "e", "set", "edition"].includes(key)) return scope === "set" && !negated ? 2 : 0;
+        // naming a set, or a set's family (g:fin finds its tokens and art cards); -s:tsp doesn't
+        if (["s", "e", "set", "edition", "g", "group"].includes(key)) return scope === "set" && !negated ? 2 : 0;
         if (scope === "set") return 0;
         if (key === "include" && value.toLowerCase() === "extras") return 2;
         // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
@@ -963,11 +1247,11 @@ function revealed(node: Node, negated = false, scope: "all" | "set" = "all"): nu
         // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
         // is:transform doesn't
         if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
+        // is:oversized finds the gold-bordered oversized cards (Secret Lair's pssc), is:reserved the withdrawn ones
+        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
         // (the surge-foil tokens), but not is:stamped or is:setpromo
         if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
-        // and further: is:oversized finds the gold-bordered oversized cards, is:reserved the withdrawn ones
-        if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't
         if (["banned", "restricted"].includes(key) && !negated) return 2;
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
@@ -995,7 +1279,7 @@ function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = f
     const prints = all.filter((i) => NEEDS[data.prints[i].extra] <= shown);
     if ("term" in node) {
         const test = compile(node.term, data);
-        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card]));
+        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card], i));
         // a card's facts are the same for each of its printings, so each card is tested once
         const known = new Map<number, boolean>();
         return prints.filter((i) => {
@@ -1044,112 +1328,290 @@ export function search(node: Node, data: Cards, among?: number[]): number[] {
 // the printings (as indexes into `prints`) that match the whole search, among those it shows
 export function searchPrintings(node: Node, data: Cards, among?: number[]): number[] {
     const prints: number[] = [];
-    for (const c of among ?? data.cards.keys()) prints.push(...data.cards[c].printings);
+    // a search naming a language (lang:ja, -lang:en, lang:any) looks at every language's printings; others at
+    // default_cards' only: English, or the one language a printing came out in
+    const languages = namesLanguage(node) ? data.languages : undefined;
+    if (namesLanguage(node) && !languages && !onlyEnglish(node)) throw new Unsupported("lang: without the languages file (npm run languages)");
+    for (const c of among ?? data.cards.keys()) {
+        prints.push(...data.cards[c].printings);
+        if (languages) prints.push(...languages.byCard.get(c) ?? []);
+    }
     return evaluate(node, data, prints, revealed(node));
 }
 
-// what Scryfall lists for a search: a card each (the default), every printing for unique:prints, or each
-// card's art once for unique:art. Returns the oracle id of each entry, in no particular order
-export function listed(node: Node, data: Cards): string[] {
-    const unique = findTerm(node, "unique")?.toLowerCase() ?? "cards";
-    if (unique === "cards") return search(node, data).map((c) => data.cards[c].oracleId);
-    const prints = searchPrintings(node, data);
-    if (unique === "prints") return prints.map((p) => data.cards[data.prints[p].card].oracleId);
-    if (unique !== "art") throw new Unsupported(`unique:${unique}`);
-    const arts = new Map<string, string>();
-    for (const p of prints) { const q = data.prints[p]; arts.set(`${q.card}|${q.art || p}`, data.cards[q.card].oracleId); }
-    return [...arts.values()];
+// a card's printings in every language: its own, and those in languages.jsonl.gz when it's loaded
+const everyLanguage = (c: LocalCard, data: Cards) => [...c.printings, ...data.languages?.byCard.get(data.prints[c.printings[0]].card) ?? []];
+
+const isLang = (t: Term) => t.key === "lang" || t.key === "language";
+function namesLanguage(node: Node): boolean {
+    if ("term" in node) return isLang(node.term);
+    if ("not" in node) return namesLanguage(node.not);
+    return ("and" in node ? node.and : node.or).some(namesLanguage);
 }
+// every lang: in the search is lang:en, not negated, so English printings are all it needs
+function onlyEnglish(node: Node, negated = false): boolean {
+    if ("term" in node) return !isLang(node.term) || (!negated && languageOf(node.term.value) === "en");
+    if ("not" in node) return onlyEnglish(node.not, !negated);
+    return ("and" in node ? node.and : node.or).every((n) => onlyEnglish(n, negated));
+}
+
+// ---- which printing each card is shown with ----
+
+// Scryfall goes through a card's printings in one order to pick the one it shows: its "preferred" printings
+// newest first, then the rest newest first. That order is plain in a unique:prints search (by name, each card's
+// printings come in it: Lightning Bolt's msc, clu, 2x2, clb, jmp … lea, then plst, fdc, slz, sld …), and the
+// first is the printing the card is shown with: oracle_cards' printing (see loadCards), where it has one.
+// What isn't preferred, found by comparing with oracle_cards' 21,434 cards with more than one printing (the rule
+// below picks the same printing for 98.6% of them) and with 8,668 printings' places in unique:prints answers (99.5%
+// right): other languages; promos, The List; masterpieces, Secret Lairs and other boxed products (not Game Night or
+// the Arena starter kit), memorabilia and the like
+const SPECIAL_SET_TYPES = new Set(["box", "masterpiece", "memorabilia", "treasure_chest", "from_the_vault", "premium_deck", "spellbook", "promo", "token", "minigame"]);
+const KEPT_SETS = new Set(["gnt", "gn2", "oana", "inr"]);
+// special frames, borderless or full art (a foil-only printing is fine: 7ed's 289★ comes before the older ones);
+// Arena-only printings; a Universes Beyond reprint with the triangle stamp (Sol Ring's fic, pip, who, ltc and 40k
+// printings come after every other, but the cards new in those sets are preferred); and the old frames on a
+// printing from 2015 on (Cloudshredder Sliver's Time Spiral Remastered one, The Brothers' War Commander's
+// artifacts), though not on Masters Edition or Innistrad Remastered's
+// (Planar Chaos's colorshifted cards are preferred: Sinew Sliver's plc/30 before plst/PLC-30)
+const SPECIAL_FRAMES = new Set(["showcase", "extendedart", "inverted", "etched", "fullart", "textless", "shatteredglass"]);
+// and these sets, though nothing in the bulk files tells their printings from others': Cemetery Reaper's mic,
+// scd, drc and fdc printings differ in nothing but the set, yet mic's is shown and the other three come after
+// every older printing. Mostly reprint products (Jumpstart 2022 and Foundations Jumpstart, Mystery Booster 2,
+// Starter Commander Decks) and some commander decks; learned from oracle_cards, so a new set may need adding
+const LOW_SETS = new Set(["anb", "blc", "drc", "fdc", "h2r", "j22", "j25", "m3c", "mb2", "onc", "plst", "punk", "scd", "tblc", "tdft", "tdrc", "tlcc", "tncc", "tscd", "ttdc", "woc", "ymid", "yotj"]);
+export function preferred(p: Printing): boolean {
+    return p.lang === "en" && !p.promo && (!SPECIAL_SET_TYPES.has(p.setType) || KEPT_SETS.has(p.set)) && !LOW_SETS.has(p.set)
+        && ![...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) && (p.border === "black" || p.border === "white") && !p.fullArt
+        && !(p.games.size === 1 && p.games.has("arena")) && !(p.stamp === "triangle" && p.reprint)
+        && !((p.frame === "1993" || p.frame === "1997") && p.released >= "2015" && !KEPT_SETS.has(p.set));
+}
+// the number in a collector number, its digits together: 1 for "1a", "S1" or "1★", 252 for The List's "MH2-52"
+// (order:set lists plst/CNS-35, AFC-50 … ISD-129, then MH2-52)
+const cnNumber = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
+// Scryfall's order through a card's printings (see preferred): the preferred ones first, newest first, then the
+// rest newest first, and last a Secret Lair's reversible printings (Dragonlord Dromoka's 2022 Magic Online promo
+// comes before its 2025 reversible sld/1971). On the same day, the lower collector number first (Secret Lair's 83,
+// 84, 85, 86; 1638 before 1638★). Among the rest on one day Scryfall's order has no rule found yet: one/310, 353
+// and 444 come before pone/125p, but pwoe/145p before woe/350
+function byPreference(data: Cards) {
+    const rank = new Map<number, number>();
+    const rankOf = (i: number) => {
+        let r = rank.get(i);
+        if (r === undefined) rank.set(i, r = preferred(data.prints[i]) ? 0 : data.prints[i].layout === "reversible_card" ? 2 : 1);
+        return r;
+    };
+    return (a: number, b: number) => {
+        const p = data.prints[a], q = data.prints[b];
+        return rankOf(a) - rankOf(b) || q.released.localeCompare(p.released) || cnNumber(p) - cnNumber(q) || p.cn.localeCompare(q.cn);
+    };
+}
+
+// between printings as cheap (or with no price): the newest, then the lower Scryfall id. Checked against prices
+// from the same day as Scryfall's answers (they change daily, so a day-old bulk file disagrees with a third of
+// usd prices): Champion of the Weird's ecl/241 rather than its extended-art ecl/378 at 0.02 tix, Goblin Lackey's
+// fdn/631 rather than woe/351
+function asCheap(data: Cards, a: number, b: number): number {
+    return data.prints[b].released.localeCompare(data.prints[a].released) || (data.prints[a].id < data.prints[b].id ? -1 : 1);
+}
+
+// the printing (of `among`, a card's printings that match) Scryfall shows a card with: the one it always shows,
+// when it matches, otherwise the first that matches in its order (see byPreference); `prefer:` changes this
+function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string, order: (a: number, b: number) => number): number {
+    if (among.length === 1) return among[0];
+    const first = (cmp: (a: number, b: number) => number) => among.reduce((best, i) => cmp(i, best) < 0 ? i : best);
+    const date = (i: number) => data.prints[i].released;
+    // the lower Scryfall id first: no rule found for printings out the same day, and this is right for 2 in 3
+    // (prefer:oldest takes Lazotep Sliver's cmm/764, prefer:newest Betor's ptdm/172p), against 1 in 3 for
+    // Scryfall's order or the collector number
+    const byId = (a: number, b: number) => data.prints[a].id < data.prints[b].id ? -1 : 1;
+    switch (prefer) {
+        case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || byId(a, b));
+        case "newest": return first((a, b) => date(b).localeCompare(date(a)) || byId(a, b));
+    }
+    const price = /^(usd|eur|tix)-(low|high)$/.exec(prefer);
+    if (price) {
+        const key = price[1] as "usd" | "eur" | "tix", sign = price[2] === "low" ? 1 : -1;
+        return first((a, b) => {
+            const x = data.prints[a][key], y = data.prints[b][key];
+            if (x === y) return asCheap(data, a, b);
+            if (x === undefined) return 1;
+            if (y === undefined) return -1;
+            return (x - y) * sign;
+        });
+    }
+    const group = PREFER_GROUPS[prefer];
+    if (group) return first((a, b) => Number(group(data.prints[b])) - Number(group(data.prints[a])) || order(a, b));
+    if (prefer) throw new Unsupported(`prefer:${prefer}`);
+    if (c.shown !== undefined && among.includes(c.shown)) return c.shown;
+    return first(order);
+}
+// prefer: kinds of printing put first
+const ub = (p: Printing) => p.stamp === "triangle" || p.promoTypes.has("universesbeyond");
+// an atypical frame treatment, as prefer:atypical and prefer:default read it: borderless, full art, textless,
+// showcase, extended art and the like, a booster-fun printing, the Future Sight frame (Bonded Fetch's fut/50, not
+// its tsr/54) or a date stamp (Jan Jansen's prerelease pclb/277s before its showcase clb/424)
+const preferAtypical = (p: Printing) => (p.border !== "black" && p.border !== "white") || p.fullArt || p.textless || p.frame === "future"
+    || [...p.frameEffects].some((f) => SPECIAL_FRAMES.has(f)) || ["boosterfun", "datestamped", "stamped"].some((t) => p.promoTypes.has(t));
+const PREFER_GROUPS: Record<string, (p: Printing) => boolean> = {
+    promo: (p) => p.promo,
+    atypical: preferAtypical, default: (p) => !preferAtypical(p),
+    ub, universesbeyond: ub,
+    notub: (p) => !ub(p), notuniversesbeyond: (p) => !ub(p),
+};
+
+// ---- what's listed, and in what order ----
+
+// how a search's results are shown: the API's own parameters (the app sends order, dir and unique), or the same
+// as keys in the search (order:, direction:, unique:, prefer:), which win
+export type View = { order?: string, dir?: string, unique?: string, prefer?: string };
 
 // the value of a key anywhere in the search (order:, unique:…)
-function findTerm(node: Node, key: string): string | undefined {
-    if ("term" in node) return node.term.key === key ? node.term.value : undefined;
-    if ("not" in node) return findTerm(node.not, key);
-    for (const part of "and" in node ? node.and : node.or) { const v = findTerm(part, key); if (v !== undefined) return v; }
-    return undefined;
+function findTerm(node: Node, keys: string[]): string | undefined {
+    if ("term" in node) return keys.includes(node.term.key) ? node.term.value.toLowerCase() : undefined;
+    if ("not" in node) return findTerm(node.not, keys);
+    let found: string | undefined;
+    for (const part of "and" in node ? node.and : node.or) found = findTerm(part, keys) ?? found;
+    return found;
 }
 
-// ---- order ----
+function viewOf(node: Node, view: View): Required<View> {
+    return {
+        order: findTerm(node, ["order", "sort"]) ?? view.order?.toLowerCase() ?? "name",
+        dir: findTerm(node, ["direction", "dir"]) ?? view.dir?.toLowerCase() ?? "auto",
+        unique: findTerm(node, ["unique"]) ?? view.unique?.toLowerCase() ?? "cards",
+        prefer: findTerm(node, ["prefer"]) ?? view.prefer?.toLowerCase() ?? "",
+    };
+}
+
+// what Scryfall lists for a search, in its order: a printing each (as indexes into `prints`), one a card (the
+// default), every printing for unique:prints, or each card's art once for unique:art
+export function results(node: Node, data: Cards, view: View = {}): number[] {
+    const v = viewOf(node, view);
+    const how = ORDERS[v.order];
+    if (!how) throw new Unsupported(`order:${v.order}`);
+    if (!["cards", "prints", "art"].includes(v.unique)) throw new Unsupported(`unique:${v.unique}`);
+    const order = byPreference(data);
+    const byCard = new Map<number, number[]>();
+    for (const p of searchPrintings(node, data)) {
+        const c = data.prints[p].card;
+        const list = byCard.get(c);
+        if (list) list.push(p); else byCard.set(c, [p]);
+    }
+    // sorted by a price, a card is shown with its cheapest printing that has one, whatever the direction: Eater of
+    // the Dead with its mb2 printing (1.31 euros, not drk's 5.15 or me1's none), Wall of Roots by tix with its 2013
+    // promo (3.80, the least of five). Between printings as cheap, and when none has a price, see asCheap.
+    // Otherwise see pickPrinting
+    const pick = (c: number, list: number[]) => {
+        const key = how.price;
+        if (!key || v.prefer) return pickPrinting(data.cards[c], list, data, v.prefer, order);
+        const price = (p: number) => data.prints[p][key] ?? Infinity;
+        const plain = (p: number) => key === "tix" || data.prints[p].plain[key];
+        if (list.some(plain)) list = list.filter(plain);
+        return list.reduce((best, p) => (price(p) - price(best) || asCheap(data, p, best)) < 0 ? p : best);
+    };
+    const entries: number[] = [];
+    for (const [c, list] of byCard) {
+        if (v.unique === "prints") { entries.push(...list); continue; }
+        if (v.unique === "cards") { entries.push(pick(c, list)); continue; }
+        // an art each: the printings with the same illustration, each shown with its first preferred printing (see
+        // preferred), not the newest: Phyrexian Metamorph's nph/42 and 2xm/341, Cogwork Assembler's aer/145,
+        // Talara's Battalion's eve/77, not their reprints. prefer: and a price order still pick their own
+        const arts = new Map<string, number[]>();
+        for (const p of list) { const a = data.prints[p].art || data.prints[p].id; arts.set(a, [...arts.get(a) ?? [], p]); }
+        const first = (group: number[]) => group.reduce((best, p) => (Number(preferred(data.prints[best])) - Number(preferred(data.prints[p])) || data.prints[p].released.localeCompare(data.prints[best].released) || order(p, best)) < 0 ? p : best);
+        for (const group of arts.values()) entries.push(v.prefer || how.price ? pick(c, group) : first(group));
+    }
+    return sortEntries(entries, data, how, v, order);
+}
+
+// a card each (the default), or a printing or art each: their cards' oracle ids, for comparing what was found
+export function listed(node: Node, data: Cards, view: View = {}): string[] {
+    return results(node, data, view).map((p) => data.cards[data.prints[p].card].oracleId);
+}
 
 // a card's name as Scryfall sorts it: letters only, accents and case aside
 const byName = new Intl.Collator("en", { sensitivity: "base", ignorePunctuation: true }).compare;
 const WUBRG = ["w", "u", "b", "r", "g"];
-// the printings of a card the search shows
-const shownPrints = (c: LocalCard, data: Cards) => c.printings.map((p) => data.prints[p]).filter((p) => !p.extra);
-const lowest = (list: (number | undefined)[]) => {
-    const known = list.filter((v): v is number => v !== undefined);
-    return known.length ? Math.min(...known) : undefined;
-};
+// rarities as order:rarity ranks them: special between rare and mythic (Essence Sliver's tsb printing comes
+// after the mythics and before the rares)
+const RARITY_RANK: Record<string, number> = { common: 0, uncommon: 1, rare: 2, special: 3, mythic: 4, bonus: 5 };
 
-// each order: what a card sorts by, ascending as Scryfall's table puts it (released is newest first). Cards
-// without one (no price, no power) go last, or first for power and toughness, whichever the direction
-// `high` when direction:auto (the default) lists the highest first: the dearest, mythic first
-type Order = { key: (c: LocalCard, data: Cards) => number | string | undefined, missingFirst?: boolean, high?: boolean };
+// each order: what an entry sorts by (its card's or its printing's), ascending as Scryfall's table puts it.
+// `high`: direction:auto lists the highest first. `missing`: where what has no value goes, as if it were the
+// lowest value ("low": first ascending, last descending) or the highest. `byDate`: ties go by set and collector
+// number, turned round with the rest (order:released); otherwise by name. `price`: see `pick` in results
+type Order = { key: (p: Printing, c: LocalCard) => number | string | undefined, missing?: "low" | "high", high?: boolean, byDate?: boolean, price?: "usd" | "eur" | "tix" };
+// colors as order:color lists them: white, blue, black, red, green, then two colors in the guilds' order (the
+// allied pairs, then the enemy ones: Crystalline Sliver WU, Dementia UB … Harmonic GW, Necrotic WB … Dormant GU),
+// then three, four and five, then colorless
+const COLOR_GROUPS = ["w", "u", "b", "r", "g", "wu", "ub", "br", "rg", "gw", "wb", "ur", "bg", "rw", "gu",
+    "wub", "ubr", "brg", "rgw", "gwu", "wbg", "urw", "bgu", "rwb", "gur", "wubr", "ubrg", "brgw", "rgwu", "gwub", "wubrg"]
+    .map((g) => [...g].sort().join(""));
 const ORDERS: Record<string, Order> = {
     name: { key: () => 0 },
-    cmc: { key: (c) => c.mv },
-    power: { key: (c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missingFirst: true },
-    toughness: { key: (c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missingFirst: true },
-    // WUBRG one color at a time, then multicolor (white-blue before black-red), then colorless
-    color: { key: (c) => {
-        const colors = WUBRG.map((l, i) => c.faceColors.some((f) => f.has(l)) ? String(i) : "").join("");
-        return colors.length === 0 ? "9" : colors.length > 1 ? `5${colors}` : colors;
+    cmc: { key: (_, c) => c.mv },
+    power: { key: (_, c) => c.power[0] === undefined ? undefined : statNumber(c.power[0]), missing: "low" },
+    toughness: { key: (_, c) => c.toughness[0] === undefined ? undefined : statNumber(c.toughness[0]), missing: "low" },
+    color: { key: (_, c) => {
+        // colored cards by the front face's colors (a split card's are both halves'): Heliod, the Radiant Dawn is
+        // white, not white-blue. Then colorless cards, then lands (Dryad Arbor too, though green), each by color
+        // identity, none last: Wall of Tanglecord (green identity) before Amaranthine Wall, Dowsing Dagger //
+        // Lost Vale before Abandoned Air Temple, Ancient Tomb after The World Tree
+        const group = (colors: Set<string> | undefined) => {
+            const key = [...colors ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
+            return key ? COLOR_GROUPS.indexOf(key) : 99;
+        };
+        if (/\bland\b/.test(c.faceTypes[0] ?? "")) return 20000 + group(c.identity);
+        const colors = group(c.faceColors[0]);
+        return colors < 99 ? colors * 100 : 10000 + group(c.identity);
     } },
-    edhrec: { key: (c) => c.edhrec },
-    penny: { key: (c) => c.penny },
-    // its lowest known price, dearest first
-    usd: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.usd)), high: true },
-    eur: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.eur)), high: true },
-    tix: { key: (c, data) => lowest(shownPrints(c, data).map((p) => p.tix)), high: true },
-    // the rest by the printing a card is shown with (see shownPrinting)
-    // newest first: its date as a number that grows older
-    released: { key: (c, data) => -(Date.parse(shownPrinting(c, data)?.released ?? "") || 0) },
-    rarity: { key: (c, data) => rarityOf(shownPrinting(c, data)?.rarity ?? ""), high: true },
-    set: { key: (c, data) => { const p = shownPrinting(c, data); return p && `${p.set}/${p.cn.padStart(6, "0")}`; } },
-    artist: { key: (c, data) => shownPrinting(c, data)?.artist.toLowerCase() },
+    // unranked cards count as the highest rank: last, or first with direction:desc (Cosmic Sovereign, an Alchemy
+    // card, leads f:timeless t:dragon order:edhrec direction:desc)
+    edhrec: { key: (_, c) => c.edhrec, missing: "high" },
+    penny: { key: (_, c) => c.penny, missing: "high" },
+    // the price of the printing shown (see `pick` in results), dearest first; no price counts as the lowest
+    usd: { key: (p) => p.usd, high: true, missing: "low", price: "usd" },
+    eur: { key: (p) => p.eur, high: true, missing: "low", price: "eur" },
+    tix: { key: (p) => p.tix, high: true, missing: "low", price: "tix" },
+    // newest first
+    released: { key: (p) => p.released, high: true, byDate: true },
+    rarity: { key: (p) => RARITY_RANK[p.rarity] ?? -1, high: true },
+    // by set code, then collector number
+    set: { key: (p) => `${p.set}/${String(cnNumber(p)).padStart(6, "0")}/${p.cn}` },
+    // letters only, as names are: Lucas Graciano before Luca Zontini
+    artist: { key: (p) => p.artist, missing: "high" },
 };
-
-// the printing a card is shown with, as near as a rule gets (right for about 3 in 4, checked against what
-// Scryfall shows): the newest, lowest collector number first, but promos, special products (Secret Lair, The
-// List, Premium Decks, From the Vault, masterpieces) and Arena-only printings only when there's nothing else
-const SPECIAL_SETS = new Set(["box", "premium_deck", "alchemy", "from_the_vault", "masterpiece", "spellbook"]);
-function shownPrinting(c: LocalCard, data: Cards): Printing | undefined {
-    const special = (p: Printing) => p.promo || SPECIAL_SETS.has(p.setType) || p.set === "plst" || [...p.games].every((g) => g === "arena");
-    const cn = (p: Printing) => Number(p.cn.replace(/\D/g, "")) || 0;
-    return shownPrints(c, data).sort((a, b) => Number(special(a)) - Number(special(b)) || b.released.localeCompare(a.released) || cn(a) - cn(b))[0];
-}
 ORDERS.mv = ORDERS.manavalue = ORDERS.cmc;
 ORDERS.pow = ORDERS.power;
 ORDERS.tou = ORDERS.toughness;
 
-// the order: and direction: in a search, wherever they are in it
-function orderTerms(node: Node): { order?: string, dir?: string } {
-    if ("term" in node) {
-        const { key, value } = node.term;
-        if (key === "order" || key === "sort") return { order: value.toLowerCase() };
-        if (key === "direction" || key === "dir") return { dir: value.toLowerCase() };
-        return {};
-    }
-    if ("not" in node) return orderTerms(node.not);
-    return Object.assign({}, ...("and" in node ? node.and : node.or).map(orderTerms));
-}
-
-// the cards (from search) in the order Scryfall lists them: order:<key> (by name if none) and direction:asc or
-// desc, ties by name
-export function sortCards(node: Node, data: Cards, cards: number[]): number[] {
-    const { order = "name", dir = "auto" } = orderTerms(node);
-    const how = ORDERS[order];
-    if (!how) throw new Unsupported(`order:${order}`);
-    const flip = dir === "desc" || (dir === "auto" && how.high) ? -1 : 1;
-    const keys = new Map(cards.map((i) => [i, how.key(data.cards[i], data)]));
-    return [...cards].sort((a, b) => {
+function sortEntries(entries: number[], data: Cards, how: Order, v: Required<View>, order: (a: number, b: number) => number): number[] {
+    const flip = v.dir === "desc" || (v.dir === "auto" && how.high) ? -1 : 1;
+    const keys = new Map(entries.map((p) => [p, how.key(data.prints[p], data.cards[data.prints[p].card])]));
+    const tie = (a: number, b: number) => {
+        const p = data.prints[a], q = data.prints[b];
+        // released: on the same day, by set code and collector number, turned round with the dates (nec/18 before
+        // neo/141 ascending, ecl/95 before ecc/52 descending). Scryfall's own order there has no rule found: of 31
+        // places two sets out the same day meet (10 Oct 2026), this is right for 23; it puts afr before afc, tdm
+        // before tdc and fin before fic ascending, against the code, but nec before neo and lcc before lci
+        if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
+        // by name (turned round only for order:name), then a card's printings in Scryfall's own order
+        return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
+    };
+    return [...entries].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);
         if (x !== y) {
-            if (x === undefined) return how.missingFirst ? -flip : 1;
-            if (y === undefined) return how.missingFirst ? flip : -1;
-            return (x < y ? -1 : 1) * flip;
+            if (x === undefined) return (how.missing === "low" ? -1 : 1) * flip;
+            if (y === undefined) return (how.missing === "low" ? 1 : -1) * flip;
+            const cmp = how === ORDERS.artist ? byName(x as string, y as string) : x < y ? -1 : 1;
+            if (cmp) return cmp * flip;
         }
-        return byName(data.cards[a].name, data.cards[b].name) * (order === "name" ? flip : 1);
+        return tie(a, b);
     });
 }
 
+// the cards (from search) in the order Scryfall lists them, for a search shown a card each
+export function sortCards(node: Node, data: Cards, cards: number[], view: View = {}): number[] {
+    const wanted = new Set(cards);
+    return results(node, data, { ...view, unique: "cards" }).map((p) => data.prints[p].card).filter((c) => wanted.has(c));
+}

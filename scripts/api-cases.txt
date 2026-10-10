@@ -1,0 +1,402 @@
+# Cases npm run test-api sends to Scryfall's cards/search and to scripts/search-api.ts, to compare the whole
+# response: broken and odd searches (for Scryfall's errors and warnings) and the API's other parameters.
+# One a line; # starts a comment. A line is a search, or "?" and the whole query string as sent.
+# A plain search is trimmed; for spaces at either end, write it as a query string (?q=%20%20t%3Agoblin).
+
+# nothing found, and nothing to search
+xyzzyqq
+t:slivr
+?q=
+?q=%20%20
+?page=2
+
+# unknown keys, and what's left
+foo:bar
+foo:bar t:sliver
+foo:bar t:slivr
+(hand:zzqx or t:sliver)
+t:sliver hand:zzqx
+
+# brackets
+t:sliver (
+t:sliver )
+t:sliver "abc
+
+# regexes
+o:/[/
+
+# numbers
+mv>abc
+t:sliver mv>abc
+-mv>=3 t:sliver
+
+# is:
+is:foo
+is:foo t:sliver
+
+# pages
+?q=t%3Agoblin&page=99
+?q=t%3Agoblin&page=0
+?q=t%3Agoblin&page=-1
+?q=t%3Agoblin&page=abc
+?q=t%3Agoblin&page=2.5
+?q=t%3Asliver&page=2
+?q=%20%20t%3Agoblin%20%20
+
+# the other parameters, good and bad
+?q=t%3Agoblin&order=foo
+?q=t%3Agoblin&order=CMC
+?q=t%3Agoblin&unique=foo
+?q=t%3Agoblin&unique=prints
+?q=t%3Agoblin&dir=foo
+?q=t%3Agoblin&dir=desc
+?q=t%3Agoblin&dir=asc&order=cmc
+?q=t%3Agoblin&order=released&dir=auto
+?q=t%3Agoblin&include_extras=maybe
+?q=t%3Agoblin&include_extras=False
+?q=t%3Agoblin&include_extras=1
+?q=t%3Agoblin&include_extras=0
+?q=t%3Agoblin&include_extras=
+?q=t%3Agoblin&include_variations=true
+?q=t%3Agoblin&format=text
+?q=t%3Agoblin&pretty=true
+?q=t%3Agoblin+order%3Acmc+unique%3Aprints
+
+# which keys Scryfall knows
+(c:zzqx or color:zzqx or id:zzqx or identity:zzqx or ci:zzqx or commander:zzqx or cmd:zzqx or t:zzqx or type:zzqx or o:zzqx or oracle:zzqx or fo:zzqx or fulloracle:zzqx or fulltext:zzqx or text:zzqx or m:zzqx or mana:zzqx or mv:zzqx or cmc:zzqx or manavalue:zzqx or t:sliver)
+(devotion:zzqx or produces:zzqx or pow:zzqx or power:zzqx or tou:zzqx or toughness:zzqx or pt:zzqx or powtou:zzqx or loy:zzqx or loyalty:zzqx or def:zzqx or defense:zzqx or is:zzqx or not:zzqx or has:zzqx or kw:zzqx or keyword:zzqx or keywords:zzqx or r:zzqx or rarity:zzqx or t:sliver)
+(new:zzqx or in:zzqx or s:zzqx or e:zzqx or set:zzqx or edition:zzqx or cn:zzqx or number:zzqx or b:zzqx or block:zzqx or st:zzqx or settype:zzqx or f:zzqx or format:zzqx or legal:zzqx or legality:zzqx or banned:zzqx or restricted:zzqx or game:zzqx or year:zzqx or t:sliver)
+(date:zzqx or usd:zzqx or eur:zzqx or tix:zzqx or cheapest:zzqx or a:zzqx or artist:zzqx or artists:zzqx or ft:zzqx or flavor:zzqx or flavortext:zzqx or wm:zzqx or watermark:zzqx or border:zzqx or frame:zzqx or stamp:zzqx or include:zzqx or lang:zzqx or language:zzqx or prints:zzqx or t:sliver)
+(sets:zzqx or paperprints:zzqx or papersets:zzqx or unique:zzqx or order:zzqx or sort:zzqx or direction:zzqx or dir:zzqx or display:zzqx or prefer:zzqx or otag:zzqx or oracletag:zzqx or function:zzqx or atag:zzqx or arttag:zzqx or art:zzqx or name:zzqx or edhrec:zzqx or edhrecrank:zzqx or penny:zzqx or t:sliver)
+(pennyrank:zzqx or cube:zzqx or spellbook:zzqx or illustrations:zzqx or oracleid:zzqx or oracle_id:zzqx or illustrationid:zzqx or scryfallid:zzqx or layout:zzqx or produced:zzqx or colors:zzqx or price:zzqx or frames:zzqx or mtgoid:zzqx or multiverseid:zzqx or arenaid:zzqx or tcgplayerid:zzqx or cardmarketid:zzqx or hp:zzqx or life:zzqx or t:sliver)
+(hand:zzqx or lifemod:zzqx or handmod:zzqx or rank:zzqx or power_toughness:zzqx or flavorname:zzqx or fn:zzqx or printed:zzqx or lore:zzqx or lc:zzqx or t:sliver)
+
+# each key with a value it doesn't take, colours, mana, display options in brackets
+t:sliver lore:zzqx
+t:sliver cube:zzqx
+t:sliver spellbook:zzqx
+t:sliver illustrations:zzqx
+t:sliver layout:zzqx
+t:sliver mtgoid:zzqx
+t:sliver multiverseid:zzqx
+t:sliver arenaid:zzqx
+(t:sliver or hand:zzqx)
+t:sliver mv:zzqx
+t:sliver pow:zzqx
+t:sliver s:zzqx
+t:sliver cn:zzqx
+t:sliver b:zzqx
+t:sliver in:zzqx
+t:sliver year:zzqx
+t:sliver date:zzqx
+t:sliver usd:zzqx
+t:sliver cheapest:zzqx
+t:sliver a:zzqx
+t:sliver wm:zzqx
+t:sliver border:zzqx
+t:sliver frame:zzqx
+t:sliver stamp:zzqx
+t:sliver include:zzqx
+t:sliver lang:zzqx
+t:sliver prints:zzqx
+t:sliver sets:zzqx
+t:sliver unique:zzqx
+t:sliver order:zzqx
+t:sliver sort:zzqx
+t:sliver direction:zzqx
+t:sliver dir:zzqx
+t:sliver display:zzqx
+t:sliver prefer:zzqx
+t:sliver otag:zzqx
+t:sliver atag:zzqx
+t:sliver art:zzqx
+t:sliver edhrec:zzqx
+t:sliver penny:zzqx
+t:sliver tix:zzqx
+t:sliver eur:zzqx
+t:sliver loy:zzqx
+t:sliver pt:zzqx
+t:sliver tou:zzqx
+t:sliver artists:zzqx
+t:sliver flavortext:zzqx
+t:sliver paperprints:zzqx
+t:sliver papersets:zzqx
+t:sliver function:zzqx
+t:sliver arttag:zzqx
+t:sliver edhrecrank:zzqx
+t:sliver c:z
+t:sliver c:x
+t:sliver c:q
+t:sliver c:abc
+t:sliver c:wq
+t:sliver c:purple
+t:sliver m:z
+t:sliver m:{z}
+t:sliver m:xyz
+t:sliver m:abc
+t:sliver (order:cmc)
+t:sliver (unique:prints)
+t:sliver (include:extras)
+t:sliver (lang:ja)
+t:sliver (prefer:newest)
+t:sliver (dir:desc)
+t:sliver (display:text)
+t:sliver -order:cmc
+order:cmc or t:sliver
+t:sliver or order:cmc
+
+# minus signs, brackets, quotes, regexes, comparisons, empty values
+(t:sliver or banned:zzqx)
+(t:sliver or lore:zzqx)
+(t:sliver or s:zzqx)
+(t:sliver or oracleid:zzqx)
+(t:sliver or cube:zzqx)
+t:sliver banned:zzqx
+t:sliver -mv:zzqx
+t:sliver -(mv:zzqx)
+t:sliver -s:zzqx
+t:sliver -a:zzqx
+t:sliver -foo:bar
+t:sliver -is:foo
+t:sliver -c:q
+t:sliver -(foo:bar)
+t:sliver -pow=0
+t:sliver -mv=0
+t:sliver -mv=3
+t:sliver -mv<3
+t:sliver -cmc>=3
+t:sliver -pow>=3
+t:sliver -usd>1
+t:sliver -year>2000
+t:sliver -cn>5
+t:sliver -tou>=3
+t:sliver -loy>=3
+t:sliver -edhrec>100
+t:sliver -prints>5
+t:sliver -date>2020-01-01
+()
+t:sliver ()
+( )
+((t:sliver)
+t:sliver))
+"t:sliver
+t:sliver "
+t:sliver o:"draw
+t:sliver o:/draw
+t:sliver or
+or t:sliver
+t:sliver or or t:elf
+and
+t:sliver and
+-
+t:sliver -
+--t:sliver
+- t:sliver
+!
+!"
+t:sliver !
+t:
+t:sliver o:
+t:sliver o:""
+t:sliver t:""
+:
+t:sliver :foo
+t:sliver =3
+t:sliver o:/(/
+t:sliver o:/)/
+t:sliver o:/a{/
+t:sliver o:/*/
+t:sliver o:/a**/
+t:sliver o:/(?<=a)b/
+t:sliver o:/\1/
+t:sliver o://
+t:sliver name:/(/
+t:sliver t:/[/
+t:sliver t>goblin
+t:sliver o>draw
+t:sliver s>neo
+t:sliver r>foo
+t:sliver name>bolt
+t:sliver is>foo
+t:sliver c>=q
+t:sliver t!=goblin
+t:sliver a=proce
+is:comander
+t:sliver is:fetch
+t:sliver not:foo
+t:sliver has:foo
+t:goblins
+T:sliver
+FOO:bar t:sliver
+foo_bar:baz t:sliver
+foo1:bar t:sliver
+foo-bar:baz t:sliver
+http://x t:sliver
+t:sliver lang:ja
+t:sliver r:foo
+t:sliver f:foo
+t:sliver st:foo
+t:sliver game:foo
+t:sliver new:foo
+t:sliver date>2020-13-45
+t:sliver year>abc
+t:sliver id:q
+t:sliver devotion:q
+t:sliver produces:q
+t:sliver kw:zzqx
+t:sliver c:
+t:sliver mv:
+t:sliver s:
+t:sliver is:
+t:sliver r:
+t:sliver unique:prints unique:art
+t:sliver order:cmc order:name
+t:sliver include:extras
+t:sliver order:cmc
+t:sliver o:/a/ o:/b/ o:/c/ o:/d/ o:/e/ o:/f/ o:/g/
+t:sliver o:/a/ o:/b/ o:/c/ o:/d/ o:/e/ o:/f/
+
+# more keys, cases, display options
+(types:zzqx or oracletext:zzqx or artistid:zzqx or fullart:zzqx or full:zzqx or border_color:zzqx or manacost:zzqx or mana_cost:zzqx or setname:zzqx or set_name:zzqx or rulings:zzqx or oracle_text:zzqx or type_line:zzqx or typeline:zzqx or watermarks:zzqx or illustration:zzqx or scryfall_id:zzqx or uuid:zzqx or cardmarket:zzqx or mtgo_id:zzqx or t:sliver)
+(nickname:zzqx or nicknames:zzqx or pw:zzqx or collector:zzqx or collectornumber:zzqx or released:zzqx or release:zzqx or spoiled:zzqx or preview:zzqx or edhrank:zzqx or popularity:zzqx or defence:zzqx or flavor_text:zzqx or oracle_tag:zzqx or art_tag:zzqx or tag:zzqx or tags:zzqx or keywords:zzqx or colors:zzqx or rarities:zzqx or t:sliver)
+(names:zzqx or nm:zzqx or via:zzqx or setcode:zzqx or set_type:zzqx or settypes:zzqx or legalities:zzqx or legality:zzqx or formats:zzqx or color_identity:zzqx or coloridentity:zzqx or cost:zzqx or pow_tou:zzqx or year_released:zzqx or language:zzqx or currency:zzqx or frame_effect:zzqx or frameeffect:zzqx or promo:zzqx or promotype:zzqx or t:sliver)
+(foo1:bar or t:sliver)
+(foo-bar:baz or t:sliver)
+(FOO:bar or t:sliver)
+(Is:zzqx or t:sliver)
+-mv>=3
+order:cmc
+t:sliver order:CMC
+t:sliver order:mv
+t:sliver unique:PRINTS
+t:sliver direction:DESC
+t:goblin   r:common
+t:goblin~ or t:sliver*
+o:"(" t:sliver
+o:/\(/ t:sliver
+t:sliver display:text
+t:sliver prefer:newest
+t:sliver unique:prints
+t:sliver -unique:prints
+t:sliver include:extras include:foo
+t:sliver m:qk
+t:sliver m:{q}{k}
+t:sliver m:2q
+t:sliver c:wubrgc
+t:sliver c:m
+t:sliver c:2
+t:sliver c:multicolor
+t:sliver c:colorless
+t:sliver c:wc
+t:sliver f:edh
+t:sliver f:pdh
+t:sliver f:Commander
+t:sliver frame:showcase
+t:sliver frame:old
+t:sliver stamp:oval
+t:sliver game:Paper
+t:sliver lang:japanese
+t:sliver r:M
+t:sliver r:mythics
+t:sliver kw:landfall
+t:sliver kw:scry
+t:sliver kw:Flying
+t:sliver cheapest:USD
+t:sliver new:art
+t:sliver new:language
+t:sliver st:Expansion
+t:sliver date:neo
+t:sliver date>=2020
+t:sliver -foo
+
+# which is: and has: values Scryfall knows
+(is:split or is:flip or is:transform or is:meld or is:leveler or is:dfc or is:mdfc or is:tdfc or is:adventure or is:spell or is:permanent or is:historic or is:party or is:outlaw or is:modal or is:vanilla or is:frenchvanilla or is:bear or is:funny or is:commander or t:sliver)
+(is:brawler or is:companion or is:partner or is:reprint or is:unique or is:promo or is:digital or is:reserved or is:gamechanger or is:full or is:fullart or is:textless or is:spotlight or is:oversized or is:foil or is:nonfoil or is:etched or is:glossy or is:hires or is:booster or t:sliver)
+(is:alchemy or is:rebalanced or is:universesbeyond or is:ub or is:masterpiece or is:colorshifted or is:new or is:old or is:firstprint or is:firstprinting or is:datestamped or is:hybrid or is:phyrexian or is:meldpart or is:meldresult or is:extended or is:extendedart or is:showcase or is:borderless or is:inverted or t:sliver)
+(is:future or is:default or is:atypical or is:intro or is:media or is:playtest or is:thick or is:surgefoil or is:stamped or is:setpromo or is:serialized or is:judge or is:token or is:emblem or is:art or is:clone or is:newframe or is:oldframe or is:modern or is:paper or t:sliver)
+(is:arena or is:mtgo or is:printed or is:scryfallpreview or is:preview or is:spoiler or is:league or is:tribal or is:kindred or is:land or is:creature or is:instant or is:sorcery or is:artifact or is:enchantment or is:planeswalker or is:battle or is:legendary or is:basic or is:snow or t:sliver)
+(is:nonbasic or is:manland or is:creatureland or is:triome or is:karoo or is:snarl or is:bikeland or is:cycleland or is:bicycleland or is:crowdland or is:bbdland or is:battlebondland or is:canland or is:battleland or is:trikeland or is:dual or is:fetchland or is:shockland or is:checkland or is:fastland or t:sliver)
+(is:painland or is:slowland or is:bounceland or is:filterland or is:gainland or is:pathway or is:scryland or is:surveilland or is:storageland or is:shadowland or is:tangoland or is:tricycleland or is:canopyland or is:bondland or is:horizonland or is:sacland or is:coloressland or is:pairland or is:verge or is:mana or t:sliver)
+(is:manarock or is:rock or is:ramp or is:fixing or is:removal or is:counter or is:commanderdeck or is:precon or is:pwdeck or is:spellbook or is:mutate or is:prototype or is:saga or is:class or is:case or is:room or is:split_second or is:sideboard or is:double_faced or is:doublefaced or t:sliver)
+(is:reversible or is:flipcard or is:level or is:triland or is:arenaleague or is:beginnerbox or is:boosterfun or is:boxtopper or is:brawldeck or is:bringafriend or is:bundle or is:buyabox or is:chocobotrackfoil or is:commanderparty or is:commanderpromo or is:concept or is:confettifoil or is:convention or is:cosmicfoil or is:dazzlefoil or t:sliver)
+(is:dossier or is:doubleexposure or is:doublerainbow or is:draculaseries or is:draftweekend or is:dragonscalefoil or is:duels or is:embossed or is:event or is:facetfoil or is:ffi or is:ffii or is:ffiii or is:ffiv or is:ffix or is:ffv or is:ffvi or is:ffvii or is:ffviii or is:ffx or t:sliver)
+(is:ffxi or is:ffxii or is:ffxiii or is:ffxiv or is:ffxv or is:ffxvi or is:firstplacefoil or is:fnm or is:fracturefoil or is:galaxyfoil or is:gameday or is:giftbox or is:gilded or is:gleaminggold or is:godzillaseries or is:halofoil or is:headliner or is:imagine or is:instore or is:intropack or t:sliver)
+(is:invisibleink or is:japanshowcase or is:jpwalker or is:judgegift or is:magnified or is:manafoil or is:mediainsert or is:metal or is:moonlitland or is:neonink or is:oilslick or is:openhouse or is:planeswalkerdeck or is:plastic or is:playerrewards or is:playpromo or is:portrait or is:poster or is:premiereshop or is:prerelease or t:sliver)
+(is:promopack or is:rainbowfoil or is:raisedfoil or is:ravnicacity or is:release or is:resale or is:ripplefoil or is:schinesealtart or is:scroll or is:setextension or is:silverfoil or is:silverscroll or is:singularityfoil or is:sldbonus or is:sourcematerial or is:standardshowdown or is:startercollection or is:starterdeck or is:stepandcompleat or is:storechampionship or t:sliver)
+(is:textured or is:themepack or is:tourney or is:upsidedown or is:upsidedownback or is:vault or is:wizardsplaynetwork or is:compasslanddfc or is:convertdfc or is:devoid or is:draft or is:fandfc or is:lesson or is:miracle or is:mooneldrazidfc or is:originpwdfc or is:shatteredglass or is:spree or is:sunmoondfc or is:tombstone or t:sliver)
+(is:upsidedowndfc or is:waxingandwaningmoondfc or is:art_series or is:augment or is:double_faced_token or is:front_card or is:host or is:modal_dfc or is:normal or is:planar or is:prepare or is:reversible_card or is:scheme or is:vanguard or t:sliver)
+(has:watermark or has:indicator or has:flavorname or has:flavor_name or has:securitystamp or has:stamp or has:pt or has:loyalty or has:power or has:toughness or has:defense or has:mana or has:manacost or has:cost or has:text or has:oracle or has:flavor or has:artist or has:art or has:illustration or t:sliver)
+(has:price or has:usd or has:eur or has:tix or has:edhrec or has:penny or has:rank or has:promo or has:foil or has:nonfoil or has:etched or has:color or has:colors or has:identity or has:produced or has:keyword or has:keywords or has:reprint or has:image or has:hires or t:sliver)
+(has:lore or has:defense or has:hand or has:life or t:sliver)
+
+# a minus before each number key, cut-short quotes, warning order
+(-mv=3 or -cmc=3 or -manavalue=3 or -pow=3 or -power=3 or -tou=3 or -toughness=3 or -loy=3 or -loyalty=3 or -pt=3 or -powtou=3 or -usd=3 or -eur=3 or -tix=3 or -year=3 or -edhrec=3 or -edhrecrank=3 or -cn=3 or -number=3 or -prints=3 or -sets=3 or -paperprints=3 or -papersets=3 or t:sliver)
+(-mv:3 or -cmc:3 or -manavalue:3 or -pow:3 or -power:3 or -tou:3 or -toughness:3 or -loy:3 or -loyalty:3 or -pt:3 or -powtou:3 or -usd:3 or -eur:3 or -tix:3 or -year:3 or -edhrec:3 or -edhrecrank:3 or -cn:3 or -number:3 or -prints:3 or -sets:3 or -paperprints:3 or -papersets:3 or t:sliver)
+(-mv!=3 or -cmc!=3 or -manavalue!=3 or -pow!=3 or -power!=3 or -tou!=3 or -toughness!=3 or -loy!=3 or -loyalty!=3 or -pt!=3 or -powtou!=3 or -usd!=3 or -eur!=3 or -tix!=3 or -year!=3 or -edhrec!=3 or -edhrecrank!=3 or -cn!=3 or -number!=3 or -prints!=3 or -sets!=3 or -paperprints!=3 or -papersets!=3 or t:sliver)
+(-mv<3 or -cmc<3 or -manavalue<3 or -pow<3 or -power<3 or -tou<3 or -toughness<3 or -loy<3 or -loyalty<3 or -pt<3 or -powtou<3 or -usd<3 or -eur<3 or -tix<3 or -year<3 or -edhrec<3 or -edhrecrank<3 or -cn<3 or -number<3 or -prints<3 or -sets<3 or -paperprints<3 or -papersets<3 or t:sliver)
+(-mv>=3 or -cmc>=3 or -manavalue>=3 or -pow>=3 or -power>=3 or -tou>=3 or -toughness>=3 or -loy>=3 or -loyalty>=3 or -pt>=3 or -powtou>=3 or -usd>=3 or -eur>=3 or -tix>=3 or -year>=3 or -edhrec>=3 or -edhrecrank>=3 or -cn>=3 or -number>=3 or -prints>=3 or -sets>=3 or -paperprints>=3 or -papersets>=3 or t:sliver)
+(-mv<=3 or -cmc<=3 or -manavalue<=3 or -pow<=3 or -power<=3 or -tou<=3 or -toughness<=3 or -loy<=3 or -loyalty<=3 or -pt<=3 or -powtou<=3 or -usd<=3 or -eur<=3 or -tix<=3 or -year<=3 or -edhrec<=3 or -edhrecrank<=3 or -cn<=3 or -number<=3 or -prints<=3 or -sets<=3 or -paperprints<=3 or -papersets<=3 or t:sliver)
+t:sliver is:abcdefghijklmnop
+t:sliver is:abcdefghijklmnopq
+t:sliver is:abcdefghijklmnopqr
+t:sliver is:abcdefghijklmnopqrstuvwxyz
+t:sliver abcdefghijklmnopqrstuvwxyz:foo
+t:sliver -abcdefghijklmnopqrstuvwxyz:foo
+t:sliver c:abcdefghijklmnopqrstuvwxyz
+t:sliver o:/(/ o:/abcdefghijklmnopqrstuvwxyz(/
+t:sliver mv=zz
+t:sliver -mv:even
+t:sliver -mv:odd
+t:sliver -(mv=3)
+t:sliver -pow:3
+t:sliver -mv>=abc
+t:sliver order:zzqx foo:bar
+foo:bar t:sliver order:zzqx
+t:sliver unique:prints foo:bar
+
+# which negated number terms are kept
+t:goblin -usd<3
+t:goblin -year<3
+t:goblin -cn<3
+t:goblin -edhrec<3
+t:goblin -prints<3
+t:goblin -pow<3
+t:goblin -mv<3
+t:goblin -cn=3
+t:goblin -tix<3
+t:goblin -eur<3
+t:goblin -sets<3
+
+# m with colours, mana symbols, case
+t:sliver c:wm
+t:sliver c:mub
+t:sliver c:rgm
+t:sliver c:mq
+t:sliver id:mw
+t:sliver c:wcm
+t:sliver produces:wc
+
+# regexes on other keys, frame and format names, next_page in lower case
+t:goblin O:"Haste"
+pow:* or t:goblin
+t:goblin a:"Jeff Miracola" or t:elf
+t:goblin wm:izzet or t:elf
+t:sliver order:manavalue
+t:sliver kw:/fly/
+t:sliver s:/tsp/
+t:sliver a:/miracola/
+t:sliver c:/w/
+t:sliver frame:new
+t:sliver frame:modern
+f:pauper t:goblin mv=1 f:pdh
+f:cedh t:sliver
+f:duelcommander t:sliver
+t:sliver cheapest:gbp
+t:sliver st:Expansion
+t:sliver game:mtga
+t:sliver direction:up
+t:sliver direction:down
+t:sliver include:all
+t:sliver unique:print
+t:sliver r:FOO
+t:goblin direction:down order:cmc

@@ -11,8 +11,8 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { bulkFile, cardText } from "./local-search.ts";
+import { politeFetch } from "./scryfall-answers.ts";
 
-const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // "this creature" and the like: a card that says it is found by ~ whatever its name
@@ -50,7 +50,7 @@ console.log(`${candidates.length} legends name themselves only partly; asking Sc
 const found = new Set<string>();
 for (let i = 0; i < candidates.length; i += 15) {
     const q = `o:~ (${candidates.slice(i, i + 15).map((c) => `oracleid:${c.id}`).join(" or ")})`;
-    const res = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}`, { headers: HEADERS });
+    const res = await politeFetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}`);
     if (res.status === 429) { console.log("Scryfall asked to slow down; waiting 90s"); await sleep(90_000); i -= 15; continue; }
     const body: any = await res.json();
     if (res.status !== 200 && res.status !== 404) throw new Error(`${res.status}: ${body.details}`);
