@@ -140,11 +140,18 @@ const differ = rows.filter((r) => r.local !== undefined && !r.error && !exact.in
 const errors = rows.filter((r) => r.error);
 const unsupported = rows.filter((r) => r.why !== undefined);
 const names = (list: string[]) => list.slice(0, 8).join(", ") + (list.length > 8 ? ` +${list.length - 8} more` : "");
-const headline = `${rows.length} keys: ${exact.length} exact, ${differ.length} differ, ${errors.length} Scryfall errors, ${unsupported.length} not supported here`;
+// agreement = 1 - |here - Scryfall| / Scryfall: a key off by a few cards of thousands is most likely data timing
+// (Scryfall's live data against the bulk file), so keys under AGREE are the ones worth a look
+const AGREE = 0.999;
+const agreement = (r: Row) => r.scryfall ? 1 - Math.abs(r.local! - r.scryfall) / r.scryfall : (r.local === 0 ? 1 : 0);
+const close = differ.filter((r) => agreement(r) >= AGREE), far = differ.filter((r) => agreement(r) < AGREE);
+const headline = `${rows.length} keys: ${exact.length} exact, ${differ.length} differ, ${errors.length} Scryfall errors, ${unsupported.length} not supported here; ${exact.length + close.length} agree at least ${AGREE * 100}%`;
 
 const lines = [
     `# Keys against Scryfall`, ``, `${new Date().toISOString()} · ${headline}`, ``,
     `Each key searched alone; where the counts differ, the slices (by mana value, then color) whose counts differ.`, ``,
+    `## Under ${AGREE * 100}% agreement (${far.length})`, ``,
+    ...(far.length ? far.map((r) => `- \`${r.key}\`: ${(agreement(r) * 100).toFixed(2)}% (here ${r.local}, Scryfall ${r.scryfall})`) : ["none"]), ``,
     `## Differ`, ``,
     ...(differ.length ? differ.flatMap((r) => [
         `- \`${r.key}\`: here ${r.local}, Scryfall ${r.scryfall}`,
