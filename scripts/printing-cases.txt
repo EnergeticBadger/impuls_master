@@ -185,3 +185,66 @@ f:pauper t:land o:/return[^.]*to (its|their) owner'?s'? hands?/
 o:"villainous choice"
 is:painland
 ((o:/put[^.]*counters? on/ kw:haste) or (kw:flying kw:vigilance)) c<=ub
+
+# every prefer:, and each order and direction on one search, with their own options (after a tab)
+t:dragon r:mythic prefer:oldest	order=name
+t:sliver prefer:oldest	order=name
+t:dragon r:mythic prefer:newest	order=name
+t:sliver prefer:newest	order=name
+t:dragon r:mythic prefer:usd-low	order=name
+t:sliver prefer:usd-low	order=name
+t:dragon r:mythic prefer:usd-high	order=name
+t:sliver prefer:usd-high	order=name
+t:dragon r:mythic prefer:eur-low	order=name
+t:sliver prefer:eur-low	order=name
+t:dragon r:mythic prefer:eur-high	order=name
+t:sliver prefer:eur-high	order=name
+t:dragon r:mythic prefer:tix-low	order=name
+t:sliver prefer:tix-low	order=name
+t:dragon r:mythic prefer:tix-high	order=name
+t:sliver prefer:tix-high	order=name
+t:dragon r:mythic prefer:promo	order=name
+t:sliver prefer:promo	order=name
+t:dragon r:mythic prefer:default	order=name
+t:sliver prefer:default	order=name
+t:dragon r:mythic prefer:atypical	order=name
+t:sliver prefer:atypical	order=name
+t:dragon r:mythic prefer:ub	order=name
+t:sliver prefer:ub	order=name
+t:dragon r:mythic prefer:notub	order=name
+t:sliver prefer:notub	order=name
+t:goblin r:rare	order=name&dir=asc
+t:goblin r:rare	order=name&dir=desc
+t:goblin r:rare	order=set&dir=asc
+t:goblin r:rare	order=set&dir=desc
+t:goblin r:rare	order=released&dir=asc
+t:goblin r:rare	order=released&dir=desc
+t:goblin r:rare	order=rarity&dir=asc
+t:goblin r:rare	order=rarity&dir=desc
+t:goblin r:rare	order=color&dir=asc
+t:goblin r:rare	order=color&dir=desc
+t:goblin r:rare	order=usd&dir=asc
+t:goblin r:rare	order=usd&dir=desc
+t:goblin r:rare	order=tix&dir=asc
+t:goblin r:rare	order=tix&dir=desc
+t:goblin r:rare	order=eur&dir=asc
+t:goblin r:rare	order=eur&dir=desc
+t:goblin r:rare	order=cmc&dir=asc
+t:goblin r:rare	order=cmc&dir=desc
+t:goblin r:rare	order=power&dir=asc
+t:goblin r:rare	order=power&dir=desc
+t:goblin r:rare	order=toughness&dir=asc
+t:goblin r:rare	order=toughness&dir=desc
+t:goblin r:rare	order=edhrec&dir=asc
+t:goblin r:rare	order=edhrec&dir=desc
+t:goblin r:rare	order=penny&dir=asc
+t:goblin r:rare	order=penny&dir=desc
+t:goblin r:rare	order=artist&dir=asc
+t:goblin r:rare	order=artist&dir=desc
+t:sliver order:cmc	order=name
+t:sliver direction:desc	order=cmc
+t:sliver unique:prints	unique=cards
+t:sliver	prefer=oldest
+t:goblin r:mythic	unique=prints&order=released&dir=asc
+t:goblin r:mythic	unique=art&order=artist
+t:goblin r:mythic	unique=prints&order=usd
