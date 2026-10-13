@@ -15,6 +15,17 @@ export const PAGE = 175;
 // prices as "usd|usd_foil|eur|eur_foil|tix" (see Answers). `warnings` when Scryfall ignored part of the search
 export type Answer = { at: number, total: number, cards?: [string, string, string?, string?, string?, string?][], error?: string, warnings?: string[] };
 
+// whether a printing's prices (as the engine keeps them: the regular price, or else the foil or etched one) are
+// the ones an answer kept with the `prices` option gives; answers kept before usd_etched was (five prices) count
+// as matching, since they can't tell
+export function pricesMatch(p: { usd?: number, eur?: number, tix?: number, plain: { usd: boolean, eur: boolean } }, given: string): boolean {
+    const values = given.split("|").map((v) => v === "" ? undefined : Number(v));
+    if (values.length !== 6) return true;
+    const [usd, usdFoil, usdEtched, eur, eurFoil, tix] = values;
+    return (usd ?? usdFoil ?? usdEtched) === p.usd && (usd !== undefined) === p.plain.usd
+        && (eur ?? eurFoil) === p.eur && (eur !== undefined) === p.plain.eur && tix === p.tix;
+}
+
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 // thrown instead of waiting when Scryfall asks to slow down and the script was told to stop then, so it can
