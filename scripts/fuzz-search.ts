@@ -12,6 +12,7 @@
 //   --count <n>   how many searches in all (default 10000)   --seed <n>   (default 1)   --risky <n>
 //   --offline     only searches already asked (no Scryfall)    --refresh   ask Scryfall again
 //   --only <text> searches containing it                      --out <dir>  default fuzz-results/search
+//   --recheck     ask Scryfall again for each search that differs (after downloading new bulk files)
 // Answers are appended to <out>/answers.jsonl as they come (a stopped run picks up where it left off), with
 // prices: a search that goes by prices whose answer lists a printing at another price than the bulk file's is
 // counted apart ("prices moved"), as are differences that are only cards newer than the bulk file. Download the
@@ -37,6 +38,7 @@ const RANGE = option("range", "");
 const ONLY = option("only", "");
 const OFFLINE = args.includes("--offline");
 const REFRESH = args.includes("--refresh");
+const RECHECK = args.includes("--recheck");
 // a short answer is listed in full (to name the cards that differ); a longer one only its first page
 const PAGES = 4;
 
@@ -232,10 +234,10 @@ async function ask(s: Search, pages: number): Promise<Answer> {
     }
     return { at: Date.now(), total, entries, complete: !url };
 }
-async function answer(s: Search, pages: number): Promise<Answer | undefined> {
+async function answer(s: Search, pages: number, refresh = REFRESH): Promise<Answer | undefined> {
     const key = keyOf(s);
     const have = known.get(key);
-    if (have && !REFRESH && (have.complete || have.entries.length >= Math.min(have.total, pages * PAGE))) return have;
+    if (have && !refresh && (have.complete || have.entries.length >= Math.min(have.total, pages * PAGE))) return have;
     if (OFFLINE) return have;
     const a = await ask(s, pages);
     known.set(key, a);
@@ -255,24 +257,22 @@ const byPrice = (s: Search) => /^(usd|eur|tix)$/.test(s.options.order ?? "") || 
 // newer: only cards newer than the bulk file differ; moved: by prices, and they moved since the bulk file
 type Outcome = "exact" | "printing" | "order" | "cards" | "newer" | "moved" | "unsupported" | "error" | "not asked";
 type Row = Search & { outcome: Outcome, here?: number, there?: number, note?: string };
-const rows: Row[] = [];
-for (const [n, s] of group.entries()) {
-    say(`${n + 1}/${group.length} ${s.q} ${new URLSearchParams(s.options)}`);
+// how one search compares; `refresh` asks Scryfall again
+async function judge(s: Search, refresh: boolean): Promise<Row> {
     const row: Row = { ...s, outcome: "not asked" };
-    rows.push(row);
     let ours: number[];
     try { ours = results(parse(s.q), data, s.options as View); } catch (e) {
         if (!(e instanceof Unsupported)) throw e;
         row.outcome = "unsupported";
         row.note = e.message;
-        continue;
+        return row;
     }
     row.here = ours.length;
-    let theirs = await answer(s, 1);
-    if (!theirs) continue;
-    if (theirs.error) { row.outcome = "error"; row.note = theirs.error; continue; }
+    let theirs = await answer(s, 1, refresh);
+    if (!theirs) return row;
+    if (theirs.error) { row.outcome = "error"; row.note = theirs.error; return row; }
     row.there = theirs.total;
-    if (theirs.total !== ours.length && theirs.total <= PAGES * PAGE && !theirs.complete) theirs = (await answer(s, PAGES)) ?? theirs;
+    if (theirs.total !== ours.length && theirs.total <= PAGES * PAGE && !theirs.complete) theirs = (await answer(s, PAGES, false)) ?? theirs;
     const page = theirs.entries;
     const moved = byPrice(s) && page.find(([, , id, , , prices]) => byId.has(id) && !pricesMatch(data.prints[byId.get(id)!], prices));
     const oursOracle = (i: number) => data.cards[data.prints[i].card].oracleId;
@@ -284,18 +284,27 @@ for (const [n, s] of group.entries()) {
             const name = (o: string) => page.find(([x]) => x === o)?.[1] ?? data.cards.find((c) => c.oracleId === o)?.name;
             row.note = [onlyHere.length ? `only here: ${onlyHere.slice(0, 6).map(name).join(", ")}${onlyHere.length > 6 ? ` +${onlyHere.length - 6}` : ""}` : "",
                 onlyThere.length ? `only Scryfall: ${onlyThere.slice(0, 6).map(name).join(", ")}${onlyThere.length > 6 ? ` +${onlyThere.length - 6}` : ""}` : ""].filter(Boolean).join("; ");
-            if (!onlyHere.length && onlyThere.length && onlyThere.every((o) => !oracleIds.has(o))) { row.outcome = "newer"; continue; }
+            if (!onlyHere.length && onlyThere.length && onlyThere.every((o) => !oracleIds.has(o))) { row.outcome = "newer"; return row; }
         }
         row.outcome = moved ? "moved" : "cards";
-        continue;
+        return row;
     }
     const first = page.findIndex(([, , id], i) => ours[i] === undefined || data.prints[ours[i]].id !== id);
-    if (first < 0) { row.outcome = "exact"; continue; }
+    if (first < 0) { row.outcome = "exact"; return row; }
     const there = byId.get(page[first][2]);
     row.note = `#${first + 1}: Scryfall ${there === undefined ? `${page[first][1]} (${page[first][3]}/${page[first][4]}, not in the bulk file)` : describe(there)}, here ${describe(ours[first])}`;
-    if (page.some(([o]) => !oracleIds.has(o))) { row.outcome = "newer"; continue; }
-    if (moved) { row.outcome = "moved"; continue; }
+    if (page.some(([o]) => !oracleIds.has(o))) { row.outcome = "newer"; return row; }
+    if (moved) { row.outcome = "moved"; return row; }
     row.outcome = page.every(([o], i) => ours[i] !== undefined && oursOracle(ours[i]) === o) ? "printing" : "order";
+    return row;
+}
+const rows: Row[] = [];
+for (const [n, s] of group.entries()) {
+    say(`${n + 1}/${group.length} ${s.q} ${new URLSearchParams(s.options)}`);
+    let row = await judge(s, REFRESH);
+    // asked again now, a search that differed: was it the day between the bulk file and the answer?
+    if (RECHECK && !OFFLINE && ["cards", "order", "printing"].includes(row.outcome)) row = await judge(s, true);
+    rows.push(row);
 }
 if (live) process.stdout.write("\r\x1b[2K");
 
