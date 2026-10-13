@@ -303,7 +303,7 @@ for (const [n, s] of group.entries()) {
     say(`${n + 1}/${group.length} ${s.q} ${new URLSearchParams(s.options)}`);
     let row = await judge(s, REFRESH);
     // asked again now, a search that differed: was it the day between the bulk file and the answer?
-    if (RECHECK && !OFFLINE && ["cards", "order", "printing"].includes(row.outcome)) row = await judge(s, true);
+    if (RECHECK && !OFFLINE && ["cards", "order", "printing", "moved", "newer"].includes(row.outcome)) row = await judge(s, true);
     rows.push(row);
 }
 if (live) process.stdout.write("\r\x1b[2K");

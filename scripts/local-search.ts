@@ -148,7 +148,10 @@ export function extraKind(c: any): Printing["extra"] {
     // dungeons are shown, even Undercity // The Initiative, a double-faced token
     const dungeon = /^dungeon\b/i.test(type);
     if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
-        || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
+        // an Alchemy card legal nowhere (Alchemy Horizons: Baldur's Gate's 104), but not one just out, whose formats
+        // aren't filled in yet (Oko, Lord of the Fae, out 13 Oct 2026, is shown that day)
+        || (c.set_type === "alchemy" && legalNowhere && (c.released_at ?? "") < new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10))
+        || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
     // the Arena-only reprints added to Alchemy sets outside their packs, with only a low-resolution picture: the
     // Power Nine in Alchemy: Dominaria, Storm Crow in Alchemy: Secrets of Strixhaven, Lightning Bolt in Alchemy
     // Horizons: Baldur's Gate (cn 902–928)… Of the 263 Alchemy-set reprints, Scryfall shows 225 (9 Oct 2026); the
@@ -1273,16 +1276,20 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
         // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
         // is:transform doesn't
         if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
+        // -is:mdfc and not:mdfc show everything too (38,652 cards, 13 Oct 2026)
+        if (key === "is" && value.toLowerCase() === "mdfc" && negated) return 2;
+        if (key === "not" && value.toLowerCase() === "mdfc" && !negated) return 2;
         // is:oversized finds the gold-bordered oversized cards (Secret Lair's pssc), is:reserved the withdrawn ones
         if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
         // (the surge-foil tokens), but not is:stamped or is:setpromo
         if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
         // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't. Left
-        // out, they and a block show every hidden printing: -banned:gladiator and -b:parl unique:prints are all
-        // 118,472 printings, extras too (13 Oct 2026)
+        // out, they show every hidden printing: -banned:gladiator unique:prints is all 118,472 printings, extras
+        // too (13 Oct 2026)
         if (["banned", "restricted"].includes(key)) return 2;
-        if (["b", "block"].includes(key) && negated) return 2;
+        // so does a block, named or left out (b:isd finds Innistrad's tokens), for the whole search
+        if (["b", "block"].includes(key)) return 2;
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
         // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
         // border:black or borderless, or -border:black)
@@ -1564,6 +1571,21 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
         for (const p of list) { const a = data.prints[p].art || data.prints[p].id; arts.set(a, [...arts.get(a) ?? [], p]); }
         const first = (group: number[]) => group.reduce((best, p) => (Number(preferred(data.prints[best])) - Number(preferred(data.prints[p])) || data.prints[p].released.localeCompare(data.prints[best].released) || order(p, best)) < 0 ? p : best);
         for (const group of arts.values()) entries.push(v.prefer || how.price ? pick(c, group) : first(group));
+    }
+    // and an illustration once, even on two cards: an art card and the card it shows, or the Killbots
+    // (close, not exact: t:goblin unique:art is 773 here and 772 on Scryfall, c<=2 48,285 and 48,299; with
+    // extras shown Scryfall keeps more, -is:mdfc 54,601 against 53,186 here, 13 Oct 2026)
+    if (v.unique === "art") {
+        const byArt = new Map<string, number>();
+        const better = (a: number, b: number) => (Number(preferred(data.prints[b])) - Number(preferred(data.prints[a])) || data.prints[a].released.localeCompare(data.prints[b].released) || order(a, b)) < 0;
+        for (const p of entries) {
+            const art = data.prints[p].art;
+            if (!art) continue;
+            const had = byArt.get(art);
+            if (had === undefined || better(p, had)) byArt.set(art, p);
+        }
+        const kept = new Set(byArt.values());
+        return sortEntries(entries.filter((p) => !data.prints[p].art || kept.has(p)), data, how, v, order);
     }
     return sortEntries(entries, data, how, v, order);
 }
