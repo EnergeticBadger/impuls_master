@@ -256,7 +256,8 @@ const byPrice = (s: Search) => /^(usd|eur|tix)$/.test(s.options.order ?? "") || 
 // printing; order: the same count, the first page in another order; cards: another count or other cards;
 // newer: only cards newer than the bulk file differ; moved: by prices, and they moved since the bulk file
 type Outcome = "exact" | "printing" | "order" | "cards" | "newer" | "moved" | "unsupported" | "error" | "not asked";
-type Row = Search & { outcome: Outcome, here?: number, there?: number, note?: string };
+// `listed`/`same`: of a search with the same count, the first page's entries, and those the same printing in the same place
+type Row = Search & { outcome: Outcome, here?: number, there?: number, note?: string, listed?: number, same?: number };
 // how one search compares; `refresh` asks Scryfall again
 async function judge(s: Search, refresh: boolean): Promise<Row> {
     const row: Row = { ...s, outcome: "not asked" };
@@ -289,6 +290,8 @@ async function judge(s: Search, refresh: boolean): Promise<Row> {
         row.outcome = moved ? "moved" : "cards";
         return row;
     }
+    row.listed = page.length;
+    row.same = page.filter(([, , id], i) => ours[i] !== undefined && data.prints[ours[i]].id === id).length;
     const first = page.findIndex(([, , id], i) => ours[i] === undefined || data.prints[ours[i]].id !== id);
     if (first < 0) { row.outcome = "exact"; return row; }
     const there = byId.get(page[first][2]);
@@ -314,7 +317,9 @@ const counted = rows.filter((r) => ["exact", "printing", "order", "cards"].inclu
 const tally = (o: Outcome) => rows.filter((r) => r.outcome === o).length;
 const pct = (a: number, b: number) => `${(100 * a / (b || 1)).toFixed(2)}%`;
 const exact = tally("exact");
+const listed = counted.reduce((n, r) => n + (r.listed ?? 0), 0), same = counted.reduce((n, r) => n + (r.same ?? 0), 0);
 const headline = `${rows.length} searches (${GROUP}${RANGE ? ` ${RANGE}` : ""}, seed ${SEED}): ${exact} of ${counted.length} compared exact (${pct(exact, counted.length)}); `
+    + `where the count matches, ${pct(same, listed)} of first-page entries the same printing in the same place; `
     + `${tally("cards")} other cards, ${tally("order")} another order, ${tally("printing")} another printing; `
     + `not counted: ${tally("newer")} newer cards, ${tally("moved")} prices moved, ${tally("unsupported")} unsupported here, ${tally("error")} Scryfall errors, ${tally("not asked")} not asked`;
 // each kind of term: how often a search with it differs, to say where to look first

@@ -46,6 +46,9 @@ export type LocalCard = {
     mv: number,
     // a face each, so m=1R finds Fire // Ice by Fire's cost
     manaCosts: string[],
+    // the front face's own, "" where it has none (Jidoor, Aristocratic Capital, a land, has none; its
+    // adventure Overture costs {4}{U}{U}), for devotion: and is:hybrid
+    frontCost: string,
     // a face each, undefined where a face has none
     power: (string | undefined)[],
     toughness: (string | undefined)[],
@@ -277,6 +280,7 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
         // a reversible printing keeps these on its faces only
         mv: c.cmc ?? faces[0]?.cmc ?? 0,
         // with more than two faces (Who // What // When // Where // Why), the whole cost counts too, so m:RG finds it
+        frontCost: faces.length > 1 ? faces[0].mana_cost ?? "" : c.mana_cost ?? "",
         manaCosts: faces.length > 1 ? [...faces.map((f) => f.mana_cost ?? ""), ...(faces.length > 2 ? [c.mana_cost ?? ""] : [])].filter(Boolean) : [c.mana_cost ?? ""],
         power: each("power"),
         toughness: each("toughness"),
@@ -827,7 +831,7 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // worth of modes") or a keyword that works the same way
     modal: (c) => c.text.some((t) => /^•|\bworth of modes\b/m.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
     // the front face's cost: Hallway Heckler // Vicious Verse isn't, by {B/R} on its prepared spell
-    hybrid: (c) => [...manaSymbols(c.manaCosts[0] ?? "").keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
+    hybrid: (c) => [...manaSymbols(c.frontCost).keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
     // {W/P} and the like; not Bloomburrow's paw print {P}
     phyrexian: (c) => symbolsOf(c).some((s) => /\/P$/.test(s)),
     reserved: (c) => c.reserved,
@@ -1028,7 +1032,15 @@ function compile(t: Term, data: Cards): Test {
         }
         // the whole name, a reversible printing's own ("Bolt // Bolt") and, unless it's a regex, a printing's
         // flavor name (name:"green dragon inn" is Homeward Path); a face's name alone doesn't count
-        case "name": case "word": { const m = plainOrRegex(t.op); return print((p, c) => m(t.regex ? [c.name, p.name] : [c.name, p.name, p.flavorName])); }
+        // a name without a regex matches with spaces and punctuation left out of both: mortals finds Immortal
+        // Servitude and Mortal's Ardor, name:sages Sage's Row Savant, lordofthe The Lord of the Rings cards
+        case "name": case "word": {
+            if (t.regex) { const m = plainOrRegex(t.op); return print((p, c) => m([c.name, p.name])); }
+            if (t.op !== ":" && t.op !== "=") throw new Unsupported(`${t.key}${t.op}`);
+            const squash = (n: string) => fold(n).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const want = squash(t.value);
+            return print((p, c) => [c.name, p.name, p.flavorName].some((n) => !!n && squash(n).includes(want)));
+        }
         case "!": return card((c) => c.name.toLowerCase() === v || c.faceNames.some((n) => n.toLowerCase() === v));
         case "c": case "color": { const m = colorTest(t.op, t.value, ">="); return card((c) => c.faceColors.some(m)); }
         case "id": case "identity": case "ci": case "commander": { const m = colorTest(t.op, t.value, "<="); return card((c) => m(c.identity)); }
@@ -1130,7 +1142,7 @@ function compile(t: Term, data: Cards): Test {
             if (!colors.size) throw new Unsupported(`devotion:${t.value}`);
             const op = t.op === ":" ? ">=" : t.op;
             return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
-                [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
+                [...manaSymbols(c.frontCost)].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
         }
         // a printing that's the first of its card with this rarity (promos aside), flavor text, frame or language
         // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
@@ -1270,8 +1282,9 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
         // -cn=5 (see parse): every card, extras too
         if (key === "_every") return 2;
         // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
-        // card, name:/^a/ Antoine Ruel Bio), but not name:lightning, and not -name:/dragon/
-        if (key === "name" && node.term.regex && !negated) return 2;
+        // card, name:/^a/ Antoine Ruel Bio), and left out too (-name:/dragon/ is 38,391 cards, extras with them,
+        // 13 Oct 2026), but not name:lightning
+        if (key === "name" && node.term.regex) return 2;
         if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return 1;
         // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
         // is:transform doesn't
@@ -1294,7 +1307,10 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
         // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
         // border:black or borderless, or -border:black)
         // (left out, an artist shows everything, as include:extras does)
-        if (["a", "artist"].includes(key)) return negated ? 2 : 1;
+        // (an artist, or a watermark left out, shows everything, as include:extras does: a:avon unique:prints
+        // finds his art cards, -wm:rakdos every printing; 13 Oct 2026)
+        if (["a", "artist"].includes(key)) return 2;
+        if (["wm", "watermark"].includes(key) && negated) return 2;
         if (["wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
         if (key === "has" && value.toLowerCase() === "watermark") return 1;
         // is:funny shows funny tokens too, like the Dragon
