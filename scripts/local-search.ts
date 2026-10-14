@@ -180,6 +180,14 @@ const THIS_WORDS = "creature|artifact|enchantment|land|battle|spell|card|permane
 const THIS = new RegExp(`\\bthis (?:${THIS_WORDS})\\b`, "gi");
 
 // text with its accents off and Æ as Ae, as Scryfall compares it: o:Æther, o:aether and o:/æther/ are the same
+// a name with its spaces and punctuation left out, as a name without a regex matches; kept, as names repeat
+const squashed = new Map<string, string>();
+const squash = (n: string) => {
+    let s = squashed.get(n);
+    if (s === undefined) squashed.set(n, s = fold(n).toLowerCase().replace(/[^a-z0-9]/g, ""));
+    return s;
+};
+
 export const fold = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").replace(/æ/g, "ae").replace(/Æ/g, "Ae");
 
 // A Scryfall regex as JavaScript reads it. Scryfall's never cross a line break: . and [^…] don't match one,
@@ -1005,8 +1013,8 @@ function compile(t: Term, data: Cards): Test {
         // both sides with their accents off (rules text already is): a:"zoltan boros" is Zoltán Boros
         const plain = (s: string) => /[^\x00-\x7f]/.test(s) ? fold(s) : s;
         if (t.regex) { const re = t.regex; return (list: string[]) => list.some((s) => re.test(plain(s))); }
-        const v = fold(t.value).toLowerCase();
-        return (list: string[]) => list.some((s) => plain(s).toLowerCase().includes(v));
+        const re = new RegExp(escapeRe(fold(t.value)), "i");
+        return (list: string[]) => list.some((s) => re.test(plain(s)));
     };
     const number = () => {
         const n = Number(t.value);
@@ -1037,7 +1045,6 @@ function compile(t: Term, data: Cards): Test {
         case "name": case "word": {
             if (t.regex) { const m = plainOrRegex(t.op); return print((p, c) => m([c.name, p.name])); }
             if (t.op !== ":" && t.op !== "=") throw new Unsupported(`${t.key}${t.op}`);
-            const squash = (n: string) => fold(n).toLowerCase().replace(/[^a-z0-9]/g, "");
             const want = squash(t.value);
             return print((p, c) => [c.name, p.name, p.flavorName].some((n) => !!n && squash(n).includes(want)));
         }
@@ -1330,32 +1337,51 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
 // search around this part shows, and a part naming a set shows more for itself (see revealed)
 function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = false): number[] {
     const shown = Math.max(level, revealed(node, negated, "set"));
-    const prints = all.filter((i) => NEEDS[data.prints[i].extra] <= shown);
+    const { need, cardOf } = flat(data);
+    const prints = shown >= 2 ? all : all === flat(data).every ? shownAt(data, shown) : all.filter((i) => need[i] <= shown);
     if ("term" in node) {
         const test = compile(node.term, data);
-        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[data.prints[i].card], i));
-        // a card's facts are the same for each of its printings, so each card is tested once
-        const known = new Map<number, boolean>();
+        if (test.level === "print") return prints.filter((i) => test.fn(data.prints[i], data.cards[cardOf[i]], i));
+        // a card's facts are the same for each of its printings, so each card is tested once: 0 not yet, 1 no, 2 yes
+        const known = new Uint8Array(data.cards.length);
         return prints.filter((i) => {
-            const c = data.prints[i].card;
-            let hit = known.get(c);
-            if (hit === undefined) known.set(c, hit = test.fn(data.cards[c]));
-            return hit;
+            const c = cardOf[i];
+            if (!known[c]) known[c] = test.fn(data.cards[c]) ? 2 : 1;
+            return known[c] === 2;
         });
     }
     // an AND only tests what's left after the parts before it, so a narrow part first saves the rest work
     if ("and" in node) return node.and.reduce((left, part) => left.length ? evaluate(part, data, left, shown, negated) : left, prints);
     if ("or" in node) {
-        const hit = new Set<number>();
-        for (const part of node.or) for (const i of evaluate(part, data, all, shown, negated)) hit.add(i);
-        return all.filter((i) => hit.has(i));
+        const hit = new Uint8Array(data.prints.length);
+        for (const part of node.or) for (const i of evaluate(part, data, all, shown, negated)) hit[i] = 1;
+        return all.filter((i) => hit[i]);
     }
     // Scryfall's comparisons are its database's: a card without a power has no answer to tou>pow, and "not" of no
     // answer is no answer either, so -(tou>pow or o:draw) leaves out every card without power and toughness
-    const out = new Set(evaluate(node.not, data, prints, shown, !negated));
+    const out = new Uint8Array(data.prints.length);
+    for (const i of evaluate(node.not, data, prints, shown, !negated)) out[i] = 1;
     const stats = statsIn(node.not);
-    return prints.filter((i) => !out.has(i) && stats.every((has) => has(data.prints[i], data.cards[data.prints[i].card])));
+    return prints.filter((i) => !out[i] && stats.every((has) => has(data.prints[i], data.cards[cardOf[i]])));
 }
+
+// what evaluate reads for every printing, as flat arrays: the level it needs (NEEDS) and its card. Made once per
+// load, and again after the languages file adds printings. `every` is each card's own printings in card order, as
+// a search starts from, and `shown` those of them a level shows (both never changed by a search)
+type Flat = { need: Uint8Array, cardOf: Int32Array, every: number[], shown: number[][] };
+const flats = new WeakMap<Cards, Flat>();
+function flat(data: Cards): Flat {
+    let f = flats.get(data);
+    if (f?.need.length === data.prints.length) return f;
+    const need = new Uint8Array(data.prints.length), cardOf = new Int32Array(data.prints.length);
+    data.prints.forEach((p, i) => { need[i] = NEEDS[p.extra]; cardOf[i] = p.card; });
+    flats.set(data, f = { need, cardOf, every: data.cards.flatMap((c) => c.printings), shown: [] });
+    return f;
+}
+const shownAt = (data: Cards, level: number) => {
+    const f = flat(data);
+    return f.shown[level] ??= f.every.filter((i) => f.need[i] <= level);
+};
 
 // what a search compares that a printing or card can lack, as a test that it has it: power, toughness and
 // loyalty (pow>tou compares both), a price (usd, eur, tix), an EDHREC rank. Under a minus, a missing value is no
@@ -1393,6 +1419,7 @@ export function searchPrintings(node: Node, data: Cards, among?: number[]): numb
     // default_cards' only: English, or the one language a printing came out in
     const languages = namesLanguage(node) ? data.languages : undefined;
     if (namesLanguage(node) && !languages && !onlyEnglish(node)) throw new Unsupported("lang: without the languages file (npm run languages)");
+    if (!among && !languages) return evaluate(node, data, flat(data).every, revealed(node));
     for (const c of among ?? data.cards.keys()) {
         prints.push(...data.cards[c].printings);
         if (languages) prints.push(...languages.byCard.get(c) ?? []);
@@ -1619,6 +1646,12 @@ export function listed(node: Node, data: Cards, view: View = {}): string[] {
 
 // a card's name as Scryfall sorts it: letters only, accents and case aside
 const byName = new Intl.Collator("en", { sensitivity: "base", ignorePunctuation: true }).compare;
+// two cards' names as Scryfall lists them: by letters and digits only (17-Year Cicadas before +2 Mace), then as
+// written, so names that are all punctuation go shortest first (_____ before ______) (14 Oct 2026)
+const cardNames = (m: string, n: string) => {
+    const x = squash(m), y = squash(n);
+    return x < y ? -1 : x > y ? 1 : m < n ? -1 : m > n ? 1 : 0;
+};
 const WUBRG = ["w", "u", "b", "r", "g"];
 // rarities as order:rarity ranks them: special between rare and mythic (Essence Sliver's tsb printing comes
 // after the mythics and before the rares)
@@ -1684,7 +1717,7 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
         // before tdc and fin before fic ascending, against the code, but nec before neo and lcc before lci
         if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
-        return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
+        return cardNames(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };
     return [...entries].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);
