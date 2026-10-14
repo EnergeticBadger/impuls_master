@@ -63,16 +63,29 @@ const keys: string[] = [
     ...values(data, (i) => printsOf(i).map((p) => p.stamp), 1).map((v) => `stamp:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.watermarks])).map((v) => `wm:${quote(v)}`),
     ...[...data.tags].filter(([, cards]) => cards.size >= MIN_CARDS).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `otag:${t}`),
+    // the art tags, by how many pictures they have (those with the most cards would all be in the thousands)
+    ...[...data.artTags].filter(([t, arts]) => arts.size >= MIN_CARDS && /^[a-z0-9-]+$/.test(t)).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `atag:${t}`),
+    // every language, as lang: and in:, and the keys about printings in them
+    ...(data.languages ? values(data, (i) => [...data.cards[i].printings, ...data.languages!.byCard.get(i) ?? []].map((p) => data.prints[p].lang), 1).flatMap((l) => [`lang:${l}`, `in:${l}`]) : []),
+    ...(data.languages ? ["lang:any", "-lang:en", "new:language", "lang:any new:language"] : []),
+    ...["art", "artist", "flavor", "frame", "rarity"].map((v) => `new:${v}`),
+    "artists>1", "illustrations>1", "illustrations>=5",
+    ...["arena", "grixis", "legacy", "chuck", "twisted", "april", "protour", "uncommon", "modern", "amaz", "tinkerer", "livethedream", "chromatic", "vintage", "apcube"].map((c) => `cube:${c}`),
+    // set families: the biggest ones
+    ...values(data, (i) => printsOf(i).map((p) => data.parents.get(p.set) ?? ""), 300).slice(0, 15).map((g) => `g:${g}`),
 ].filter((k) => k.includes(ONLY));
 
 // a key split by mana value, and a big slice by color, so each part is small enough to fetch whole
 const MV = ["mv=0", "mv=1", "mv=2", "mv=3", "mv=4", "mv=5", "mv=6", "mv>=7"];
 const COLOR = ["c=c", "c=w", "c=u", "c=b", "c=r", "c=g", "c:m"];
 
-type Part = { q: string, local: number, scryfall: number, onlyHere: string[], onlyThere: string[], listed: boolean, error?: string, warnings?: string[] };
+type Part = { q: string, local: number, scryfall: number, onlyHere: string[], onlyThere: string[], newer?: number, listed: boolean, error?: string, warnings?: string[] };
 type Row = { key: string, local?: number, scryfall: number, error?: string, warnings?: string[], why?: string, parts: Part[] };
 
 const localCards = (q: string) => search(parse(q), data);
+// every card in the bulk file: a card Scryfall lists that isn't is newer than the file (a preview added since it
+// was built), so it's data timing, not a difference in the search
+const known = new Set(data.cards.map((c) => c.oracleId));
 
 // one search, here and on Scryfall; the cards on each side too when Scryfall's answer fits in `pages` pages
 async function compare(q: string, pages: number): Promise<Part> {
@@ -84,6 +97,7 @@ async function compare(q: string, pages: number): Promise<Part> {
         const ids = new Set(here.map((i) => data.cards[i].oracleId));
         part.onlyHere = here.filter((i) => !there.has(data.cards[i].oracleId)).map((i) => data.cards[i].name);
         part.onlyThere = theirs.cards.filter(([id]) => !ids.has(id)).map(([, name]) => name);
+        part.newer = theirs.cards.filter(([id]) => !known.has(id)).length;
     }
     return part;
 }
@@ -130,11 +144,23 @@ const differ = rows.filter((r) => r.local !== undefined && !r.error && !exact.in
 const errors = rows.filter((r) => r.error);
 const unsupported = rows.filter((r) => r.why !== undefined);
 const names = (list: string[]) => list.slice(0, 8).join(", ") + (list.length > 8 ? ` +${list.length - 8} more` : "");
-const headline = `${rows.length} keys: ${exact.length} exact, ${differ.length} differ, ${errors.length} Scryfall errors, ${unsupported.length} not supported here`;
+// agreement = 1 - |here - Scryfall| / Scryfall: a key off by a few cards of thousands is most likely data timing
+// (Scryfall's live data against the bulk file), so keys under AGREE are the ones worth a look
+const AGREE = 0.999;
+// (Scryfall's count less the cards it listed that are newer than the bulk file)
+const newer = (r: Row) => r.parts.reduce((n, p) => n + (p.newer ?? 0), 0);
+const agreement = (r: Row) => {
+    const theirs = r.scryfall - newer(r);
+    return theirs ? 1 - Math.abs(r.local! - theirs) / theirs : (r.local === 0 ? 1 : 0);
+};
+const close = differ.filter((r) => agreement(r) >= AGREE), far = differ.filter((r) => agreement(r) < AGREE);
+const headline = `${rows.length} keys: ${exact.length} exact, ${differ.length} differ, ${errors.length} Scryfall errors, ${unsupported.length} not supported here; ${exact.length + close.length} agree at least ${AGREE * 100}%`;
 
 const lines = [
     `# Keys against Scryfall`, ``, `${new Date().toISOString()} · ${headline}`, ``,
     `Each key searched alone; where the counts differ, the slices (by mana value, then color) whose counts differ.`, ``,
+    `## Under ${AGREE * 100}% agreement (${far.length})`, ``,
+    ...(far.length ? far.map((r) => `- \`${r.key}\`: ${(agreement(r) * 100).toFixed(2)}% (here ${r.local}, Scryfall ${r.scryfall})`) : ["none"]), ``,
     `## Differ`, ``,
     ...(differ.length ? differ.flatMap((r) => [
         `- \`${r.key}\`: here ${r.local}, Scryfall ${r.scryfall}`,

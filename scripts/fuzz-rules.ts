@@ -20,8 +20,8 @@ import { join, resolve } from "node:path";
 import { EFFECTS, TARGETS, TRIGGERS, blockToken, type RuleBlock } from "../app/Components/Searchbar/rules.ts";
 import { MAX_REGEX_CHARS, MAX_REGEX_DEPTH, MAX_REGEXES, findRegexes, regexDepth } from "../app/Components/Searchbar/regexLimits.ts";
 import { cardText, scryfallRegex } from "./local-search.ts";
+import { politeFetch } from "./scryfall-answers.ts";
 
-const HEADERS = { "User-Agent": "impuls_master-fuzz/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -110,7 +110,7 @@ async function search(c: Case): Promise<Result> {
         const start = Date.now();
         let status = 0, body: any;
         try {
-            const r = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(c.query)}`, { headers: HEADERS });
+            const r = await politeFetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(c.query)}`);
             status = r.status;
             body = JSON.parse(await r.text());
         } catch {

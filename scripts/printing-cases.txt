@@ -1,0 +1,250 @@
+# Searches npm run test-printing runs locally and on Scryfall, comparing which printing each card is shown with
+# and the order, entry by entry (see scripts/test-printing.ts). One search a line; a tab after it gives its own
+# options (order=set&dir=desc&unique=prints), otherwise the script picks some from the line's text.
+
+# searches that pick a printing: a set, a kind of set, a frame, a finish, a border, promos, an artist, prices, years
+s:plst t:goblin
+s:sld t:creature mv=3
+s:j25 t:goblin
+s:fdc t:artifact
+s:30a t:instant
+s:dbl t:vampire
+s:mb2 t:creature mv=2
+s:m3c t:creature
+s:scd t:sorcery
+s:cmm t:sliver
+s:tsr t:creature r:rare
+s:2x2 t:creature mv=4
+s:clb t:dragon
+s:lea t:creature
+s:4ed t:wall
+st:commander t:zombie mv=4
+st:masters t:wizard mv=2
+st:box t:dragon
+st:masterpiece t:creature
+st:draft_innovation t:sliver
+is:foil t:sliver
+is:nonfoil t:dragon r:mythic
+is:etched t:dragon
+is:foil -is:nonfoil t:angel
+frame:1997 t:goblin mv=2
+frame:1993 t:dragon
+frame:2003 t:sliver
+frame:future t:creature mv=2
+frame:showcase t:dragon
+frame:extendedart t:elf
+frame:inverted t:angel
+border:borderless t:angel
+border:white t:knight
+is:full t:land -t:basic mv=0 r:rare
+is:textless t:instant
+is:promo t:elf mv=2
+is:prerelease t:dragon
+is:datestamped t:angel
+is:fnm t:instant
+a:"john avon" t:land
+a:"rebecca guay" t:enchantment
+a:"terese nielsen" t:creature mv=2
+usd>=20 t:sliver
+usd<0.1 t:dragon r:rare
+eur>=10 t:angel
+tix>=5 t:creature
+year<=1997 t:wall
+year=2020 t:dragon
+date>=2025-01-01 t:sliver
+game:arena t:sliver
+game:mtgo -game:paper t:goblin
+is:digital t:goblin r:rare
+r:common t:dragon
+r:mythic t:goblin
+r:special t:creature
+-is:reprint t:sliver
+new:art t:angel mv=5
+new:frame t:dragon r:mythic
+stamp:acorn
+stamp:triangle t:dragon
+cn<=10 t:goblin
+cn>=300 t:dragon r:mythic
+ft:goblin t:goblin mv=1
+wm:orzhov t:creature
+is:ub t:dragon
+not:ub t:hobbit
+is:booster t:sliver
+-is:booster t:sliver
+is:hires t:wall
+in:lea t:instant
+!"Lightning Bolt"
+!"Counterspell"
+!"Sol Ring"
+!"Llanowar Elves"
+!"Swords to Plowshares"
+!"Cemetery Reaper"
+!"Murder"
+name:"Scavenger Hunt"
+name:Everythingamajig
+t:attraction
+t:sliver
+t:sliver r:rare
+t:dragon r:mythic
+t:goblin mv=1
+t:wall
+t:elf mv=2 c:g
+t:angel mv=5
+t:hydra r:rare
+t:token t:dragon
+t:basic t:land a:avon
+
+# a sample of the syntax, panel and combo cases
+kw:deathtouch mv=3 c:w
+is:creatureland
+year=2024 t:sliver
+in:lea t:instant
+f:standard t:dragon
+id<=wur o:/(add \{|create[^.]*treasure|put [^.]*lands? cards?[^.]* onto the battlefield|play an additional land|costs? (\{\w\} |\w+ )?less)/ o:/\b(scry|surveil)/
+is:unique t:dragon r:mythic
+id=r t:legendary t:creature mv=3
+date>=mh3 t:elf r:mythic
+(r:rare or r:mythic) f:pioneer a:guay o:/hands?/
+id=rg t:legendary t:creature mv=3
+loy>=6 t:planeswalker
+is:transform t:creature mv=1
+o:/(each opponent|target (player|opponent)|each player) sacrifices/ c=c
+t:artifact t:creature o:/\b(cop(y|ies)|populate|myriad|replicate|casualty|storm|embalm|eternalize|encore)\b/
+frame:showcase t:dragon
+-usd>=50 t:dragon r:mythic
+is:mdfc t:land
+o:/search your library/ t:spirit
+prints=1 t:dragon r:mythic
+is:bear is:dfc
+pow=0 t:creature c:r r:rare
+lang:en t:ninja r:mythic
+year>=2024 t:sliver
+in:arena t:goblin r:mythic
+mv>=7 t:creature c:g r:mythic
+st:funny t:creature mv=1
+is:datestamped t:dragon
+o:/æther/
+o:/(search your library|reveal cards from the top of your library until)/ -t:creature -f:modern
+ft:the is:mdfc
+o:"~" t:attraction
+f:standard t:dragon r:mythic
+f:timeless t:dragon r:mythic
+is:fetchland
+kw:haste mv=3 c:w
+id>2 t:legendary t:creature mv=3
+is:funny t:dragon
+a:"rebecca guay" t:enchantment
+sets>=30
+id<=u t:legendary t:creature mv=3
+o:/(equipped|enchanted) creatures?/ mv=2 id=b
+o:/return[^.]*from (your|a|an opponent's) graveyard/ t:legendary t:creature
+f:historic t:dragon r:mythic
+o:/whenever (~|this \w+) becomes blocked/ year>=2022
+(r:rare or r:mythic) o:/take the initiative/
+id<=g t:legendary t:creature mv=3
+cheapest:usd t:sliver usd>=1
+name:dragon r:mythic
+f:historic t:dragon r:mythic
+year>=2024 t:sliver
+is:vanilla mv=1
+t:artifact mv=3 c:r
+o:/(each|all) (other )?creatures?/ mv=0
+(o:daybound or o:"it becomes day" or o:"it becomes night")
+pow>=4 o:/add \{/
+o:"untap this creature"
+mv=1 id=g o:/return[^.]*from (your|a|an opponent's) graveyard/
+usd>=10 o:/search your library/ id=r
+-f:modern s:lea (otag:mana-dork or otag:repeatable-token-generator or o:/(add \{|create[^.]*treasure|put [^.]*lands? cards?[^.]* onto the battlefield|play an additional land|costs? (\{\w\} |\w+ )?less)/ or o:token)
+-is:shockland t:land t:swamp t:forest
+(o:"poison counter" or kw:toxic or kw:infect or kw:poisonous)
+is:dual
+o:/\{t\}[^:]*:/ kw:haste
+o:/(put [^.]*onto the battlefield|without paying (its|their) mana costs?)/ t:goblin
+r>=rare t:squirrel
+is:commander t:background
+t:artifact o:"enters tapped"
+o:{E}
+o:/roll(s)? (a|one or more|two|\w+) (d\d+|dice|die)/
+f:pioneer t:dragon r:mythic
+new:flavor e:tsr
+otag:bounce s:neo
+(o:/sacrifices?/ or o:/mana of any (one )?colou?r/) mv=4 t:wizard
+year>1995 t:sliver
+tou=8 t:creature c:u r:rare
+tou>pow t:dragon
+t:elf o:/\buntap ((target|up to|another|each|all|it|them|those|that|this|x|two|three|four)\b|~)/
+(o:/search your library/ or o:/discards?/) mv<=2 kw:haste
+o:/whenever [^.,]*(another|a|one or more) [^.,]*creatures?[^.,]* enters?\b/ t:aura
+is:fnm t:creature
+usd>=50 t:dragon r:mythic
+o:"flip a coin"
+kw:cycling mv=3 c:w
+pow>=10
+is:hybrid t:creature mv=1
+f:pauper t:land o:/return[^.]*to (its|their) owner'?s'? hands?/
+o:"villainous choice"
+is:painland
+((o:/put[^.]*counters? on/ kw:haste) or (kw:flying kw:vigilance)) c<=ub
+
+# every prefer:, and each order and direction on one search, with their own options (after a tab)
+t:dragon r:mythic prefer:oldest	order=name
+t:sliver prefer:oldest	order=name
+t:dragon r:mythic prefer:newest	order=name
+t:sliver prefer:newest	order=name
+t:dragon r:mythic prefer:usd-low	order=name
+t:sliver prefer:usd-low	order=name
+t:dragon r:mythic prefer:usd-high	order=name
+t:sliver prefer:usd-high	order=name
+t:dragon r:mythic prefer:eur-low	order=name
+t:sliver prefer:eur-low	order=name
+t:dragon r:mythic prefer:eur-high	order=name
+t:sliver prefer:eur-high	order=name
+t:dragon r:mythic prefer:tix-low	order=name
+t:sliver prefer:tix-low	order=name
+t:dragon r:mythic prefer:tix-high	order=name
+t:sliver prefer:tix-high	order=name
+t:dragon r:mythic prefer:promo	order=name
+t:sliver prefer:promo	order=name
+t:dragon r:mythic prefer:default	order=name
+t:sliver prefer:default	order=name
+t:dragon r:mythic prefer:atypical	order=name
+t:sliver prefer:atypical	order=name
+t:dragon r:mythic prefer:ub	order=name
+t:sliver prefer:ub	order=name
+t:dragon r:mythic prefer:notub	order=name
+t:sliver prefer:notub	order=name
+t:goblin r:rare	order=name&dir=asc
+t:goblin r:rare	order=name&dir=desc
+t:goblin r:rare	order=set&dir=asc
+t:goblin r:rare	order=set&dir=desc
+t:goblin r:rare	order=released&dir=asc
+t:goblin r:rare	order=released&dir=desc
+t:goblin r:rare	order=rarity&dir=asc
+t:goblin r:rare	order=rarity&dir=desc
+t:goblin r:rare	order=color&dir=asc
+t:goblin r:rare	order=color&dir=desc
+t:goblin r:rare	order=usd&dir=asc
+t:goblin r:rare	order=usd&dir=desc
+t:goblin r:rare	order=tix&dir=asc
+t:goblin r:rare	order=tix&dir=desc
+t:goblin r:rare	order=eur&dir=asc
+t:goblin r:rare	order=eur&dir=desc
+t:goblin r:rare	order=cmc&dir=asc
+t:goblin r:rare	order=cmc&dir=desc
+t:goblin r:rare	order=power&dir=asc
+t:goblin r:rare	order=power&dir=desc
+t:goblin r:rare	order=toughness&dir=asc
+t:goblin r:rare	order=toughness&dir=desc
+t:goblin r:rare	order=edhrec&dir=asc
+t:goblin r:rare	order=edhrec&dir=desc
+t:goblin r:rare	order=penny&dir=asc
+t:goblin r:rare	order=penny&dir=desc
+t:goblin r:rare	order=artist&dir=asc
+t:goblin r:rare	order=artist&dir=desc
+t:sliver order:cmc	order=name
+t:sliver direction:desc	order=cmc
+t:sliver unique:prints	unique=cards
+t:sliver	prefer=oldest
+t:goblin r:mythic	unique=prints&order=released&dir=asc
+t:goblin r:mythic	unique=art&order=artist
+t:goblin r:mythic	unique=prints&order=usd

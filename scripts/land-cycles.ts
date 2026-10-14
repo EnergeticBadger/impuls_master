@@ -5,8 +5,8 @@
 // member; npm run test-syntax shows when one has.
 
 import { writeFileSync } from "node:fs";
+import { politeFetch } from "./scryfall-answers.ts";
 
-const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 // as Scryfall's syntax guide lists them; is:manland is another name for is:creatureland
 const LAND_CYCLES = ["bikeland", "bondland", "bounceland", "canopyland", "checkland", "creatureland", "dual", "fastland", "fetchland", "filterland",
     "gainland", "painland", "pathway", "scryland", "shadowland", "shockland", "slowland", "storageland", "surveilland", "tangoland", "tricycleland", "triland"];
@@ -17,7 +17,7 @@ for (const cycle of LAND_CYCLES) {
     out[cycle] = [];
     let url: string | undefined = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`is:${cycle}`)}`;
     while (url) {
-        const res = await fetch(url, { headers: HEADERS });
+        const res = await politeFetch(url);
         if (res.status === 429) { console.log("Scryfall asked to slow down; waiting 90s"); await sleep(90_000); continue; }
         const body: any = await res.json();
         if (!body.data) throw new Error(`is:${cycle}: ${body.details ?? res.status}`);

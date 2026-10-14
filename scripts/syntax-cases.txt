@@ -291,6 +291,43 @@ otag:removal t:instant mv=1 c:w
 function:ramp t:creature mv=2 c:g
 otag:tutor t:sorcery mv=1
 
+# keys added 9 Oct 2026: art tags, set families, cubes, languages, commanders by format, frames, previews
+art:squirrel t:creature mv<=2
+atag:squirrel r:rare
+arttag:"night-sky" t:land
+g:ecc t:creature mv=3
+group:fin r:mythic
+g:fin t:token
+cube:vintage t:planeswalker
+cube:modern mv=1 c:r
+lang:ja t:goblin r:mythic
+lang:japanese e:war t:planeswalker
+-lang:en t:goblin r:mythic
+lang:any t:sliver r:rare
+in:ru in:zhs t:ninja
+in:ph
+lang:ph t:creature
+lang:ko new:language t:goblin r:rare
+new:language e:m15 t:goblin
+new:artist e:m15 is:reprint
+new:art e:m10 is:reprint t:creature
+new:flavor e:m15 is:reprint
+is:duelcommander id=wu mv=3
+is:oathbreaker c:g
+artists>1 t:land
+illustrations>=4 t:goblin r:rare
+is:old t:artifact r:rare mv=1
+is:new r:mythic t:dragon mv=5
+is:default e:neo t:dragon
+is:atypical e:neo t:dragon
+is:scryfallpreview
+is:planeswalker_deck t:planeswalker
+is:intro_pack t:creature
+is:media_insert t:dragon
+!"Black Lotus" game:arena
+!"Blast from the Past" year>=2022
+!"Blast from the Past" year>=2022 is:funny
+
 # combining
 t:goblin (o:haste or o:menace) mv=1
 t:goblin -o:haste mv=1 c:r

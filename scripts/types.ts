@@ -5,14 +5,14 @@
 // Run it when a new set brings new types.
 
 import { writeFileSync } from "node:fs";
+import { politeFetch } from "./scryfall-answers.ts";
 
-const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const CATALOGS = ["creature-types", "planeswalker-types", "land-types", "artifact-types", "enchantment-types", "spell-types", "battle-types", "supertypes", "card-types"];
 
 const types = new Set<string>();
 for (const name of CATALOGS) {
-    const res = await fetch(`https://api.scryfall.com/catalog/${name}`, { headers: HEADERS });
+    const res = await politeFetch(`https://api.scryfall.com/catalog/${name}`);
     const body: any = await res.json();
     if (!Array.isArray(body.data)) throw new Error(`catalog ${name}: ${body.details ?? `HTTP ${res.status}`}`);
     for (const t of body.data as string[]) types.add(t.toLowerCase());
