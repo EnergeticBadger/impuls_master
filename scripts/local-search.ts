@@ -1646,6 +1646,12 @@ export function listed(node: Node, data: Cards, view: View = {}): string[] {
 
 // a card's name as Scryfall sorts it: letters only, accents and case aside
 const byName = new Intl.Collator("en", { sensitivity: "base", ignorePunctuation: true }).compare;
+// two cards' names as Scryfall lists them: by letters and digits only (17-Year Cicadas before +2 Mace), then as
+// written, so names that are all punctuation go shortest first (_____ before ______) (14 Oct 2026)
+const cardNames = (m: string, n: string) => {
+    const x = squash(m), y = squash(n);
+    return x < y ? -1 : x > y ? 1 : m < n ? -1 : m > n ? 1 : 0;
+};
 const WUBRG = ["w", "u", "b", "r", "g"];
 // rarities as order:rarity ranks them: special between rare and mythic (Essence Sliver's tsb printing comes
 // after the mythics and before the rares)
@@ -1711,7 +1717,7 @@ function sortEntries(entries: number[], data: Cards, how: Order, v: Required<Vie
         // before tdc and fin before fic ascending, against the code, but nec before neo and lcc before lci
         if (how.byDate) return (p.set.localeCompare(q.set) || cnNumber(p) - cnNumber(q)) * flip;
         // by name (turned round only for order:name), then a card's printings in Scryfall's own order
-        return byName(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
+        return cardNames(data.cards[p.card].name, data.cards[q.card].name) * (v.order === "name" ? flip : 1) || order(a, b);
     };
     return [...entries].sort((a, b) => {
         const x = keys.get(a), y = keys.get(b);
