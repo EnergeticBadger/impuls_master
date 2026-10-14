@@ -46,6 +46,9 @@ export type LocalCard = {
     mv: number,
     // a face each, so m=1R finds Fire // Ice by Fire's cost
     manaCosts: string[],
+    // the front face's own, "" where it has none (Jidoor, Aristocratic Capital, a land, has none; its
+    // adventure Overture costs {4}{U}{U}), for devotion: and is:hybrid
+    frontCost: string,
     // a face each, undefined where a face has none
     power: (string | undefined)[],
     toughness: (string | undefined)[],
@@ -148,7 +151,10 @@ export function extraKind(c: any): Printing["extra"] {
     // dungeons are shown, even Undercity // The Initiative, a double-faced token
     const dungeon = /^dungeon\b/i.test(type);
     if ((EXTRA_LAYOUTS.has(c.layout) && !dungeon) || /^(token|card)\b/i.test(type) || (c.set_type === "memorabilia" && !dungeon)
-        || (c.set_type === "alchemy" && legalNowhere) || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
+        // an Alchemy card legal nowhere (Alchemy Horizons: Baldur's Gate's 104), but not one just out, whose formats
+        // aren't filled in yet (Oko, Lord of the Fae, out 13 Oct 2026, is shown that day)
+        || (c.set_type === "alchemy" && legalNowhere && (c.released_at ?? "") < new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10))
+        || (games.length > 0 && games.every((g) => g === "astral"))) return "extra";
     // the Arena-only reprints added to Alchemy sets outside their packs, with only a low-resolution picture: the
     // Power Nine in Alchemy: Dominaria, Storm Crow in Alchemy: Secrets of Strixhaven, Lightning Bolt in Alchemy
     // Horizons: Baldur's Gate (cn 902–928)… Of the 263 Alchemy-set reprints, Scryfall shows 225 (9 Oct 2026); the
@@ -274,6 +280,7 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
         // a reversible printing keeps these on its faces only
         mv: c.cmc ?? faces[0]?.cmc ?? 0,
         // with more than two faces (Who // What // When // Where // Why), the whole cost counts too, so m:RG finds it
+        frontCost: faces.length > 1 ? faces[0].mana_cost ?? "" : c.mana_cost ?? "",
         manaCosts: faces.length > 1 ? [...faces.map((f) => f.mana_cost ?? ""), ...(faces.length > 2 ? [c.mana_cost ?? ""] : [])].filter(Boolean) : [c.mana_cost ?? ""],
         power: each("power"),
         toughness: each("toughness"),
@@ -603,9 +610,12 @@ function tokenize(q: string): (string | Term)[] {
 
 // Scryfall reads the minus in -mv=2 as part of the key, an unknown one, and drops the whole term (it warns
 // "Invalid expression"): so -mv=2 t:sliver is every sliver, and -mv=2 or t:goblin only goblins. It does so for
-// the number keys in MINUS_DROPPED (shared with the search box, which warns about them); -mv:even, -(mv=2),
-// mv!=2, -c=2 and -r>=rare are read as meant. And it keeps the term but drops the minus for date:
-// -date>=2020-01-01 is date>=2020-01-01
+// the number keys in MINUS_DROPPED (shared with the search box, which warns about them) with : or =. With any
+// other comparison (-mv>2, -eur>=5, -loy<=7, -cn!=99), and -cn=5, the term matches every card, without a
+// warning: the same in an AND, but -eur>=5 or loy:4 is every card (13 Oct 2026). -mv:even, -(mv=2), mv!=2, -c=2
+// and -r>=rare are read as meant. And it keeps the term but drops the minus for date: -date>=2020-01-01 is
+// date>=2020-01-01. Keys that only change how results are shown (include:extras, order:…) are taken out of an
+// OR and apply to the whole search: include:extras or t:goblin is the goblins, extras included
 
 export function parse(q: string): Node {
     const tokens = tokenize(q);
@@ -615,7 +625,12 @@ export function parse(q: string): Node {
         const any = [all()];
         while (tokens[at] === "or") { at++; any.push(all()); }
         const kept = any.filter((n): n is Node => n !== null);
-        return kept.length > 1 ? { or: kept } : kept[0] ?? null;
+        if (kept.length < 2) return kept[0] ?? null;
+        const display = (n: Node): boolean => "term" in n ? DISPLAY.has(n.term.key) : "and" in n && n.and.length > 0 && n.and.every(display);
+        const shows = kept.filter(display), finds = kept.filter((n) => !shows.includes(n));
+        if (!shows.length) return { or: kept };
+        const found = finds.length > 1 ? { or: finds } : finds[0];
+        return found ? { and: [found, ...shows] } : shows.length > 1 ? { and: shows } : shows[0];
     };
     const all = (): Node | null => {
         const parts: (Node | null)[] = [];
@@ -631,7 +646,12 @@ export function parse(q: string): Node {
         const t = tokens[at++];
         if (t === "-") {
             const next = tokens[at];
-            if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) { at++; return null; }
+            if (typeof next === "object" && MINUS_DROPPED.has(next.key) && !next.regex && !/^(even|odd)$/i.test(next.value)) {
+                at++;
+                // an AND of nothing: every card
+                if (next.op === ":" || next.op === "=") return next.key === "cn" || next.key === "number" ? { term: { key: "_every", op: ":", value: "extras" } } : null;
+                return { and: [] };
+            }
             if (typeof next === "object" && next.key === "date") return one();
             const inner = one();
             return inner && { not: inner };
@@ -733,7 +753,9 @@ function manaTest(op: string, value: string): (cost: string) => boolean {
     };
 }
 
-const RARITIES = ["common", "uncommon", "rare", "mythic", "special", "bonus"];
+// in order, as r> and r< compare them: special between rare and mythic (r>special is the mythics and bonus
+// cards, 13 Oct 2026)
+const RARITIES = ["common", "uncommon", "rare", "special", "mythic", "bonus"];
 const rarityOf = (r: string) => RARITIES.indexOf({ c: "common", u: "uncommon", r: "rare", m: "mythic", s: "special", b: "bonus" }[r] ?? r);
 
 // set types as people type them
@@ -809,7 +831,7 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // worth of modes") or a keyword that works the same way
     modal: (c) => c.text.some((t) => /^•|\bworth of modes\b/m.test(t)) || ["spree", "tiered", "escalate", "entwine"].some((k) => c.keywords.has(k)),
     // the front face's cost: Hallway Heckler // Vicious Verse isn't, by {B/R} on its prepared spell
-    hybrid: (c) => [...manaSymbols(c.manaCosts[0] ?? "").keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
+    hybrid: (c) => [...manaSymbols(c.frontCost).keys()].some((s) => s.split("/").filter((p) => p !== "P").length >= 2),
     // {W/P} and the like; not Bloomburrow's paw print {P}
     phyrexian: (c) => symbolsOf(c).some((s) => /\/P$/.test(s)),
     reserved: (c) => c.reserved,
@@ -1010,7 +1032,15 @@ function compile(t: Term, data: Cards): Test {
         }
         // the whole name, a reversible printing's own ("Bolt // Bolt") and, unless it's a regex, a printing's
         // flavor name (name:"green dragon inn" is Homeward Path); a face's name alone doesn't count
-        case "name": case "word": { const m = plainOrRegex(t.op); return print((p, c) => m(t.regex ? [c.name, p.name] : [c.name, p.name, p.flavorName])); }
+        // a name without a regex matches with spaces and punctuation left out of both: mortals finds Immortal
+        // Servitude and Mortal's Ardor, name:sages Sage's Row Savant, lordofthe The Lord of the Rings cards
+        case "name": case "word": {
+            if (t.regex) { const m = plainOrRegex(t.op); return print((p, c) => m([c.name, p.name])); }
+            if (t.op !== ":" && t.op !== "=") throw new Unsupported(`${t.key}${t.op}`);
+            const squash = (n: string) => fold(n).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const want = squash(t.value);
+            return print((p, c) => [c.name, p.name, p.flavorName].some((n) => !!n && squash(n).includes(want)));
+        }
         case "!": return card((c) => c.name.toLowerCase() === v || c.faceNames.some((n) => n.toLowerCase() === v));
         case "c": case "color": { const m = colorTest(t.op, t.value, ">="); return card((c) => c.faceColors.some(m)); }
         case "id": case "identity": case "ci": case "commander": { const m = colorTest(t.op, t.value, "<="); return card((c) => m(c.identity)); }
@@ -1112,7 +1142,7 @@ function compile(t: Term, data: Cards): Test {
             if (!colors.size) throw new Unsupported(`devotion:${t.value}`);
             const op = t.op === ":" ? ">=" : t.op;
             return card((c) => /\b(artifact|creature|enchantment|land|planeswalker|battle)\b/.test(c.faceTypes[0]) && compare(op,
-                [...manaSymbols(c.manaCosts[0] ?? "")].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
+                [...manaSymbols(c.frontCost)].reduce((sum, [sym, n]) => sum + (sym.split("/").some((l) => colors.has(l)) ? n : 0), 0), want.length));
         }
         // a printing that's the first of its card with this rarity (promos aside), flavor text, frame or language
         // (Lotus Cobra's 2012 promo was rare, but Iconic Masters is new:rarity). Memorabilia (oversized
@@ -1157,6 +1187,15 @@ function compile(t: Term, data: Cards): Test {
             return print((p, c) => {
                 if (p[key] === undefined) return false;
                 return !c.printings.some((i) => { const q = data.prints[i]; return !q.extra && q[key] !== undefined && q[key]! < p[key]!; });
+            });
+        }
+        case "_every": return card(() => true);
+        // a price term in a search sorted by a price (see results): the card's cheapest price in that currency
+        case "_cheapestusd": case "_cheapesteur": case "_cheapesttix": {
+            const n = number(), key = t.key.slice(9) as "usd" | "eur" | "tix";
+            return card((c) => {
+                const prices = c.printings.map((i) => data.prints[i][key]).filter((x): x is number => x !== undefined);
+                return prices.length > 0 && compare(t.op, Math.min(...prices), n);
             });
         }
         case "usd": case "eur": case "tix": {
@@ -1240,25 +1279,38 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
         if (["s", "e", "set", "edition", "g", "group"].includes(key)) return scope === "set" && !negated ? 2 : 0;
         if (scope === "set") return 0;
         if (key === "include" && value.toLowerCase() === "extras") return 2;
+        // -cn=5 (see parse): every card, extras too
+        if (key === "_every") return 2;
         // a name: regex does, even the World Championship bios (name:/lightning/ finds the Lightning Bolt art
-        // card, name:/^a/ Antoine Ruel Bio), but not name:lightning, and not -name:/dragon/
-        if (key === "name" && node.term.regex && !negated) return 2;
+        // card, name:/^a/ Antoine Ruel Bio), and left out too (-name:/dragon/ is 38,391 cards, extras with them,
+        // 13 Oct 2026), but not name:lightning
+        if (key === "name" && node.term.regex) return 2;
         if ((key === "t" || key === "type") && /^(token|emblem|plane|phenomenon|scheme|vanguard|card)$/i.test(value)) return 1;
         // is:dfc shows double-faced tokens, art cards and playtest cards, and -is:dfc everything else;
         // is:transform doesn't
         if (key === "is" && value.toLowerCase() === "dfc") return negated ? 2 : 1;
+        // -is:mdfc and not:mdfc show everything too (38,652 cards, 13 Oct 2026)
+        if (key === "is" && value.toLowerCase() === "mdfc" && negated) return 2;
+        if (key === "not" && value.toLowerCase() === "mdfc" && !negated) return 2;
         // is:oversized finds the gold-bordered oversized cards (Secret Lair's pssc), is:reserved the withdrawn ones
         if (key === "is" && !negated && ["oversized", "reserved"].includes(value.toLowerCase())) return 2;
         // and some kinds of printing that are hidden themselves: is:playtest, is:oversized, is:thick, is:surgefoil
         // (the surge-foil tokens), but not is:stamped or is:setpromo
         if (key === "is" && !negated && PRINT_REVEALS.has(value.toLowerCase())) return 1;
-        // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't
-        if (["banned", "restricted"].includes(key) && !negated) return 2;
+        // banned: and restricted: show the withdrawn cards (banned:legacy finds Jihad); f:oldschool doesn't. Left
+        // out, they show every hidden printing: -banned:gladiator unique:prints is all 118,472 printings, extras
+        // too (13 Oct 2026)
+        if (["banned", "restricted"].includes(key)) return 2;
+        // so does a block, named or left out (b:isd finds Innistrad's tokens), for the whole search
+        if (["b", "block"].includes(key)) return 2;
         // so do artists and watermarks, even left out: a:proce finds his Elemental token, wm:izzet the Weird //
         // Goblin one, and -wm:set t:sliver every sliver token; and border:silver, the silver tokens (not
         // border:black or borderless, or -border:black)
         // (left out, an artist shows everything, as include:extras does)
-        if (["a", "artist"].includes(key)) return negated ? 2 : 1;
+        // (an artist, or a watermark left out, shows everything, as include:extras does: a:avon unique:prints
+        // finds his art cards, -wm:rakdos every printing; 13 Oct 2026)
+        if (["a", "artist"].includes(key)) return 2;
+        if (["wm", "watermark"].includes(key) && negated) return 2;
         if (["wm", "watermark"].includes(key) || (key === "border" && !negated && value.toLowerCase() === "silver")) return 1;
         if (key === "has" && value.toLowerCase() === "watermark") return 1;
         // is:funny shows funny tokens too, like the Dragon
@@ -1269,6 +1321,8 @@ export function revealed(node: Node, negated = false, scope: "all" | "set" = "al
     // a set shows its printings to every part of an AND, but to an OR's other branches only if they name sets
     // too (each branch shows more for itself, see evaluate)
     const each = ("and" in node ? node.and : node.or).map((part) => revealed(part, negated, scope));
+    // an AND of nothing (a term that matches every card, see parse) shows what the search around it does
+    if (!each.length) return 0;
     return "and" in node || scope === "all" ? Math.max(...each) : Math.min(...each);
 }
 
@@ -1300,16 +1354,23 @@ function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = f
     // answer is no answer either, so -(tou>pow or o:draw) leaves out every card without power and toughness
     const out = new Set(evaluate(node.not, data, prints, shown, !negated));
     const stats = statsIn(node.not);
-    return prints.filter((i) => !out.has(i) && stats.every((has) => has(data.cards[data.prints[i].card])));
+    return prints.filter((i) => !out.has(i) && stats.every((has) => has(data.prints[i], data.cards[data.prints[i].card])));
 }
 
-// for each stat a search compares (pow, tou, loy, pt), whether a card has it
-function statsIn(node: Node): ((c: LocalCard) => boolean)[] {
+// what a search compares that a printing or card can lack, as a test that it has it: power, toughness and
+// loyalty (pow>tou compares both), a price (usd, eur, tix), an EDHREC rank. Under a minus, a missing value is no
+// answer: -(usd<50) is usd>=50, -(edhrec<=100) is edhrec>100 (13 Oct 2026)
+const STAT = /^(pow|power|tou|toughness|loy|loyalty|pt|powtou)$/;
+function statsIn(node: Node): ((p: Printing, c: LocalCard) => boolean)[] {
     if ("term" in node) {
-        const keys = [node.term.key, ...(/^(pow|power|tou|toughness|loy|loyalty|pt|powtou)$/.test(node.term.value.toLowerCase()) ? [node.term.value.toLowerCase()] : [])];
-        return keys.flatMap((k) => /^(pow|power|pt|powtou)$/.test(k) ? [(c: LocalCard) => c.power.some((v) => v !== undefined)]
-            : /^(tou|toughness)$/.test(k) ? [(c: LocalCard) => c.toughness.some((v) => v !== undefined)]
-            : /^(loy|loyalty)$/.test(k) ? [(c: LocalCard) => c.loyalty.some((v) => v !== undefined)] : []);
+        const { key, value } = node.term;
+        if (/^(usd|eur|tix)$/.test(key)) return [(p) => p[key as "usd" | "eur" | "tix"] !== undefined];
+        if (key === "edhrec" || key === "edhrecrank") return [(_, c) => c.edhrec !== undefined];
+        if (!STAT.test(key)) return [];
+        const keys = [key, ...(STAT.test(value.toLowerCase()) ? [value.toLowerCase()] : [])];
+        return keys.flatMap((k) => /^(pow|power|pt|powtou)$/.test(k) ? [(_: Printing, c: LocalCard) => c.power.some((v) => v !== undefined)]
+            : /^(tou|toughness)$/.test(k) ? [(_: Printing, c: LocalCard) => c.toughness.some((v) => v !== undefined)]
+            : /^(loy|loyalty)$/.test(k) ? [(_: Printing, c: LocalCard) => c.loyalty.some((v) => v !== undefined)] : []);
     }
     if ("not" in node) return statsIn(node.not);
     return ("and" in node ? node.and : node.or).flatMap(statsIn);
@@ -1343,10 +1404,12 @@ export function searchPrintings(node: Node, data: Cards, among?: number[]): numb
 const everyLanguage = (c: LocalCard, data: Cards) => [...c.printings, ...data.languages?.byCard.get(data.prints[c.printings[0]].card) ?? []];
 
 const isLang = (t: Term) => t.key === "lang" || t.key === "language";
-function namesLanguage(node: Node): boolean {
-    if ("term" in node) return isLang(node.term);
-    if ("not" in node) return namesLanguage(node.not);
-    return ("and" in node ? node.and : node.or).some(namesLanguage);
+// lang:en doesn't (English printings are shown anyway): (lang:en or game:paper) finds no Japanese printing, while
+// lang:ja or t:goblin finds goblins in every language (13 Oct 2026)
+function namesLanguage(node: Node, negated = false): boolean {
+    if ("term" in node) return isLang(node.term) && (negated || languageOf(node.term.value) !== "en");
+    if ("not" in node) return namesLanguage(node.not, !negated);
+    return ("and" in node ? node.and : node.or).some((n) => namesLanguage(n, negated));
 }
 // every lang: in the search is lang:en, not negated, so English printings are all it needs
 function onlyEnglish(node: Node, negated = false): boolean {
@@ -1492,6 +1555,10 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
     if (!["cards", "prints", "art"].includes(v.unique)) throw new Unsupported(`unique:${v.unique}`);
     const order = byPreference(data);
     const byCard = new Map<number, number[]>();
+    // sorted by a price, a card each, a price term reads the card's cheapest price: usd>10 is 4,152 cards, with
+    // order:usd (or eur, or tix) 1,147, as many as cheapest:usd usd>10; unique:prints is the same either way
+    // (13 Oct 2026)
+    if (how.price && v.unique === "cards") node = cheapestPrices(node);
     for (const p of searchPrintings(node, data)) {
         const c = data.prints[p].card;
         const list = byCard.get(c);
@@ -1521,7 +1588,28 @@ export function results(node: Node, data: Cards, view: View = {}): number[] {
         const first = (group: number[]) => group.reduce((best, p) => (Number(preferred(data.prints[best])) - Number(preferred(data.prints[p])) || data.prints[p].released.localeCompare(data.prints[best].released) || order(p, best)) < 0 ? p : best);
         for (const group of arts.values()) entries.push(v.prefer || how.price ? pick(c, group) : first(group));
     }
+    // and an illustration once, even on two cards: an art card and the card it shows, or the Killbots
+    // (close, not exact: t:goblin unique:art is 773 here and 772 on Scryfall, c<=2 48,285 and 48,299; with
+    // extras shown Scryfall keeps more, -is:mdfc 54,601 against 53,186 here, 13 Oct 2026)
+    if (v.unique === "art") {
+        const byArt = new Map<string, number>();
+        const better = (a: number, b: number) => (Number(preferred(data.prints[b])) - Number(preferred(data.prints[a])) || data.prints[a].released.localeCompare(data.prints[b].released) || order(a, b)) < 0;
+        for (const p of entries) {
+            const art = data.prints[p].art;
+            if (!art) continue;
+            const had = byArt.get(art);
+            if (had === undefined || better(p, had)) byArt.set(art, p);
+        }
+        const kept = new Set(byArt.values());
+        return sortEntries(entries.filter((p) => !data.prints[p].art || kept.has(p)), data, how, v, order);
+    }
     return sortEntries(entries, data, how, v, order);
+}
+
+function cheapestPrices(node: Node): Node {
+    if ("term" in node) return /^(usd|eur|tix)$/.test(node.term.key) ? { term: { ...node.term, key: `_cheapest${node.term.key}` } } : node;
+    if ("not" in node) return { not: cheapestPrices(node.not) };
+    return "and" in node ? { and: node.and.map(cheapestPrices) } : { or: node.or.map(cheapestPrices) };
 }
 
 // a card each (the default), or a printing or art each: their cards' oracle ids, for comparing what was found

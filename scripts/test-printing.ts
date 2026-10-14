@@ -17,8 +17,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Answers, PAGE } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, loadCards, parse, results, setsFile, type Printing, type View } from "./local-search.ts";
+import { Answers, PAGE, pricesMatch } from "./scryfall-answers.ts";
+import { Unsupported, bulkFile, loadCards, parse, results, setsFile, type View } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -82,13 +82,6 @@ const describe = (i: number | undefined) => i === undefined ? "nothing" : `${dat
 // `kind`: where the first difference is: another printing of the same card, another card, or not the same cards
 // `moved`: it goes by prices, and Scryfall's differ from the bulk file's (see the top)
 type Row = { label: string, group: string, entries: number, exact: number, sameCard: number, kind?: "printing" | "order" | "cards", first?: string, why?: string, error?: string, moved?: string };
-// a printing's prices as Scryfall's answer gives them (see Answers), read as the engine reads the bulk file's:
-// the regular price, or else the foil (or etched) one
-const pricesMatch = (p: Printing, given: string) => {
-    const [usd, usdFoil, usdEtched, eur, eurFoil, tix] = given.split("|").map((v) => v === "" ? undefined : Number(v));
-    return (usd ?? usdFoil ?? usdEtched) === p.usd && (usd !== undefined) === p.plain.usd
-        && (eur ?? eurFoil) === p.eur && (eur !== undefined) === p.plain.eur && tix === p.tix;
-};
 const rows: Row[] = [];
 for (const c of cases) {
     const label = `${c.q}${Object.keys(c.options).length ? `  [${new URLSearchParams(c.options)}]` : ""}`;
