@@ -22,7 +22,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PAGE, politeFetch, pricesMatch } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, isValues, loadCards, parse, results, setsFile, type View } from "./local-search.ts";
+import { Unsupported, bulkFile, formatsOf, isValues, loadCards, parse, results, setsFile, type View } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -73,7 +73,7 @@ const VALUES = {
     frames: [...common(shown.map((p) => p.frame), 5), ...common(shown.flatMap((p) => [...p.frameEffects]), 5)],
     borders: common(shown.map((p) => p.border), 5),
     stamps: common(shown.map((p) => p.stamp), 5),
-    formats: common(data.cards.flatMap((c) => [...c.legal, ...c.banned]), 1),
+    formats: common(data.cards.flatMap((c) => formatsOf(c.legal | c.banned)), 1),
     is: isValues(data),
     tags: common([...data.tags.keys()].filter((t) => /^[a-z0-9-]+$/.test(t) && data.tags.get(t)!.size >= 3), 1),
     text: common(data.cards.flatMap((c) => words(c.text.join(" "))), 30),
