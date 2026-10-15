@@ -14,6 +14,7 @@ import { createGunzip } from "node:zlib";
 import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 import { politeFetch } from "./scryfall-answers.ts";
+import { columns, type Kinds } from "./columns.ts";
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -292,7 +293,7 @@ const shared = (list?: string[]) => {
 };
 
 // one copy of each string printings repeat (a set code, an artist, a date…), where JSON.parse makes one a
-// printing. They stay strings for now; as columns (a typed array a field) they'll be codes into a list of these
+// printing, while loading; once loaded they're codes into a list of these (see the columns below loadCards)
 const strings = new Map<string, string>();
 const once = (s: string) => {
     let kept = strings.get(s);
@@ -582,8 +583,27 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
     const data: Cards = { cards, prints, tags, artTags, setDates, blocks, parents, promoTypes, languages: undefined };
     const langPath = join(dirname(printsPath), "languages.jsonl.gz");
     if (existsSync(langPath)) data.languages = await readLanguages(langPath, data, byOracle);
+    // as columns once loaded (see scripts/columns.ts): read only from here on
+    data.cards = columns(cards, CARD_COLUMNS);
+    data.prints = columns(prints, PRINTING_COLUMNS);
     return data;
 }
+
+const CARD_COLUMNS: Kinds<LocalCard> = {
+    oracleId: "any", name: "any", faceNames: "any", printed: "any", text: "any", fullPrinted: "any", fullText: "any",
+    faceTypes: "any", types: "any", layout: "code", faceColors: "any", identity: "int", indicator: "bool", legal: "int",
+    banned: "int", restricted: "int", keywords: "code", mv: "num", manaCosts: "any", frontCost: "code", power: "any",
+    toughness: "any", loyalty: "any", produced: "int", edhrec: "num", penny: "num", reserved: "bool", gameChanger: "bool",
+    meld: "code", funny: "bool", printings: "any", shown: "num",
+};
+const PRINTING_COLUMNS: Kinds<Printing> = {
+    id: "any", card: "int", name: "code", flavorName: "code", layout: "code", set: "code", setType: "code", block: "code",
+    rarity: "code", artist: "code", released: "code", usd: "num", eur: "num", plain: "code", tix: "num", frame: "code",
+    frameEffects: "code", border: "code", games: "code", cn: "code", lang: "code", promo: "bool", promoTypes: "code",
+    digital: "bool", fullArt: "bool", textless: "bool", reprint: "bool", spotlight: "bool", oversized: "bool",
+    booster: "bool", hires: "bool", finishes: "code", watermarks: "code", flavor: "any", stamp: "code", art: "code",
+    illustrations: "any", artists: "int", scryfallPreview: "bool", extra: "code",
+};
 
 // ---- the query language ----
 
