@@ -62,7 +62,7 @@ const keys: string[] = [
     ...values(data, (i) => printsOf(i).flatMap((p) => [p.frame, ...p.frameEffects]), 1).map((v) => `frame:${v}`),
     ...values(data, (i) => printsOf(i).map((p) => p.stamp), 1).map((v) => `stamp:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.watermarks])).map((v) => `wm:${quote(v)}`),
-    ...[...data.tags].filter(([, cards]) => cards.size >= MIN_CARDS).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `otag:${t}`),
+    ...[...data.tags].filter(([, cards]) => cards.length >= MIN_CARDS).sort((a, b) => b[1].length - a[1].length).slice(0, TAGS).map(([t]) => `otag:${t}`),
     // the art tags, by how many pictures they have (those with the most cards would all be in the thousands)
     ...[...data.artTags].filter(([t, arts]) => arts.size >= MIN_CARDS && /^[a-z0-9-]+$/.test(t)).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `atag:${t}`),
     // every language, as lang: and in:, and the keys about printings in them

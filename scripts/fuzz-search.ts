@@ -75,7 +75,7 @@ const VALUES = {
     stamps: common(shown.map((p) => p.stamp), 5),
     formats: common(data.cards.flatMap((c) => formatsOf(c.legal | c.banned)), 1),
     is: isValues(data),
-    tags: common([...data.tags.keys()].filter((t) => /^[a-z0-9-]+$/.test(t) && data.tags.get(t)!.size >= 3), 1),
+    tags: common([...data.tags.keys()].filter((t) => /^[a-z0-9-]+$/.test(t) && data.tags.get(t)!.length >= 3), 1),
     text: common(data.cards.flatMap((c) => words(c.text.join(" "))), 30),
     flavor: common(shown.flatMap((p) => words(p.flavor.join(" "))), 30),
     names: common(data.cards.flatMap((c) => words(c.name)), 4),
