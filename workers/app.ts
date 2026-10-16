@@ -1,5 +1,6 @@
 import { createRequestHandler } from "react-router";
 import { SCRYFALL_PREFIX, handleScryfall } from "./scryfall";
+import { SEARCH_PREFIX, handleSearch } from "./search";
 import { dataFileResponse, dataVersion } from "../app/lib/carddata.server";
 
 declare module "react-router" {
@@ -59,6 +60,9 @@ async function cachedPage(request: Request, env: Env, ctx: ExecutionContext, ren
 export default {
 	async fetch(request, env, ctx) {
 		const { pathname } = new URL(request.url);
+		if (pathname.startsWith(SEARCH_PREFIX)) {
+			return handleSearch(request, env, ctx);
+		}
 		if (pathname.startsWith(SCRYFALL_PREFIX)) {
 			return handleScryfall(request, ctx);
 		}

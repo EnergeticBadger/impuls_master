@@ -15,6 +15,11 @@ import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 import { politeFetch } from "./scryfall-answers.ts";
 import { columns, type Kinds } from "./columns.ts";
+// imported rather than read, so the engine runs where there are no files (the search Worker, workers/search.ts)
+import SHORT_NAMES_FILE from "./short-names.json" with { type: "json" };
+import TYPES_FILE from "./types.json" with { type: "json" };
+import LAND_CYCLES_FILE from "./land-cycles.json" with { type: "json" };
+import CUBES_FILE from "./cubes.json" with { type: "json" };
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -218,9 +223,9 @@ export function scryfallRegex(regex: string): RegExp {
 }
 
 // the legends whose short names Scryfall picks differently from cardText's rule, kept by npm run short-names
-const SHORT_NAMES: Record<string, string[]> = JSON.parse(readFileSync(new URL("./short-names.json", import.meta.url), "utf8"));
+const SHORT_NAMES: Record<string, string[]> = SHORT_NAMES_FILE;
 // every type word, lower case, from Scryfall's catalogs (types.json, by npm run types)
-const TYPES = new Set<string>(JSON.parse(readFileSync(new URL("./types.json", import.meta.url), "utf8")));
+const TYPES = new Set<string>(TYPES_FILE);
 
 // a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept): as printed,
 // and with the card itself as ~, by its names and as "this creature", "this Aura"…. Scryfall matches a search
@@ -1022,7 +1027,7 @@ const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 // the land groups (is:fetchland, is:shockland…): Scryfall keeps them by hand, so they're its own lists, kept in
 // land-cycles.json by npm run land-cycles. is:manland is is:creatureland
 const LAND_CYCLES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
-    JSON.parse(readFileSync(new URL("./land-cycles.json", import.meta.url), "utf8")) as Record<string, string[]>,
+    LAND_CYCLES_FILE as Record<string, string[]>,
 ).map(([cycle, names]) => [cycle, new Set(names)]));
 // and their other names, from Scryfall's syntax guide
 const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland: "bikeland", bicycleland: "bikeland", crowdland: "bondland", bbdland: "bondland",
@@ -1031,7 +1036,7 @@ for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LA
 
 // the cubes (cube:vintage…): Scryfall's own lists, kept in cubes.json by npm run cubes
 const CUBES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
-    existsSync(new URL("./cubes.json", import.meta.url)) ? JSON.parse(readFileSync(new URL("./cubes.json", import.meta.url), "utf8")) as Record<string, string[]> : {},
+    CUBES_FILE as Record<string, string[]>,
 ).map(([cube, names]) => [cube, new Set(names)]));
 
 // every is: value this search knows, for scripts/test-keys.ts to check one by one

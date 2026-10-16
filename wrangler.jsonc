@@ -12,6 +12,10 @@
   "r2_buckets": [
     { "binding": "CARD_DATA", "bucket_name": "impulsecaster-cards-data" }
   ],
+  // the local search at /api/search (workers/search.ts): "off" sends every search there to Scryfall instead
+  "vars": {
+    "LOCAL_SEARCH": "on"
+  },
   // the deploy's version, so saved card pages are only served by the deploy that made them (workers/app.ts)
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"

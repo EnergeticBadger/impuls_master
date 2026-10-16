@@ -101,17 +101,31 @@ export function encodeIndex(data: Cards, about: Record<string, unknown> = {}): U
     return out;
 }
 
+// where a file's header and its arrays are, from its first START bytes: [from, to) for the header, and where the
+// arrays start (they go to the end), so a reader can fetch the parts on their own (the search Worker reads them
+// from R2 so, rather than the whole file and then copies)
+export const START = 16;
+export function indexLayout(first: Uint8Array): { header: [number, number], arrays: number } {
+    if (new TextDecoder().decode(first.subarray(0, 8)) !== MAGIC) throw new Error("not a search index file");
+    const view = new DataView(first.buffer, first.byteOffset, first.byteLength);
+    const length = view.getUint32(8, true), version = view.getUint32(12, true);
+    if (version !== VERSION) throw new Error(`a search index of version ${version}; this reads ${VERSION}`);
+    return { header: [START, START + length], arrays: align(START + length) };
+}
+
 // what encodeIndex wrote, as loadCards gives it. Sets the order of the colour and format bits, so it throws if
 // cards with another order were loaded in this process first
 export function decodeIndex(bytes: Uint8Array): Cards & { about: Record<string, unknown> } {
-    if (new TextDecoder().decode(bytes.subarray(0, 8)) !== MAGIC) throw new Error("not a search index file");
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const length = view.getUint32(8, true), version = view.getUint32(12, true);
-    if (version !== VERSION) throw new Error(`a search index of version ${version}; this reads ${VERSION}`);
-    const header: Header = JSON.parse(new TextDecoder().decode(bytes.subarray(16, 16 + length)));
+    const at = indexLayout(bytes);
     // the arrays copied to a buffer of their own, so the rest of the file can go (a copy, as a Node Buffer's
     // slice isn't one)
-    const blob = new Uint8Array(bytes.subarray(align(16 + length))).buffer;
+    return decodeIndexParts(new TextDecoder().decode(bytes.subarray(...at.header)), new Uint8Array(bytes.subarray(at.arrays)).buffer);
+}
+
+// the same from the file's parts: the header as text, and the arrays (the file from `arrays` on) in a buffer of
+// their own, which the columns then read in place
+export function decodeIndexParts(text: string, blob: ArrayBuffer): Cards & { about: Record<string, unknown> } {
+    const header: Header = JSON.parse(text);
     const arrays = header.arrays.map(({ type, offset, length }) => new ARRAYS[type](blob, offset, length));
     const strings = header.strings;
     const value = (v: any): any => {
