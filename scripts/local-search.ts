@@ -35,14 +35,16 @@ export type LocalCard = {
     faceTypes: string[],
     types: string,
     layout: string,
-    // a face each: Cecil // Cecil is black then white, not multicolour
-    faceColors: Set<string>[],
-    identity: Set<string>,
+    // colours as bit masks (see colorMask), a face each: Cecil // Cecil is black then white, not multicolour
+    faceColors: number[],
+    identity: number,
     indicator: boolean,
-    legal: Set<string>,
-    banned: Set<string>,
-    restricted: Set<string>,
-    keywords: Set<string>,
+    // formats as bit masks (see formatBit)
+    legal: number,
+    banned: number,
+    restricted: number,
+    // shared by every card with the same keywords (see shared)
+    keywords: ReadonlySet<string>,
     mv: number,
     // a face each, so m=1R finds Fire // Ice by Fire's cost
     manaCosts: string[],
@@ -53,7 +55,7 @@ export type LocalCard = {
     power: (string | undefined)[],
     toughness: (string | undefined)[],
     loyalty: (string | undefined)[],
-    produced: Set<string>,
+    produced: number,
     edhrec?: number,
     penny?: number,
     reserved: boolean,
@@ -256,6 +258,28 @@ export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[],
 }
 
 const lower = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
+// colours and formats as bit masks, not a Set each (seven Sets a card took 67 MB of the heap): a colour a bit, w u b
+// r g c and then any other letter (produced mana has t), and a format a bit, in the order the bulk file first has them
+const COLOR_LETTERS = ["w", "u", "b", "r", "g", "c"];
+const letterBit = (l: string) => {
+    let i = COLOR_LETTERS.indexOf(l);
+    if (i < 0) i = COLOR_LETTERS.push(l) - 1;
+    if (i >= 31) throw new Error(`too many colour letters for a bit mask: ${COLOR_LETTERS.join("")}`);
+    return 1 << i;
+};
+export const colorMask = (list?: Iterable<string>) => { let m = 0; for (const l of list ?? []) m |= letterBit(l.toLowerCase()); return m; };
+export const colorLetters = (mask: number) => COLOR_LETTERS.filter((_, i) => mask & (1 << i));
+const FORMATS: string[] = [];
+const formatBit = (format: string) => {
+    let i = FORMATS.indexOf(format);
+    if (i < 0) i = FORMATS.push(format) - 1;
+    if (i >= 32) throw new Error(`too many formats for a bit mask: ${FORMATS.join(", ")}`);
+    return 1 << i;
+};
+// a format a search asks for: no bit for one no card has (f:foo finds nothing)
+const inFormat = (mask: number, format: string) => { const i = FORMATS.indexOf(format); return i >= 0 && !!(mask & (1 << i)); };
+export const formatsOf = (mask: number) => FORMATS.filter((_, i) => mask & (1 << i));
+const bitCount = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
 const price = (v?: string | null) => v == null ? undefined : Number(v);
 // the same small set for every printing with the same values (games, finishes…): with every language's printings
 // loaded there are half a million of them. Never changed after loading
@@ -268,7 +292,7 @@ const shared = (list?: string[]) => {
 };
 
 function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
-    const legal = (want: string[]) => new Set(Object.entries(c.legalities ?? {}).filter(([, v]) => want.includes(v as string)).map(([k]) => k));
+    const legal = (want: string[]) => Object.entries(c.legalities ?? {}).reduce((m, [k, v]) => want.includes(v as string) ? m | formatBit(k) : m, 0);
     const each = (field: string) => faces.map((f) => (f[field] ?? (faces.length === 1 ? c[field] : undefined)) as string | undefined);
     return {
         oracleId: c.oracle_id ?? faces[0]?.oracle_id,
@@ -278,13 +302,13 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
         faceTypes: faces.map((f) => (f.type_line ?? c.type_line ?? "").toLowerCase()),
         types: (c.type_line ?? faces.map((f) => f.type_line).join(" // ")).toLowerCase(),
         layout: c.layout,
-        faceColors: faces.map((f) => lower(f.colors ?? c.colors)),
-        identity: lower(c.color_identity),
+        faceColors: faces.map((f) => colorMask(f.colors ?? c.colors)),
+        identity: colorMask(c.color_identity),
         indicator: !!(c.color_indicator ?? faces.some((f) => f.color_indicator)),
         legal: legal(["legal", "restricted"]),
         banned: legal(["banned"]),
         restricted: legal(["restricted"]),
-        keywords: lower(c.keywords),
+        keywords: shared(c.keywords),
         // a reversible printing keeps these on its faces only
         mv: c.cmc ?? faces[0]?.cmc ?? 0,
         // with more than two faces (Who // What // When // Where // Why), the whole cost counts too, so m:RG finds it
@@ -293,7 +317,7 @@ function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
         power: each("power"),
         toughness: each("toughness"),
         loyalty: each("loyalty"),
-        produced: lower(c.produced_mana),
+        produced: colorMask(c.produced_mana),
         edhrec: c.edhrec_rank,
         penny: c.penny_rank,
         reserved: !!c.reserved,
@@ -479,7 +503,7 @@ async function readLanguages(path: string, data: Cards, byOracle: Map<string, nu
         const card = byOracle.get(c.oracle_id ?? faces[0]?.oracle_id);
         if (card === undefined) continue;
         // the legal formats only matter to extraKind (an Alchemy card legal nowhere), and are the card's
-        if (!c.legalities) c.legalities = Object.fromEntries([...data.cards[card].legal].map((f) => [f, "legal"]));
+        if (!c.legalities) c.legalities = Object.fromEntries(formatsOf(data.cards[card].legal).map((f) => [f, "legal"]));
         const at = data.prints.push(toPrinting(c, faces, card)) - 1;
         if (!byCard.has(card)) byCard.set(card, []);
         byCard.get(card)!.push(at);
@@ -512,14 +536,14 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         // legal in a format if any printing is: Ancestral Recall's Alpha one is restricted in Old School, its
         // 30th Anniversary one not legal
         for (const [format, status] of Object.entries(c.legalities ?? {})) {
-            if (status === "legal" || status === "restricted") cards[card].legal.add(format);
-            if (status === "restricted") cards[card].restricted.add(format);
-            if (status === "banned") cards[card].banned.add(format);
+            if (status === "legal" || status === "restricted") cards[card].legal |= formatBit(format);
+            if (status === "restricted") cards[card].restricted |= formatBit(format);
+            if (status === "banned") cards[card].banned |= formatBit(format);
         }
         const first = setDates.get(c.set);
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
-    for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal.size && !c.banned.size);
+    for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal && !c.banned);
     const tags = tagsPath && existsSync(tagsPath) ? await readTags(tagsPath, "oracle_id", TAG_LAG) : new Map<string, Set<string>>();
     // the other bulk files, read when they're beside default_cards: art tags (atag:) and every language's
     // printings (lang:, see npm run languages)
@@ -704,17 +728,17 @@ const COLOR_NAMES: Record<string, string> = {
 
 // a card's colours against the asked ones; `colon` is what a bare `:` means for this key. For produces:, c is
 // colourless mana like any other letter; for colours it means none at all, so c:c is exactly colourless
-function colorTest(op: string, value: string, colon: string, cIsLetter = false): (have: Set<string>) => boolean {
+function colorTest(op: string, value: string, colon: string, cIsLetter = false): (have: number) => boolean {
     const v = value.toLowerCase();
-    if (/^\d+$/.test(v)) return (have) => compare(op === ":" ? "=" : op, have.size, Number(v));
-    if (v === "m" || v === "multicolor") return (have) => have.size >= 2;
+    if (/^\d+$/.test(v)) return (have) => compare(op === ":" ? "=" : op, bitCount(have), Number(v));
+    if (v === "m" || v === "multicolor") return (have) => bitCount(have) >= 2;
     const letters = COLOR_NAMES[v] ?? v;
     if (!/^[wubrgc]+$/.test(letters)) throw new Unsupported(`colour ${value}`);
     if (letters === "c" && !cIsLetter && op === ":") op = "=";
-    const want = new Set(cIsLetter ? [...letters] : [...letters].filter((l) => l !== "c"));
+    const want = colorMask(cIsLetter ? [...letters] : [...letters].filter((l) => l !== "c"));
     return (have) => {
-        const sub = [...have].every((c) => want.has(c));
-        const sup = [...want].every((c) => have.has(c));
+        const sub = !(have & ~want);
+        const sup = !(want & ~have);
         switch (op === ":" ? colon : op) {
             case "=": return sub && sup;
             case "<=": return sub;
@@ -804,11 +828,11 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a legendary creature or Background, or a legendary Vehicle or Spacecraft with power and
     // toughness (The Falcon, Airship Restored), or the card says so ("can be your commander", Grist's "it's a 1/1
     // Insect creature" off the battlefield); but not a card banned in Commander (Leovold) or a meld card's back
-    commander: (c) => !c.banned.has("commander") && canLead(c),
+    commander: (c) => !inFormat(c.banned, "commander") && canLead(c),
     // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
     // a legendary planeswalker, legal in Brawl
     // not a meld card's back (Urza, Planeswalker), nor the few Scryfall leaves out though Brawl allows them
-    brawler: (c) => c.legal.has("brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
+    brawler: (c) => inFormat(c.legal, "brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
         && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
     // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
     // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
@@ -850,10 +874,10 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
     // could lead a Commander deck (Leovold, banned there, too), legal in Duel Commander, but not a Background, a
     // Vehicle or a Spacecraft (Faceless One, a Background creature, is one), and not on Duel Commander's own "banned as commander" list (DUEL_BANNED_COMMANDERS)
-    duelcommander: (c) => c.legal.has("duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
+    duelcommander: (c) => inFormat(c.legal, "duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
         && (/\bcreature\b/.test(c.faceTypes[0]) || !/\b(background|vehicle|spacecraft)\b/.test(c.faceTypes[0])),
     // a planeswalker, legal in Oathbreaker; not Urza, Planeswalker, the back of a meld
-    oathbreaker: (c) => c.legal.has("oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
+    oathbreaker: (c) => inFormat(c.legal, "oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
     companion: (c) => c.keywords.has("companion"),
     meldpart: (c) => c.meld === "part",
     meldresult: (c) => c.meld === "result",
@@ -1056,9 +1080,9 @@ function compile(t: Term, data: Cards): Test {
             if (v === "indicator") return card((c) => c.indicator);
             if (v === "watermark") return print((p) => p.watermarks.size > 0);
             throw new Unsupported(`has:${v}`);
-        case "f": case "format": case "legal": return card((c) => c.legal.has(v));
-        case "banned": return card((c) => c.banned.has(v));
-        case "restricted": return card((c) => c.restricted.has(v));
+        case "f": case "format": case "legal": return card((c) => inFormat(c.legal, v));
+        case "banned": return card((c) => inFormat(c.banned, v));
+        case "restricted": return card((c) => inFormat(c.restricted, v));
         case "mv": case "cmc": case "manavalue":
             if (v === "even" || v === "odd") return card((c) => Number.isInteger(c.mv) && (c.mv % 2 === 0) === (v === "even"));
             { const n = number(); return card((c) => compare(t.op, c.mv, n)); }
@@ -1678,8 +1702,8 @@ const ORDERS: Record<string, Order> = {
         // white, not white-blue. Then colorless cards, then lands (Dryad Arbor too, though green), each by color
         // identity, none last: Wall of Tanglecord (green identity) before Amaranthine Wall, Dowsing Dagger //
         // Lost Vale before Abandoned Air Temple, Ancient Tomb after The World Tree
-        const group = (colors: Set<string> | undefined) => {
-            const key = [...colors ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
+        const group = (colors: number | undefined) => {
+            const key = colorLetters(colors ?? 0).filter((l) => WUBRG.includes(l)).sort().join("");
             return key ? COLOR_GROUPS.indexOf(key) : 99;
         };
         if (/\bland\b/.test(c.faceTypes[0] ?? "")) return 20000 + group(c.identity);

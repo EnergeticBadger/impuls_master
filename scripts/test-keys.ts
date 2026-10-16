@@ -10,7 +10,7 @@
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PAGE, Answers } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, isValues, loadCards, parse, search, setsFile, type Cards } from "./local-search.ts";
+import { Unsupported, bulkFile, formatsOf, isValues, loadCards, parse, search, setsFile, type Cards } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -46,14 +46,14 @@ function values(data: Cards, each: (card: number) => Iterable<string>, min = MIN
 }
 const printsOf = (i: number) => data.cards[i].printings.map((p) => data.prints[p]);
 const quote = (v: string) => /[\s()"]/.test(v) ? `"${v}"` : v;
-const formats = values(data, (i) => [...data.cards[i].legal, ...data.cards[i].banned], 1);
+const formats = values(data, (i) => formatsOf(data.cards[i].legal | data.cards[i].banned), 1);
 
 const keys: string[] = [
     ...isValues(data).map((v) => `is:${v}`),
     "has:indicator", "has:watermark",
     ...formats.map((f) => `f:${f}`),
-    ...values(data, (i) => data.cards[i].banned, 1).map((f) => `banned:${f}`),
-    ...values(data, (i) => data.cards[i].restricted, 1).map((f) => `restricted:${f}`),
+    ...values(data, (i) => formatsOf(data.cards[i].banned), 1).map((f) => `banned:${f}`),
+    ...values(data, (i) => formatsOf(data.cards[i].restricted), 1).map((f) => `restricted:${f}`),
     ...values(data, (i) => data.cards[i].keywords).map((k) => `kw:${quote(k)}`),
     ...values(data, (i) => printsOf(i).map((p) => p.setType), 1).map((v) => `st:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.games]), 1).map((v) => `game:${v}`),
