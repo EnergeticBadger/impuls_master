@@ -5,6 +5,7 @@
 // --check lists every search whose list changed. Also reports the heap the loaded cards take (run node with
 // --expose-gc for an exact figure, as npm run same-results does) and the median search time.
 //   --file <path>   default fuzz-results/same-results.jsonl     --every <n>   only every nth search
+//   --index <path>  load the cards from a search index file (npm run search-index), not the bulk files
 // Use the same bulk files both times: SCRYFALL_BULK_DIR=fuzz-results/bulk-2026-10-14 npm run same-results
 
 import { createHash } from "node:crypto";
@@ -12,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Unsupported, bulkFile, listed, loadCards, parse, setsFile, type View } from "./local-search.ts";
 import { cardsSearch } from "./search-api.ts";
+import { loadIndex } from "./search-index.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -21,6 +23,7 @@ const option = (name: string, fallback: string) => {
 const FILE = option("file", "fuzz-results/same-results.jsonl");
 const EVERY = Number(option("every", "1"));
 const WRITE = args.includes("--write");
+const INDEX = option("index", "");
 
 const gc = (globalThis as { gc?: () => void }).gc;
 const heap = () => { gc?.(); gc?.(); return process.memoryUsage().heapUsed; };
@@ -29,11 +32,11 @@ const buffers = () => process.memoryUsage().arrayBuffers;
 const before = heap(), beforeBuffers = buffers();
 const started = Date.now();
 const bulk = join("fuzz-results", "bulk");
-const data = await loadCards(await bulkFile("default_cards", bulk), await bulkFile("oracle_tags", bulk).catch(() => undefined),
-    await setsFile(bulk).catch(() => undefined));
+const data = INDEX ? loadIndex(INDEX) : await loadCards(await bulkFile("default_cards", bulk),
+    await bulkFile("oracle_tags", bulk).catch(() => undefined), await setsFile(bulk).catch(() => undefined));
 const loaded = Date.now() - started;
 const mb = (n: number) => `${(n / 2 ** 20).toFixed(0)} MB`;
-console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded in ${(loaded / 1000).toFixed(1)}s; `
+console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded${INDEX ? ` from ${INDEX}` : ""} in ${(loaded / 1000).toFixed(1)}s; `
     + `heap ${mb(heap())} (the cards ${mb(heap() - before)}), typed arrays ${mb(buffers() - beforeBuffers)}${gc ? "" : ", without --expose-gc so roughly"}`);
 
 // ---- every search the suites know ----

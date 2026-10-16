@@ -26,6 +26,7 @@
     "fuzz-syntax": "node scripts/fuzz-syntax.ts",
     "fuzz-search": "node scripts/fuzz-search.ts",
     "same-results": "node --expose-gc scripts/same-results.ts",
+    "search-index": "node scripts/search-index.ts",
     "short-names": "node scripts/short-names.ts",
     "combo-cases": "node --import ./scripts/app-paths.ts scripts/combo-cases.ts",
     "test-combos": "node scripts/test-syntax.ts --cases combo --delay 3000 --stop-on-429",
