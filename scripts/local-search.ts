@@ -291,12 +291,23 @@ const shared = (list?: string[]) => {
     return set;
 };
 
+// one copy of each string printings repeat (a set code, an artist, a date…), where JSON.parse makes one a
+// printing. They stay strings for now; as columns (a typed array a field) they'll be codes into a list of these
+const strings = new Map<string, string>();
+const once = (s: string) => {
+    let kept = strings.get(s);
+    if (kept === undefined) strings.set(s, kept = s);
+    return kept;
+};
+// and the four kinds of price there are
+const PLAIN = [false, true].flatMap((usd) => [false, true].map((eur) => Object.freeze({ usd, eur })));
+
 function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
     const legal = (want: string[]) => Object.entries(c.legalities ?? {}).reduce((m, [k, v]) => want.includes(v as string) ? m | formatBit(k) : m, 0);
     const each = (field: string) => faces.map((f) => (f[field] ?? (faces.length === 1 ? c[field] : undefined)) as string | undefined);
     return {
         oracleId: c.oracle_id ?? faces[0]?.oracle_id,
-        name: c.name,
+        name: once(c.name),
         faceNames: faces.map((f) => f.name ?? c.name),
         ...cardText(c),
         faceTypes: faces.map((f) => (f.type_line ?? c.type_line ?? "").toLowerCase()),
@@ -335,26 +346,26 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
         id: c.id,
         card,
-        name: c.name,
-        flavorName: c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // "),
-        layout: c.layout,
-        set: c.set,
-        setType: c.set_type,
-        block: c.block_code ?? "",
-        rarity: c.rarity,
-        artist: c.artist ?? "",
-        released: c.released_at ?? "",
+        name: once(c.name),
+        flavorName: once(c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // ")),
+        layout: once(c.layout),
+        set: once(c.set),
+        setType: once(c.set_type),
+        block: once(c.block_code ?? ""),
+        rarity: once(c.rarity),
+        artist: once(c.artist ?? ""),
+        released: once(c.released_at ?? ""),
         // the regular price, or the foil one when there's none
         usd: price(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched),
         eur: price(c.prices?.eur ?? c.prices?.eur_foil),
         tix: price(c.prices?.tix),
-        plain: { usd: c.prices?.usd != null, eur: c.prices?.eur != null },
-        frame: c.frame ?? "",
+        plain: PLAIN[(c.prices?.usd != null ? 2 : 0) + (c.prices?.eur != null ? 1 : 0)],
+        frame: once(c.frame ?? ""),
         frameEffects: shared(c.frame_effects),
-        border: c.border_color ?? "",
+        border: once(c.border_color ?? ""),
         games: shared(c.games),
-        cn: c.collector_number ?? "",
-        lang: c.lang ?? "en",
+        cn: once(c.collector_number ?? ""),
+        lang: once(c.lang ?? "en"),
         promo: !!c.promo,
         promoTypes: shared(c.promo_types),
         digital: !!c.digital,
@@ -368,7 +379,7 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         finishes: shared(c.finishes),
         watermarks: shared([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
         flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
-        stamp: c.security_stamp ?? "",
+        stamp: once(c.security_stamp ?? ""),
         art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
         illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))],
         artists: c.artist_ids?.length ?? 0,
