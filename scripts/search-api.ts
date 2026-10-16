@@ -10,7 +10,7 @@
 
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 import KEYWORD_WORDS from "./keyword-words.json" with { type: "json" };
-import { Unsupported, isValues, parse, results, revealed, type Cards, type Node } from "./local-search.ts";
+import { Unsupported, formatsOf, isValues, parse, results, revealed, type Cards, type Node } from "./local-search.ts";
 
 export const PAGE_SIZE = 175;
 
@@ -271,7 +271,7 @@ function vocabulary(data: Cards): Words {
     w = { keywords: new Set(KEYWORD_WORDS), formats: new Set(), frames: new Set(), stamps: new Set(), games: new Set(), langs: new Set(), setTypes: new Set(), sets: new Set(data.setDates.keys()), is: new Set([...isValues(data), ...IS_WORDS]) };
     for (const c of data.cards) {
         for (const k of c.keywords) w.keywords.add(k);
-        for (const f of [...c.legal, ...c.banned, ...c.restricted]) w.formats.add(f);
+        for (const f of formatsOf(c.legal | c.banned | c.restricted)) w.formats.add(f);
     }
     for (const p of data.prints) {
         w.frames.add(p.frame);

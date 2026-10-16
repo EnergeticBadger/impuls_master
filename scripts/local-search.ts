@@ -14,6 +14,12 @@ import { createGunzip } from "node:zlib";
 import { dirname, join } from "node:path";
 import { MINUS_DROPPED } from "../app/Components/Searchbar/droppedTerms.ts";
 import { politeFetch } from "./scryfall-answers.ts";
+import { columns, type Kinds } from "./columns.ts";
+// imported rather than read, so the engine runs where there are no files (the search Worker, workers/search.ts)
+import SHORT_NAMES_FILE from "./short-names.json" with { type: "json" };
+import TYPES_FILE from "./types.json" with { type: "json" };
+import LAND_CYCLES_FILE from "./land-cycles.json" with { type: "json" };
+import CUBES_FILE from "./cubes.json" with { type: "json" };
 
 const HEADERS = { "User-Agent": "impuls_master-tests/1.0 (+https://github.com/EnergeticBadger/impuls_master)", Accept: "application/json" };
 
@@ -35,14 +41,16 @@ export type LocalCard = {
     faceTypes: string[],
     types: string,
     layout: string,
-    // a face each: Cecil // Cecil is black then white, not multicolour
-    faceColors: Set<string>[],
-    identity: Set<string>,
+    // colours as bit masks (see colorMask), a face each: Cecil // Cecil is black then white, not multicolour
+    faceColors: number[],
+    identity: number,
     indicator: boolean,
-    legal: Set<string>,
-    banned: Set<string>,
-    restricted: Set<string>,
-    keywords: Set<string>,
+    // formats as bit masks (see formatBit)
+    legal: number,
+    banned: number,
+    restricted: number,
+    // shared by every card with the same keywords (see shared)
+    keywords: ReadonlySet<string>,
     mv: number,
     // a face each, so m=1R finds Fire // Ice by Fire's cost
     manaCosts: string[],
@@ -53,7 +61,7 @@ export type LocalCard = {
     power: (string | undefined)[],
     toughness: (string | undefined)[],
     loyalty: (string | undefined)[],
-    produced: Set<string>,
+    produced: number,
     edhrec?: number,
     penny?: number,
     reserved: boolean,
@@ -71,6 +79,8 @@ export type LocalCard = {
 export type Printing = {
     // Scryfall's id for it
     id: string,
+    // its place among all printings by id, the lower id first: same-day printings go by id
+    idOrder: number,
     card: number,
     // a reversible printing has its own name ("Birds of Paradise // Birds of Paradise") and layout
     name: string,
@@ -213,9 +223,9 @@ export function scryfallRegex(regex: string): RegExp {
 }
 
 // the legends whose short names Scryfall picks differently from cardText's rule, kept by npm run short-names
-const SHORT_NAMES: Record<string, string[]> = JSON.parse(readFileSync(new URL("./short-names.json", import.meta.url), "utf8"));
+const SHORT_NAMES: Record<string, string[]> = SHORT_NAMES_FILE;
 // every type word, lower case, from Scryfall's catalogs (types.json, by npm run types)
-const TYPES = new Set<string>(JSON.parse(readFileSync(new URL("./types.json", import.meta.url), "utf8")));
+const TYPES = new Set<string>(TYPES_FILE);
 
 // a card's rules text a face each, as o: sees it (reminder text left out) and as fo: does (kept): as printed,
 // and with the card itself as ~, by its names and as "this creature", "this Aura"…. Scryfall matches a search
@@ -252,10 +262,48 @@ export function cardText(c: any, shortNames = SHORT_NAMES): { printed: string[],
     const raw = faces.length > 2 ? [] : faces.map((f) => cleave(fold((f.oracle_text ?? c.oracle_text ?? "") as string)));
     const tilde = (t: string) => [whole, part].reduce((s, re) => re ? s.replace(re, "~") : s, t).replace(THIS, "~");
     const printed = raw.map((t) => t.replace(/ ?\([^)]*\)/g, ""));
-    return { printed, text: printed.map(tilde), fullPrinted: raw, fullText: raw.map(tilde) };
+    const text = like(printed.map(tilde), printed), fullPrinted = like(raw, printed);
+    return { printed, text, fullPrinted, fullText: like(raw.map(tilde), text, fullPrinted) };
 }
 
+// a version of a card's text with the strings of an earlier one where they're the same, so each is kept once:
+// a card without reminder text has the same o: and fo: text, and one without its name or "this …" the same with ~
+const like = (list: string[], ...earlier: string[][]) => {
+    for (const e of earlier) if (e.length === list.length && e.every((s, i) => s === list[i])) return e;
+    return list.map((s, i) => earlier.find((e) => e[i] === s)?.[i] ?? s);
+};
+
 const lower = (list?: string[]) => new Set((list ?? []).map((l) => l.toLowerCase()));
+// colours and formats as bit masks, not a Set each (seven Sets a card took 67 MB of the heap): a colour a bit, w u b
+// r g c and then any other letter (produced mana has t), and a format a bit, in the order the bulk file first has them
+const COLOR_LETTERS = ["w", "u", "b", "r", "g", "c"];
+const letterBit = (l: string) => {
+    let i = COLOR_LETTERS.indexOf(l);
+    if (i < 0) i = COLOR_LETTERS.push(l) - 1;
+    if (i >= 31) throw new Error(`too many colour letters for a bit mask: ${COLOR_LETTERS.join("")}`);
+    return 1 << i;
+};
+export const colorMask = (list?: Iterable<string>) => { let m = 0; for (const l of list ?? []) m |= letterBit(l.toLowerCase()); return m; };
+export const colorLetters = (mask: number) => COLOR_LETTERS.filter((_, i) => mask & (1 << i));
+const FORMATS: string[] = [];
+const formatBit = (format: string) => {
+    let i = FORMATS.indexOf(format);
+    if (i < 0) i = FORMATS.push(format) - 1;
+    if (i >= 32) throw new Error(`too many formats for a bit mask: ${FORMATS.join(", ")}`);
+    return 1 << i;
+};
+// a format a search asks for: no bit for one no card has (f:foo finds nothing)
+const inFormat = (mask: number, format: string) => { const i = FORMATS.indexOf(format); return i >= 0 && !!(mask & (1 << i)); };
+export const formatsOf = (mask: number) => FORMATS.filter((_, i) => mask & (1 << i));
+// the bits' order, kept in an index file so its masks read the same when it's loaded (see search-index.ts)
+export const maskNames = () => ({ colors: [...COLOR_LETTERS], formats: [...FORMATS] });
+export function useMaskNames(names: { colors: string[], formats: string[] }) {
+    for (const [list, saved] of [[COLOR_LETTERS, names.colors], [FORMATS, names.formats]]) saved.forEach((name, i) => {
+        if (list[i] === undefined) list.push(name);
+        else if (list[i] !== name) throw new Error(`the index's bits (${saved.join(" ")}) aren't those of the cards already loaded (${list.join(" ")})`);
+    });
+}
+const bitCount = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
 const price = (v?: string | null) => v == null ? undefined : Number(v);
 // the same small set for every printing with the same values (games, finishes…): with every language's printings
 // loaded there are half a million of them. Never changed after loading
@@ -267,33 +315,53 @@ const shared = (list?: string[]) => {
     return set;
 };
 
+// one copy of each string printings repeat (a set code, an artist, a date…), where JSON.parse makes one a
+// printing, while loading; once loaded they're codes into a list of these (see the columns below loadCards)
+const strings = new Map<string, string>();
+const once = (s: string) => {
+    let kept = strings.get(s);
+    if (kept === undefined) strings.set(s, kept = s);
+    return kept;
+};
+// and one copy of each list cards repeat (types, costs, stats…), frozen, so they can be codes in a column. These
+// are only for loading: loadCards empties them at the end
+const lists = new Map<string, readonly unknown[]>();
+const onceList = <T>(list: T[]): T[] => {
+    const key = JSON.stringify(list);
+    let kept = lists.get(key);
+    if (!kept) lists.set(key, kept = Object.freeze(list.map((v) => typeof v === "string" ? once(v) : v)));
+    return kept as T[];
+};
+// and the four kinds of price there are
+const PLAIN = [false, true].flatMap((usd) => [false, true].map((eur) => Object.freeze({ usd, eur })));
+
 function toCard(c: any, faces: any[]): Omit<LocalCard, "printings" | "funny"> {
-    const legal = (want: string[]) => new Set(Object.entries(c.legalities ?? {}).filter(([, v]) => want.includes(v as string)).map(([k]) => k));
+    const legal = (want: string[]) => Object.entries(c.legalities ?? {}).reduce((m, [k, v]) => want.includes(v as string) ? m | formatBit(k) : m, 0);
     const each = (field: string) => faces.map((f) => (f[field] ?? (faces.length === 1 ? c[field] : undefined)) as string | undefined);
     return {
         oracleId: c.oracle_id ?? faces[0]?.oracle_id,
-        name: c.name,
-        faceNames: faces.map((f) => f.name ?? c.name),
+        name: once(c.name),
+        faceNames: faces.map((f) => once(f.name ?? c.name)),
         ...cardText(c),
-        faceTypes: faces.map((f) => (f.type_line ?? c.type_line ?? "").toLowerCase()),
-        types: (c.type_line ?? faces.map((f) => f.type_line).join(" // ")).toLowerCase(),
+        faceTypes: onceList(faces.map((f) => (f.type_line ?? c.type_line ?? "").toLowerCase())),
+        types: once((c.type_line ?? faces.map((f) => f.type_line).join(" // ")).toLowerCase()),
         layout: c.layout,
-        faceColors: faces.map((f) => lower(f.colors ?? c.colors)),
-        identity: lower(c.color_identity),
+        faceColors: onceList(faces.map((f) => colorMask(f.colors ?? c.colors))),
+        identity: colorMask(c.color_identity),
         indicator: !!(c.color_indicator ?? faces.some((f) => f.color_indicator)),
         legal: legal(["legal", "restricted"]),
         banned: legal(["banned"]),
         restricted: legal(["restricted"]),
-        keywords: lower(c.keywords),
+        keywords: shared(c.keywords),
         // a reversible printing keeps these on its faces only
         mv: c.cmc ?? faces[0]?.cmc ?? 0,
         // with more than two faces (Who // What // When // Where // Why), the whole cost counts too, so m:RG finds it
-        frontCost: faces.length > 1 ? faces[0].mana_cost ?? "" : c.mana_cost ?? "",
-        manaCosts: faces.length > 1 ? [...faces.map((f) => f.mana_cost ?? ""), ...(faces.length > 2 ? [c.mana_cost ?? ""] : [])].filter(Boolean) : [c.mana_cost ?? ""],
-        power: each("power"),
-        toughness: each("toughness"),
-        loyalty: each("loyalty"),
-        produced: lower(c.produced_mana),
+        frontCost: once(faces.length > 1 ? faces[0].mana_cost ?? "" : c.mana_cost ?? ""),
+        manaCosts: onceList(faces.length > 1 ? [...faces.map((f) => f.mana_cost ?? ""), ...(faces.length > 2 ? [c.mana_cost ?? ""] : [])].filter(Boolean) : [c.mana_cost ?? ""]),
+        power: onceList(each("power")),
+        toughness: onceList(each("toughness")),
+        loyalty: onceList(each("loyalty")),
+        produced: colorMask(c.produced_mana),
         edhrec: c.edhrec_rank,
         penny: c.penny_rank,
         reserved: !!c.reserved,
@@ -310,27 +378,28 @@ const SCRYFALL_PREVIEWS = new Set(["uma/50", "grn/103"]);
 function toPrinting(c: any, faces: any[], card: number): Printing {
     return {
         id: c.id,
+        idOrder: 0,
         card,
-        name: c.name,
-        flavorName: c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // "),
-        layout: c.layout,
-        set: c.set,
-        setType: c.set_type,
-        block: c.block_code ?? "",
-        rarity: c.rarity,
-        artist: c.artist ?? "",
-        released: c.released_at ?? "",
+        name: once(c.name),
+        flavorName: once(c.flavor_name ?? faces.map((f) => f.flavor_name).filter(Boolean).join(" // ")),
+        layout: once(c.layout),
+        set: once(c.set),
+        setType: once(c.set_type),
+        block: once(c.block_code ?? ""),
+        rarity: once(c.rarity),
+        artist: once(c.artist ?? ""),
+        released: once(c.released_at ?? ""),
         // the regular price, or the foil one when there's none
         usd: price(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched),
         eur: price(c.prices?.eur ?? c.prices?.eur_foil),
         tix: price(c.prices?.tix),
-        plain: { usd: c.prices?.usd != null, eur: c.prices?.eur != null },
-        frame: c.frame ?? "",
+        plain: PLAIN[(c.prices?.usd != null ? 2 : 0) + (c.prices?.eur != null ? 1 : 0)],
+        frame: once(c.frame ?? ""),
         frameEffects: shared(c.frame_effects),
-        border: c.border_color ?? "",
+        border: once(c.border_color ?? ""),
         games: shared(c.games),
-        cn: c.collector_number ?? "",
-        lang: c.lang ?? "en",
+        cn: once(c.collector_number ?? ""),
+        lang: once(c.lang ?? "en"),
         promo: !!c.promo,
         promoTypes: shared(c.promo_types),
         digital: !!c.digital,
@@ -343,10 +412,10 @@ function toPrinting(c: any, faces: any[], card: number): Printing {
         hires: !!c.highres_image,
         finishes: shared(c.finishes),
         watermarks: shared([c.watermark, ...faces.map((f) => f.watermark)].filter(Boolean)),
-        flavor: faces.map((f) => f.flavor_text ?? c.flavor_text ?? ""),
-        stamp: c.security_stamp ?? "",
-        art: c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? "",
-        illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))],
+        flavor: faces.map((f) => once(f.flavor_text ?? c.flavor_text ?? "")),
+        stamp: once(c.security_stamp ?? ""),
+        art: once(c.illustration_id ?? c.card_faces?.[0]?.illustration_id ?? ""),
+        illustrations: [...new Set([c.illustration_id, ...faces.map((f) => f.illustration_id)].filter(Boolean))].map(once),
         artists: c.artist_ids?.length ?? 0,
         scryfallPreview: /^https:\/\/scryfall\.com\/card\//.test(c.preview?.source_uri ?? "") || SCRYFALL_PREVIEWS.has(`${c.set}/${c.collector_number}`),
         extra: extraKind(c),
@@ -396,7 +465,8 @@ export type Languages = { byCard: Map<number, number[]> };
 export type Cards = {
     cards: LocalCard[],
     prints: Printing[],
-    tags: Map<string, Set<string>>,
+    // each Tagger tag's cards, as card numbers in order (a tag's aliases share its list)
+    tags: Map<string, Int32Array>,
     // each art tag's illustration ids, for atag: (empty without the art_tags file)
     artTags: Map<string, Set<string>>,
     // each set's first release date, for date>set
@@ -479,7 +549,7 @@ async function readLanguages(path: string, data: Cards, byOracle: Map<string, nu
         const card = byOracle.get(c.oracle_id ?? faces[0]?.oracle_id);
         if (card === undefined) continue;
         // the legal formats only matter to extraKind (an Alchemy card legal nowhere), and are the card's
-        if (!c.legalities) c.legalities = Object.fromEntries([...data.cards[card].legal].map((f) => [f, "legal"]));
+        if (!c.legalities) c.legalities = Object.fromEntries(formatsOf(data.cards[card].legal).map((f) => [f, "legal"]));
         const at = data.prints.push(toPrinting(c, faces, card)) - 1;
         if (!byCard.has(card)) byCard.set(card, []);
         byCard.get(card)!.push(at);
@@ -512,15 +582,22 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
         // legal in a format if any printing is: Ancestral Recall's Alpha one is restricted in Old School, its
         // 30th Anniversary one not legal
         for (const [format, status] of Object.entries(c.legalities ?? {})) {
-            if (status === "legal" || status === "restricted") cards[card].legal.add(format);
-            if (status === "restricted") cards[card].restricted.add(format);
-            if (status === "banned") cards[card].banned.add(format);
+            if (status === "legal" || status === "restricted") cards[card].legal |= formatBit(format);
+            if (status === "restricted") cards[card].restricted |= formatBit(format);
+            if (status === "banned") cards[card].banned |= formatBit(format);
         }
         const first = setDates.get(c.set);
         if (c.released_at && (!first || c.released_at < first)) setDates.set(c.set, c.released_at);
     }
-    for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal.size && !c.banned.size);
-    const tags = tagsPath && existsSync(tagsPath) ? await readTags(tagsPath, "oracle_id", TAG_LAG) : new Map<string, Set<string>>();
+    for (const [i, c] of cards.entries()) c.funny = FUNNY_CARDS.has(c.name) || (funnyPrinting.has(i) && !c.legal && !c.banned);
+    // a tag's cards by number: a Set of oracle ids took 26 MB. (An oracle id that isn't a card here is left out;
+    // on 14 Oct 2026 there were none)
+    const tags = new Map<string, Int32Array>(), numbered = new Map<Set<string>, Int32Array>();
+    if (tagsPath && existsSync(tagsPath)) for (const [name, ids] of await readTags(tagsPath, "oracle_id", TAG_LAG)) {
+        let list = numbered.get(ids);
+        if (!list) numbered.set(ids, list = Int32Array.from([...ids].map((id) => byOracle.get(id) ?? -1).filter((i) => i >= 0)).sort());
+        tags.set(name, list);
+    }
     // the other bulk files, read when they're beside default_cards: art tags (atag:) and every language's
     // printings (lang:, see npm run languages)
     const artPath = join(dirname(printsPath), "art_tags.jsonl.gz");
@@ -547,8 +624,31 @@ export async function loadCards(printsPath: string, tagsPath?: string, setsPath?
     const data: Cards = { cards, prints, tags, artTags, setDates, blocks, parents, promoTypes, languages: undefined };
     const langPath = join(dirname(printsPath), "languages.jsonl.gz");
     if (existsSync(langPath)) data.languages = await readLanguages(langPath, data, byOracle);
+    // as columns once loaded (see scripts/columns.ts): read only from here on
+    [...prints.keys()].sort((a, b) => prints[a].id < prints[b].id ? -1 : 1).forEach((p, i) => prints[p].idOrder = i);
+    data.cards = columns(cards, CARD_COLUMNS);
+    data.prints = columns(prints, PRINTING_COLUMNS);
+    strings.clear();
+    lists.clear();
     return data;
 }
+
+// (lists that repeat are shared, see onceList, so they can be codes too)
+const CARD_COLUMNS: Kinds<LocalCard> = {
+    oracleId: "uuid", name: "any", faceNames: "list", printed: "list", text: "list", fullPrinted: "list", fullText: "list",
+    faceTypes: "code", types: "code", layout: "code", faceColors: "code", identity: "int", indicator: "bool", legal: "int",
+    banned: "int", restricted: "int", keywords: "code", mv: "num", manaCosts: "code", frontCost: "code", power: "code",
+    toughness: "code", loyalty: "code", produced: "int", edhrec: "num", penny: "num", reserved: "bool", gameChanger: "bool",
+    meld: "code", funny: "bool", printings: "list", shown: "num",
+};
+const PRINTING_COLUMNS: Kinds<Printing> = {
+    id: "uuid", idOrder: "int", card: "int", name: "code", flavorName: "code", layout: "code", set: "code", setType: "code", block: "code",
+    rarity: "code", artist: "code", released: "code", usd: "num", eur: "num", plain: "code", tix: "num", frame: "code",
+    frameEffects: "code", border: "code", games: "code", cn: "code", lang: "code", promo: "bool", promoTypes: "code",
+    digital: "bool", fullArt: "bool", textless: "bool", reprint: "bool", spotlight: "bool", oversized: "bool",
+    booster: "bool", hires: "bool", finishes: "code", watermarks: "code", flavor: "list", stamp: "code", art: "code",
+    illustrations: "list", artists: "int", scryfallPreview: "bool", extra: "code",
+};
 
 // ---- the query language ----
 
@@ -704,17 +804,17 @@ const COLOR_NAMES: Record<string, string> = {
 
 // a card's colours against the asked ones; `colon` is what a bare `:` means for this key. For produces:, c is
 // colourless mana like any other letter; for colours it means none at all, so c:c is exactly colourless
-function colorTest(op: string, value: string, colon: string, cIsLetter = false): (have: Set<string>) => boolean {
+function colorTest(op: string, value: string, colon: string, cIsLetter = false): (have: number) => boolean {
     const v = value.toLowerCase();
-    if (/^\d+$/.test(v)) return (have) => compare(op === ":" ? "=" : op, have.size, Number(v));
-    if (v === "m" || v === "multicolor") return (have) => have.size >= 2;
+    if (/^\d+$/.test(v)) return (have) => compare(op === ":" ? "=" : op, bitCount(have), Number(v));
+    if (v === "m" || v === "multicolor") return (have) => bitCount(have) >= 2;
     const letters = COLOR_NAMES[v] ?? v;
     if (!/^[wubrgc]+$/.test(letters)) throw new Unsupported(`colour ${value}`);
     if (letters === "c" && !cIsLetter && op === ":") op = "=";
-    const want = new Set(cIsLetter ? [...letters] : [...letters].filter((l) => l !== "c"));
+    const want = colorMask(cIsLetter ? [...letters] : [...letters].filter((l) => l !== "c"));
     return (have) => {
-        const sub = [...have].every((c) => want.has(c));
-        const sup = [...want].every((c) => have.has(c));
+        const sub = !(have & ~want);
+        const sup = !(want & ~have);
         switch (op === ":" ? colon : op) {
             case "=": return sub && sup;
             case "<=": return sub;
@@ -804,11 +904,11 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
     // the front face is a legendary creature or Background, or a legendary Vehicle or Spacecraft with power and
     // toughness (The Falcon, Airship Restored), or the card says so ("can be your commander", Grist's "it's a 1/1
     // Insect creature" off the battlefield); but not a card banned in Commander (Leovold) or a meld card's back
-    commander: (c) => !c.banned.has("commander") && canLead(c),
+    commander: (c) => !inFormat(c.banned, "commander") && canLead(c),
     // can be your Brawl commander: one that could lead a Commander deck (Leovold too: it's banned only there) or
     // a legendary planeswalker, legal in Brawl
     // not a meld card's back (Urza, Planeswalker), nor the few Scryfall leaves out though Brawl allows them
-    brawler: (c) => c.legal.has("brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
+    brawler: (c) => inFormat(c.legal, "brawl") && c.meld !== "result" && !BRAWL_LEFT_OUT.has(c.name)
         && (canLead(c) || /\blegendary\b.*\bplaneswalker\b/.test(c.faceTypes[0])),
     // a face that can be cast and isn't a land: Ishgard, the Holy See // Faith & Grief is one by its back, but
     // not Westvale Abbey, whose back face comes by transforming. Attractions, Contraptions, Dungeons and
@@ -850,10 +950,10 @@ const IS_CARD: Record<string, (c: LocalCard, data: Cards) => boolean> = {
         || c.text.some((t) => /^partner—/im.test(t)) || anyFace(c, /\bbackground\b/) || anyFace(c, /\btime lord doctor\b/)),
     // could lead a Commander deck (Leovold, banned there, too), legal in Duel Commander, but not a Background, a
     // Vehicle or a Spacecraft (Faceless One, a Background creature, is one), and not on Duel Commander's own "banned as commander" list (DUEL_BANNED_COMMANDERS)
-    duelcommander: (c) => c.legal.has("duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
+    duelcommander: (c) => inFormat(c.legal, "duel") && canLead(c) && !DUEL_BANNED_COMMANDERS.has(c.name)
         && (/\bcreature\b/.test(c.faceTypes[0]) || !/\b(background|vehicle|spacecraft)\b/.test(c.faceTypes[0])),
     // a planeswalker, legal in Oathbreaker; not Urza, Planeswalker, the back of a meld
-    oathbreaker: (c) => c.legal.has("oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
+    oathbreaker: (c) => inFormat(c.legal, "oathbreaker") && c.meld !== "result" && /\bplaneswalker\b/.test(c.faceTypes[0]),
     companion: (c) => c.keywords.has("companion"),
     meldpart: (c) => c.meld === "part",
     meldresult: (c) => c.meld === "result",
@@ -927,7 +1027,7 @@ const PROMO_NAMES: Record<string, string> = { judge: "judgegift" };
 // the land groups (is:fetchland, is:shockland…): Scryfall keeps them by hand, so they're its own lists, kept in
 // land-cycles.json by npm run land-cycles. is:manland is is:creatureland
 const LAND_CYCLES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
-    JSON.parse(readFileSync(new URL("./land-cycles.json", import.meta.url), "utf8")) as Record<string, string[]>,
+    LAND_CYCLES_FILE as Record<string, string[]>,
 ).map(([cycle, names]) => [cycle, new Set(names)]));
 // and their other names, from Scryfall's syntax guide
 const LAND_NAMES: Record<string, string> = { manland: "creatureland", cycleland: "bikeland", bicycleland: "bikeland", crowdland: "bondland", bbdland: "bondland",
@@ -936,7 +1036,7 @@ for (const [alias, cycle] of Object.entries(LAND_NAMES)) LAND_CYCLES[alias] = LA
 
 // the cubes (cube:vintage…): Scryfall's own lists, kept in cubes.json by npm run cubes
 const CUBES: Record<string, Set<string>> = Object.fromEntries(Object.entries(
-    existsSync(new URL("./cubes.json", import.meta.url)) ? JSON.parse(readFileSync(new URL("./cubes.json", import.meta.url), "utf8")) as Record<string, string[]> : {},
+    CUBES_FILE as Record<string, string[]>,
 ).map(([cube, names]) => [cube, new Set(names)]));
 
 // every is: value this search knows, for scripts/test-keys.ts to check one by one
@@ -1003,8 +1103,8 @@ function firstArts(data: Cards): Set<number> {
     return firsts;
 }
 
-type Test = { level: "card", fn: (c: LocalCard) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard, i: number) => boolean };
-const card = (fn: (c: LocalCard) => boolean): Test => ({ level: "card", fn });
+type Test = { level: "card", fn: (c: LocalCard, i: number) => boolean } | { level: "print", fn: (p: Printing, c: LocalCard, i: number) => boolean };
+const card = (fn: (c: LocalCard, i: number) => boolean): Test => ({ level: "card", fn });
 const print = (fn: (p: Printing, c: LocalCard, i: number) => boolean): Test => ({ level: "print", fn });
 
 function compile(t: Term, data: Cards): Test {
@@ -1056,9 +1156,9 @@ function compile(t: Term, data: Cards): Test {
             if (v === "indicator") return card((c) => c.indicator);
             if (v === "watermark") return print((p) => p.watermarks.size > 0);
             throw new Unsupported(`has:${v}`);
-        case "f": case "format": case "legal": return card((c) => c.legal.has(v));
-        case "banned": return card((c) => c.banned.has(v));
-        case "restricted": return card((c) => c.restricted.has(v));
+        case "f": case "format": case "legal": return card((c) => inFormat(c.legal, v));
+        case "banned": return card((c) => inFormat(c.banned, v));
+        case "restricted": return card((c) => inFormat(c.restricted, v));
         case "mv": case "cmc": case "manavalue":
             if (v === "even" || v === "odd") return card((c) => Number.isInteger(c.mv) && (c.mv % 2 === 0) === (v === "even"));
             { const n = number(); return card((c) => compare(t.op, c.mv, n)); }
@@ -1087,8 +1187,9 @@ function compile(t: Term, data: Cards): Test {
         case "edhrec": case "edhrecrank": { const n = number(); return card((c) => c.edhrec !== undefined && compare(t.op, c.edhrec, n)); }
         case "otag": case "oracletag": case "function": {
             if (!data.tags.size) throw new Unsupported("otag without the tags file");
-            const cards = data.tags.get(v) ?? data.tags.get(tagKey(v));
-            return card((c) => !!cards?.has(c.oracleId));
+            const has = new Uint8Array(data.cards.length);
+            for (const i of data.tags.get(v) ?? data.tags.get(tagKey(v)) ?? []) has[i] = 1;
+            return card((_, i) => has[i] === 1);
         }
         case "is": case "not": {
             const negate = t.key === "not";
@@ -1346,7 +1447,7 @@ function evaluate(node: Node, data: Cards, all: number[], level = 0, negated = f
         const known = new Uint8Array(data.cards.length);
         return prints.filter((i) => {
             const c = cardOf[i];
-            if (!known[c]) known[c] = test.fn(data.cards[c]) ? 2 : 1;
+            if (!known[c]) known[c] = test.fn(data.cards[c], c) ? 2 : 1;
             return known[c] === 2;
         });
     }
@@ -1501,7 +1602,7 @@ function byPreference(data: Cards) {
 // usd prices): Champion of the Weird's ecl/241 rather than its extended-art ecl/378 at 0.02 tix, Goblin Lackey's
 // fdn/631 rather than woe/351
 function asCheap(data: Cards, a: number, b: number): number {
-    return data.prints[b].released.localeCompare(data.prints[a].released) || (data.prints[a].id < data.prints[b].id ? -1 : 1);
+    return data.prints[b].released.localeCompare(data.prints[a].released) || (data.prints[a].idOrder < data.prints[b].idOrder ? -1 : 1);
 }
 
 // the printing (of `among`, a card's printings that match) Scryfall shows a card with: the one it always shows,
@@ -1513,7 +1614,7 @@ function pickPrinting(c: LocalCard, among: number[], data: Cards, prefer: string
     // the lower Scryfall id first: no rule found for printings out the same day, and this is right for 2 in 3
     // (prefer:oldest takes Lazotep Sliver's cmm/764, prefer:newest Betor's ptdm/172p), against 1 in 3 for
     // Scryfall's order or the collector number
-    const byId = (a: number, b: number) => data.prints[a].id < data.prints[b].id ? -1 : 1;
+    const byId = (a: number, b: number) => data.prints[a].idOrder < data.prints[b].idOrder ? -1 : 1;
     switch (prefer) {
         case "oldest": return first((a, b) => date(a).localeCompare(date(b)) || byId(a, b));
         case "newest": return first((a, b) => date(b).localeCompare(date(a)) || byId(a, b));
@@ -1678,8 +1779,8 @@ const ORDERS: Record<string, Order> = {
         // white, not white-blue. Then colorless cards, then lands (Dryad Arbor too, though green), each by color
         // identity, none last: Wall of Tanglecord (green identity) before Amaranthine Wall, Dowsing Dagger //
         // Lost Vale before Abandoned Air Temple, Ancient Tomb after The World Tree
-        const group = (colors: Set<string> | undefined) => {
-            const key = [...colors ?? []].filter((l) => WUBRG.includes(l)).sort().join("");
+        const group = (colors: number | undefined) => {
+            const key = colorLetters(colors ?? 0).filter((l) => WUBRG.includes(l)).sort().join("");
             return key ? COLOR_GROUPS.indexOf(key) : 99;
         };
         if (/\bland\b/.test(c.faceTypes[0] ?? "")) return 20000 + group(c.identity);

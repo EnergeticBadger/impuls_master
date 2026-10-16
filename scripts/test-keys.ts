@@ -10,7 +10,7 @@
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PAGE, Answers } from "./scryfall-answers.ts";
-import { Unsupported, bulkFile, isValues, loadCards, parse, search, setsFile, type Cards } from "./local-search.ts";
+import { Unsupported, bulkFile, formatsOf, isValues, loadCards, parse, search, setsFile, type Cards } from "./local-search.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -46,14 +46,14 @@ function values(data: Cards, each: (card: number) => Iterable<string>, min = MIN
 }
 const printsOf = (i: number) => data.cards[i].printings.map((p) => data.prints[p]);
 const quote = (v: string) => /[\s()"]/.test(v) ? `"${v}"` : v;
-const formats = values(data, (i) => [...data.cards[i].legal, ...data.cards[i].banned], 1);
+const formats = values(data, (i) => formatsOf(data.cards[i].legal | data.cards[i].banned), 1);
 
 const keys: string[] = [
     ...isValues(data).map((v) => `is:${v}`),
     "has:indicator", "has:watermark",
     ...formats.map((f) => `f:${f}`),
-    ...values(data, (i) => data.cards[i].banned, 1).map((f) => `banned:${f}`),
-    ...values(data, (i) => data.cards[i].restricted, 1).map((f) => `restricted:${f}`),
+    ...values(data, (i) => formatsOf(data.cards[i].banned), 1).map((f) => `banned:${f}`),
+    ...values(data, (i) => formatsOf(data.cards[i].restricted), 1).map((f) => `restricted:${f}`),
     ...values(data, (i) => data.cards[i].keywords).map((k) => `kw:${quote(k)}`),
     ...values(data, (i) => printsOf(i).map((p) => p.setType), 1).map((v) => `st:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.games]), 1).map((v) => `game:${v}`),
@@ -62,7 +62,7 @@ const keys: string[] = [
     ...values(data, (i) => printsOf(i).flatMap((p) => [p.frame, ...p.frameEffects]), 1).map((v) => `frame:${v}`),
     ...values(data, (i) => printsOf(i).map((p) => p.stamp), 1).map((v) => `stamp:${v}`),
     ...values(data, (i) => printsOf(i).flatMap((p) => [...p.watermarks])).map((v) => `wm:${quote(v)}`),
-    ...[...data.tags].filter(([, cards]) => cards.size >= MIN_CARDS).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `otag:${t}`),
+    ...[...data.tags].filter(([, cards]) => cards.length >= MIN_CARDS).sort((a, b) => b[1].length - a[1].length).slice(0, TAGS).map(([t]) => `otag:${t}`),
     // the art tags, by how many pictures they have (those with the most cards would all be in the thousands)
     ...[...data.artTags].filter(([t, arts]) => arts.size >= MIN_CARDS && /^[a-z0-9-]+$/.test(t)).sort((a, b) => b[1].size - a[1].size).slice(0, TAGS).map(([t]) => `atag:${t}`),
     // every language, as lang: and in:, and the keys about printings in them
