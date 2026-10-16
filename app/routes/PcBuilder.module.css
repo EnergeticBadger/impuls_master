@@ -1,0 +1,15 @@
+/* The PC configurator (/pc-builder): the header, then the frame fills the rest of the screen */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background-color: #fff;
+}
