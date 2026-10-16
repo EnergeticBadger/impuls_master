@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Puts the card data (scripts/card-data.ts's output) in the R2 bucket the site reads it from:
+# Puts the card data (scripts/card-data.ts's output, with search-index.bin and .gz from scripts/search-index.ts
+# when it's there) in the R2 bucket the site reads it from:
 #   scripts/upload-card-data.sh [dir]    (default card-data)
 # Each upload is a whole new copy under v/<version>/. Once every file is confirmed there, at its size,
 # `current` is pointed at it, so the site never reads half of one day and half of another

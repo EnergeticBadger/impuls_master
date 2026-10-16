@@ -3,8 +3,12 @@
 // --bulk, default fuzz-results/bulk), writes them to <file> (default card-data/search-index.bin) and <file>.gz,
 // then reads the file back and checks every field of every card and printing, the tags and the rest are the
 // same as loaded from the bulk files. loadIndex reads one (.gz or not) in place of loadCards.
+// Every bulk file it reads must be there (the tags, the list of sets, oracle_cards for the printing each card is
+// shown with), and the files are written under other names and renamed once they read back the same, so a
+// failed run leaves no index at all rather than an old or wrong one: the nightly job (refresh-card-data.yml)
+// then uploads the card data without one, and the site searches through Scryfall.
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { bulkFile, loadCards, setsFile, type Cards } from "./local-search.ts";
@@ -38,36 +42,47 @@ if (import.meta.main) {
     const mb = (n: number) => `${(n / 2 ** 20).toFixed(1)} MB`;
     const seconds = (from: number) => `${((Date.now() - from) / 1000).toFixed(1)}s`;
 
+    for (const f of [out, `${out}.gz`]) rmSync(f, { force: true });
     let t = Date.now();
-    const prints = await bulkFile("default_cards", bulk);
-    const data = await loadCards(prints, await bulkFile("oracle_tags", bulk).catch(() => undefined), await setsFile(bulk).catch(() => undefined));
+    const [prints, tags, sets, shown] = [await bulkFile("default_cards", bulk), await bulkFile("oracle_tags", bulk), await setsFile(bulk), await bulkFile("oracle_cards", bulk)];
+    for (const f of [prints, tags, sets, shown]) if (!existsSync(f)) throw new Error(`${f} isn't there`);
+    const data = await loadCards(prints, tags, sets, shown);
     console.log(`${data.cards.length.toLocaleString()} cards, ${data.prints.length.toLocaleString()} printings loaded from the bulk files in ${seconds(t)}`);
 
     t = Date.now();
     const bytes = encodeIndex(data, { built: new Date().toISOString(), bulk: new Date(statSync(prints).mtimeMs).toISOString(), cards: data.cards.length, printings: data.prints.length });
     const zipped = gzipSync(bytes, { level: 9 });
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, bytes);
-    writeFileSync(`${out}.gz`, zipped);
-    console.log(`${out}: ${mb(bytes.length)}, ${mb(zipped.length)} gzipped, written in ${seconds(t)}`);
+    // (the card data's upload takes every file in the folder, so none of these is left behind, whatever happens)
+    try {
+        writeFileSync(`${out}.new`, bytes);
+        writeFileSync(`${out}.gz.new`, zipped);
+        console.log(`${out}: ${mb(bytes.length)}, ${mb(zipped.length)} gzipped, written in ${seconds(t)}`);
 
-    t = Date.now();
-    const back = loadIndex(`${out}.gz`);
-    console.log(`read back in ${seconds(t)}`);
-    const wrong: string[] = [];
-    for (const part of ["cards", "prints"] as const) {
-        const fields = Object.keys(Object.getPrototypeOf(data[part][0]));
-        if (back[part].length !== data[part].length) wrong.push(`${part}: ${back[part].length} rows, not ${data[part].length}`);
-        else for (const f of fields) {
-            const i = data[part].findIndex((row, i) => !same((row as any)[f], (back[part][i] as any)[f]));
-            if (i >= 0) wrong.push(`${part}[${i}].${f}`);
+        t = Date.now();
+        const back = decodeIndex(gunzipSync(readFileSync(`${out}.gz.new`)));
+        console.log(`read back in ${seconds(t)}`);
+        const wrong: string[] = [];
+        for (const part of ["cards", "prints"] as const) {
+            const fields = Object.keys(Object.getPrototypeOf(data[part][0]));
+            if (back[part].length !== data[part].length) wrong.push(`${part}: ${back[part].length} rows, not ${data[part].length}`);
+            else for (const f of fields) {
+                const i = data[part].findIndex((row, i) => !same((row as any)[f], (back[part][i] as any)[f]));
+                if (i >= 0) wrong.push(`${part}[${i}].${f}`);
+            }
         }
+        for (const part of ["tags", "artTags", "setDates", "blocks", "parents", "promoTypes", "languages"] as const) {
+            if (!same(data[part], back[part])) wrong.push(part);
+        }
+        if (wrong.length) {
+            console.log(`read back, these differ: ${wrong.join(", ")}; no index written`);
+            process.exitCode = 1;
+        } else {
+            renameSync(`${out}.new`, out);
+            renameSync(`${out}.gz.new`, `${out}.gz`);
+            console.log("read back the same: every field of every card and printing, the tags and the rest");
+        }
+    } finally {
+        for (const f of [`${out}.new`, `${out}.gz.new`]) rmSync(f, { force: true });
     }
-    for (const part of ["tags", "artTags", "setDates", "blocks", "parents", "promoTypes", "languages"] as const) {
-        if (!same(data[part], back[part])) wrong.push(part);
-    }
-    if (wrong.length) {
-        console.log(`read back, these differ: ${wrong.join(", ")}`);
-        process.exitCode = 1;
-    } else console.log("read back the same: every field of every card and printing, the tags and the rest");
 }

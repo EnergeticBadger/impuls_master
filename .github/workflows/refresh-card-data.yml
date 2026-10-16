@@ -1,7 +1,8 @@
 name: Refresh card data
 
 # Scryfall publishes new bulk files around 21:00 UTC each day. This rebuilds the site's card data from them
-# (scripts/card-data.ts) and uploads it to the R2 bucket the site reads it from (scripts/upload-card-data.sh).
+# (scripts/card-data.ts), with the local search's index (scripts/search-index.ts), and uploads it to the R2
+# bucket the site reads it from (scripts/upload-card-data.sh).
 # It doesn't deploy: the card data lives apart from the deploy, so a deploy can't take it away and new card
 # data goes live without one.
 # Off until the repo has the R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and CLOUDFLARE_ACCOUNT_ID secrets and the
@@ -31,6 +32,10 @@ jobs:
       - run: npm run card-data
       # each of our own mechanics' card count, into the card data (card-data empties data/, so it goes after)
       - run: npm run mechanics -- card-data
+      # the local search's index (scripts/search-index.ts), into the card data so it's uploaded with it. Should it
+      # fail, it leaves no index and the card data goes up without one: the site then searches through Scryfall
+      - run: npm run search-index
+        continue-on-error: true
       # the AWS CLI comes with GitHub's Ubuntu runners
       - run: npm run card-data:upload
         env:
