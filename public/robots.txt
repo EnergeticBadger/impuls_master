@@ -4,4 +4,11 @@ Allow: /
 Disallow: /api/
 Disallow: /data/
 
+# AI crawlers: each card page they fetch is a Worker request, and on 16 Oct they made ~24k of them
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: Reflectionbot
+Disallow: /
+
 Sitemap: https://impulsecaster.cards/sitemap.xml
