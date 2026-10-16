@@ -2,7 +2,7 @@
 // deploying never takes them away. Each answer is undefined when the files don't have it: the bucket has no
 // card data (local dev) or can't be read, or the card is newer than the last refresh. Callers then ask Scryfall.
 import {
-    bucketHeader, bucketOf, paths, readRecord,
+    bucketHeader, bucketOf, paths, readRecord, slug,
     type Browse, type BucketEntry, type CardRecord, type Renamed, type SetFile, type SetSummary,
 } from "./carddata";
 
@@ -155,4 +155,15 @@ export async function findSet(env: Env, code: string): Promise<SetFile | null | 
     if (!sets.some((s) => s.code === code)) return null;
     const bytes = await quietly(readFile(env, paths.set(code)));
     return bytes && JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// a card's record by its oracle id, for the search Worker's results (workers/search.ts): the file it's in goes by
+// its name, so each of `names` (the card's, a reversible printing's own) is tried. undefined when it isn't there
+export async function cardByOracle(env: Env, names: string[], oracleId: string): Promise<CardRecord | undefined> {
+    for (const name of new Set(names.map(slug))) {
+        const b = await bucket(env, bucketOf(name));
+        const entry = b?.header.entries.find((e) => e[1] === oracleId);
+        if (b && entry) return readRecord(b.bytes, b.header, entry);
+    }
+    return undefined;
 }
