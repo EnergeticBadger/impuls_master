@@ -290,6 +290,14 @@ const formatBit = (format: string) => {
 // a format a search asks for: no bit for one no card has (f:foo finds nothing)
 const inFormat = (mask: number, format: string) => { const i = FORMATS.indexOf(format); return i >= 0 && !!(mask & (1 << i)); };
 export const formatsOf = (mask: number) => FORMATS.filter((_, i) => mask & (1 << i));
+// the bits' order, kept in an index file so its masks read the same when it's loaded (see search-index.ts)
+export const maskNames = () => ({ colors: [...COLOR_LETTERS], formats: [...FORMATS] });
+export function useMaskNames(names: { colors: string[], formats: string[] }) {
+    for (const [list, saved] of [[COLOR_LETTERS, names.colors], [FORMATS, names.formats]]) saved.forEach((name, i) => {
+        if (list[i] === undefined) list.push(name);
+        else if (list[i] !== name) throw new Error(`the index's bits (${saved.join(" ")}) aren't those of the cards already loaded (${list.join(" ")})`);
+    });
+}
 const bitCount = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
 const price = (v?: string | null) => v == null ? undefined : Number(v);
 // the same small set for every printing with the same values (games, finishes…): with every language's printings
