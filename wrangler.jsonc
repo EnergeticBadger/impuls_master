@@ -21,7 +21,8 @@
     "binding": "CF_VERSION_METADATA"
   },
   "routes": [
-    { "pattern": "impulsecaster.cards", "custom_domain": true }
+    { "pattern": "impulsecaster.cards", "custom_domain": true },
+    { "pattern": "www.impulsecaster.cards", "custom_domain": true }
   ],
   "compatibility_flags": [
     "nodejs_compat"
