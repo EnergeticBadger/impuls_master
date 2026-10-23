@@ -8,7 +8,7 @@ const TITLE = "Impulse Caster";
 // branding off. quoted.tech only lets impulsecaster.cards frame it with this code, so a local dev server shows a
 // refused frame; try it on the deployed site.
 const EMBED_CODE = "2DwblYrDcDamunj75kFumcls";
-const CONFIGURATOR_URL = `https://quoted.tech/desktops/gaming/configurator?embed=${EMBED_CODE}`;
+const CONFIGURATOR_URL = `https://quoted.tech/desktops/gaming/configurator?embed=${EMBED_CODE}&lang=fr`;
 
 export function meta() {
   return [
