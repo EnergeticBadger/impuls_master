@@ -35,7 +35,8 @@ export function SiteFooter({ browse }: { browse: Browse | null }) {
         ) : null}
       </nav>
       <p className={styles.legal}>
-        Card data and images come from Scryfall; prices are daily estimates. Impulse Caster is unofficial Fan Content
+        Card data and images come from Scryfall; prices are daily estimates. Some "Buy on" links are affiliate links:
+        if you buy through them, the store may pay us a small commission at no extra cost to you. Impulse Caster is unofficial Fan Content
         permitted under the Wizards of the Coast Fan Content Policy. Magic: The Gathering and its card text and images
         are © Wizards of the Coast, which doesn't produce or endorse this site.
       </p>
