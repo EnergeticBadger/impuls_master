@@ -18,6 +18,7 @@ import { CardText, textFaces } from "~/Components/CardDetails/CardText";
 import { Rulings } from "~/Components/CardDetails/Rulings";
 import { ShareButton } from "~/Components/CardDetails/ShareButton";
 import { PlayFormats } from "~/Components/Card/components/PlayFormats";
+import { buyLink, cardKingdomLink, type Store } from "~/lib/affiliate";
 
 const TITLE = "Impulse Caster";
 
@@ -231,7 +232,7 @@ const PRICES: { key: keyof ScryfallCard["prices"], label: string, symbol: string
   { key: "tix", label: "MTGO", symbol: "" },
 ]
 
-const STORES: { key: keyof ScryfallCard["purchase_uris"], label: string }[] = [
+const STORES: { key: keyof ScryfallCard["purchase_uris"] & Store, label: string }[] = [
   { key: "tcgplayer", label: "TCGplayer" },
   { key: "cardmarket", label: "Cardmarket" },
   { key: "cardhoarder", label: "Cardhoarder" },
@@ -346,7 +347,10 @@ function Related({ cards }: { cards: RelatedCard[] }) {
 function CardDetail({ page }: { page: PageData }) {
   const { card, rulings } = page
   const prices = PRICES.filter((p) => card.prices?.[p.key])
-  const stores = STORES.filter((s) => card.purchase_uris?.[s.key])
+  const stores: { key: Store, label: string, href: string }[] = STORES.filter((s) => card.purchase_uris?.[s.key])
+    .map((s) => ({ ...s, href: buyLink(s.key, card.purchase_uris[s.key]!) }))
+  // Card Kingdom sells paper cards only, so it shows where TCGplayer does
+  if (card.purchase_uris?.tcgplayer) stores.splice(1, 0, { key: "cardkingdom", label: "Card Kingdom", href: cardKingdomLink(card.name) })
   const artists = [...new Set(textFaces(card).map((f) => f.artist).filter(Boolean))].join(" & ") || card.artist
   const links = [
     { label: "EDHREC", href: card.related_uris?.edhrec },
@@ -417,7 +421,7 @@ function CardDetail({ page }: { page: PageData }) {
             </div>
             {stores.length ? (
               <div className={styles.links}>
-                {stores.map((s) => <a key={s.key} href={card.purchase_uris[s.key]} target="_blank" rel="noopener noreferrer">Buy on {s.label}</a>)}
+                {stores.map((s) => <a key={s.key} href={s.href} target="_blank" rel="noopener noreferrer sponsored">Buy on {s.label}</a>)}
               </div>
             ) : null}
           </section>
