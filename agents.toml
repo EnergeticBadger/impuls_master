@@ -1,0 +1,64 @@
+# Agent harness settings for this repo. The harness itself lives in the-system repo (harness/README.md,
+# "More projects on the same harness and budget"); install with:
+#   harness/install.sh --project impulse https://github.com/EnergeticBadger/impuls_master.git \
+#     --port 8766 --slots "10:30 14:30 18:30" --plan "Sun *-*-* 11:00"
+# Runtime state lives in ~/.agents/impulse. Changes to this file wait for a human (human_paths).
+
+[project]
+name = "Impulse Caster"
+units = "impulse"
+
+[repo]
+remote = "https://github.com/EnergeticBadger/impuls_master.git"
+base = "staging"
+
+[budget]
+# One ledger and one agent lock with The System and every other project: the shares below are for all
+# projects together, and their agents never run at the same time.
+shared_dir = "~/.thesystem"
+weekly_share = 0.30
+max_weekly_utilization = 0.85
+max_session_utilization = 0.60
+prior_usage_per_usd = 0.02
+calibration_days = 28
+min_calibration_signal = 0.05
+fallback_daily_usd = 3.0
+
+[run]
+per_run_usd = { haiku = 0.5, sonnet = 4.0, opus = 8.0 }
+tasks_per_slot = 2
+idle_timeout_min = 10
+repeat_limit = 3
+same_failure_limit = 3
+max_context_tokens = 150000
+log_retention_days = 30
+max_attempts = 2
+verify_cmd = "npm run verify"
+validate_cmd = "npm run validate-backlog"
+setup_cmd = "npm ci --prefer-offline --no-audit --no-fund"
+# Offline commands only: the other test-*/fuzz-* scripts call Scryfall and must never run unattended.
+bash_allow = ["Bash(npm run verify)", "Bash(npm run typecheck)", "Bash(npm run test-unit)", "Bash(npm run test-unit *)", "Bash(npm run test-affiliate)", "Bash(npm run validate-backlog)", "Bash(npm run build)", "Bash(node --test *)", "Bash(npx tsc *)", "Bash(npx tsc)"]
+
+[automerge]
+# The site is live: the review agent reviews, fixes and approves, and you press merge into staging.
+enabled = true
+merge = false
+paths = []
+
+[review]
+enabled = true
+model = "sonnet"
+per_slot = 2
+max_rounds = 2
+human_paths = [".github/*", "package.json", "package-lock.json", "wrangler.jsonc", "*CLAUDE.md", "docs/PLAN.md", "agents.toml", "scripts/card-data*", "scripts/upload-card-data.sh"]
+
+[supervisor]
+model = "haiku"
+usd = 0.3
+
+[planner]
+model = "opus"
+timeout_min = 40
+max_turns = 80
+min_ready = 6
+plan_doc = "docs/PLAN.md"
