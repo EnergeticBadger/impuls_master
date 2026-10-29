@@ -9,6 +9,7 @@ import { setCurrentAlternate } from '../Card/components/alternate_arts';
 import { QueryInput } from './QueryInput';
 import { RowSize } from '../CardGrid/RowSize';
 import { NoResults } from './NoResults';
+import { searchErrorMessage } from './searchErrors';
 import { chipId, querybox } from '../Context/query';
 import { buildQuery, parseQuery, type Chip } from './filters';
 import { loadCatalog } from './catalog';
@@ -330,9 +331,18 @@ export function Searchbar() {
             showPage(key, data.cards, data.has_more, data.total_pages, data.total_cards);
             preloadNext(q, number, data.has_more, by)
         } catch (error: unknown) {
-            // a search that found nothing gets the pop-up explaining why; paging errors just log
-            if (run === navRun && isSearch && error instanceof SearchError && (error.status === 404 || error.status === 400)) {
-                querybox.noResults = { query: q, status: error.status, details: error.details, warnings: error.warnings }
+            // a search that found nothing, or couldn't be run, gets the pop-up explaining why; paging errors just log
+            const status = error instanceof SearchError ? error.status : undefined
+            const message = searchErrorMessage(status)
+            if (run === navRun && isSearch && message) {
+                const found = status === 404 || status === 400
+                querybox.noResults = {
+                    query: q,
+                    status: status ?? 0,
+                    details: error instanceof SearchError ? error.details : '',
+                    warnings: error instanceof SearchError ? error.warnings : [],
+                    ...(found ? {} : { message }),
+                }
             }
             if (error instanceof Error) {
                 console.error(`Error: ${error.message}, ${error?.cause}`);
