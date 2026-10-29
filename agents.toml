@@ -1,28 +1,24 @@
 # Agent harness settings for this repo. The harness itself lives in the-system repo (harness/README.md,
 # "More projects on the same harness and budget"); install with:
 #   harness/install.sh --project impulse https://github.com/EnergeticBadger/impuls_master.git \
-#     --port 8766 --slots "10:30 14:30 18:30" --plan "Sun *-*-* 11:00"
+#     --port 8766 --slots "02:30 05:30 08:30 11:30 14:30 17:30 20:30 23:30" --plan "*-*-* 06:20"
 # Runtime state lives in ~/.agents/impulse. Changes to this file wait for a human (human_paths).
 
 [project]
 name = "Impulse Caster"
 units = "impulse"
+# Shown on the dashboard: the live site (serves main; staging merges reach it on deploy).
+url = "https://impulsecaster.cards"
+try = "npm run dev"
 
 [repo]
 remote = "https://github.com/EnergeticBadger/impuls_master.git"
 base = "staging"
 
 [budget]
-# One ledger and one agent lock with The System and every other project: the shares below are for all
-# projects together, and their agents never run at the same time.
+# One ledger, one agent lock and one set of limits with The System and every other project: the
+# weekly share and caps come from the harness's own config.toml and cover all projects together.
 shared_dir = "~/.thesystem"
-weekly_share = 0.30
-max_weekly_utilization = 0.85
-max_session_utilization = 0.60
-prior_usage_per_usd = 0.02
-calibration_days = 28
-min_calibration_signal = 0.05
-fallback_daily_usd = 3.0
 
 [run]
 per_run_usd = { haiku = 0.5, sonnet = 4.0, opus = 8.0 }
