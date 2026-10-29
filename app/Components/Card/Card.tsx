@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import styles from './Card.module.css'
 import { type CardProps } from "~/types";
 import { useSnapshot } from 'valtio';
@@ -23,7 +23,9 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
 
     // the search results' quick view is keyed by the card's name
-    const openOverlay = () => openQuickView(name, card, currentFace.large_uri)
+    // focus goes back to the card's open button when it closes, even when the image was what was clicked
+    const openRef = useRef<HTMLButtonElement>(null)
+    const openOverlay = () => openQuickView(name, card, currentFace.large_uri, openRef.current)
 
     async function handleCopy() {
         try {
@@ -53,7 +55,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 </button>
 
                 {/* open */}
-                <button onClick={openOverlay} style={{ height: '24px' }}>
+                <button ref={openRef} onClick={openOverlay} style={{ height: '24px' }}>
                     <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={OPEN_ICON} /></svg>
                 </button>
 

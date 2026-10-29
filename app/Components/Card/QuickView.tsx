@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSnapshot } from 'valtio';
 import { Link } from 'react-router';
@@ -8,7 +8,9 @@ import type { CardProps, ScryfallCard } from '~/types';
 import { all_alt_art, alternate, loadPrints, setCurrentAlternate } from './components/alternate_arts';
 import { AlternateArts } from './components/AlternateArts';
 import { PlayFormats } from './components/PlayFormats';
-import { useCardLayout } from '../Hooks/useCardLayout';
+import { resolveFaces, useCardLayout } from '../Hooks/useCardLayout';
+import { cardsearch } from '../Context/cards';
+import { quickViewAction } from './quickViewKeys';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
 import { cardPath, useRulings } from '~/lib/card';
 import { CardText } from '../CardDetails/CardText';
@@ -22,7 +24,12 @@ const COPY_ICON = "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h
 
 // Which quick view is open is kept in `alternate.name` (with the big image in `alternate.uri`), so only one is
 // open at a time. Each place that can open one gives it its own key: the search results use the card's name.
-export function openQuickView(key: string, card: ScryfallCard, largeUri: string) {
+// `opener` is what focus goes back to on close (else whatever has focus now). Moving to another card while it's
+// open keeps the first opener.
+let opener: HTMLElement | null = null
+
+export function openQuickView(key: string, card: ScryfallCard, largeUri: string, from?: HTMLElement | null) {
+    if (alternate.name === 'none') opener = from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
     // always load on open: cached cards return instantly, and this supersedes any in-flight request
     loadPrints(card)
     // lock page scroll while the overlay is open; closing hands it back to the stylesheet
@@ -35,6 +42,8 @@ export function closeQuickView() {
     const elm = document.getElementById("app")
     if (elm) elm.style.overflow = ""
     setCurrentAlternate('none', 'none')
+    if (opener?.isConnected) opener.focus()
+    opener = null
 }
 
 type Layout = ReturnType<typeof useCardLayout>
@@ -51,6 +60,31 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     const rulings = useRulings(card, open)
     // whatever opened it going away (a card taken out of compare from in here) closes it and unlocks the page
     useEffect(() => () => { if (alternate.name === openKey) closeQuickView() }, [openKey])
+
+    // focus moves into the panel when it opens (closeQuickView hands it back)
+    const panelRef = useRef<HTMLDivElement>(null)
+    useEffect(() => { if (open) panelRef.current?.focus() }, [open])
+
+    // Esc closes; the arrows go to the previous / next card of the results on screen. Only the open quick view
+    // listens, and the results are read when the key is pressed.
+    useEffect(() => {
+        if (!open) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.altKey || e.ctrlKey || e.metaKey) return
+            const t = e.target
+            const inInput = t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+            const cards = cardsearch.pages.find((p) => p.key === cardsearch.active)?.cards ?? []
+            const action = quickViewAction(e.key, cards.findIndex((c) => c.name === openKey), cards.length, inInput)
+            if (!action) return
+            e.preventDefault()
+            if (action === 'close') return closeQuickView()
+            const next = cards[action.go]
+            openQuickView(next.name, next.card, resolveFaces(next.card)[0].large_uri)
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+    }, [open, openKey])
+
     if (!open) return null
 
     const { faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = layout
@@ -89,7 +123,7 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     // (opacity) can't make the backdrop see-through or push it under the header.
     return createPortal(
         <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) closeQuickView() }}>
-            <div className={styles.overlay_details}>
+            <div className={styles.overlay_details} ref={panelRef} tabIndex={-1}>
                 <div className={styles.tools}>
                     {canFlip || canRotate ? (
                         <button className={styles.turn} onClick={turn} title={canFlip ? 'Flip' : 'Rotate'}>
