@@ -33,7 +33,13 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
     return { ...deck, [zone]: entries }
 }
 
-const cardsOf = (deck: Deck): DeckEntry[] => (deck.commander ? [...deck.main, deck.commander] : deck.main)
+// copies of a card in the main deck, whatever the printing (counted by oracle id)
+export function copiesIn(deck: Deck, oracleId: string | undefined): number {
+    if (!oracleId) return 0
+    return deck.main.reduce((n, e) => (e.card.oracle_id === oracleId ? n + e.count : n), 0)
+}
+
+const cardsOf =(deck: Deck): DeckEntry[] => (deck.commander ? [...deck.main, deck.commander] : deck.main)
 
 const frontType = (card: ScryfallCard) => (card.card_faces?.[0]?.type_line ?? card.type_line ?? "").split(" // ")[0]
 

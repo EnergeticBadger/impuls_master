@@ -12,7 +12,9 @@ import { resolveFaces, useCardLayout } from '../Hooks/useCardLayout';
 import { cardsearch } from '../Context/cards';
 import { quickViewAction } from './quickViewKeys';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
-import { cardPath, useRulings } from '~/lib/card';
+import { decks, addToCurrentDeck, removeFromCurrentDeck, currentDeckOf } from '../Context/decks';
+import { copiesIn, type Deck } from '~/lib/deck';
+import { cardPath,useRulings } from '~/lib/card';
 import { CardText } from '../CardDetails/CardText';
 import { Rulings } from '../CardDetails/Rulings';
 import { ShareButton } from '../CardDetails/ShareButton';
@@ -20,6 +22,8 @@ import { ShareButton } from '../CardDetails/ShareButton';
 export const COMPARE_ICON = "M320-160 160-320l160-160 56 57-63 63h287v80H313l63 63-56 57Zm320-320-56-57 63-63H360v-80h287l-63-63 56-57 160 160-160 160Z"
 export const TURN_ICON = "M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z"
 export const OPEN_ICON = "M200-200v-240h80v160h160v80H200Zm480-320v-160H520v-80h240v240h-80Z"
+export const ADD_ICON = "M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"
+const REMOVE_ICON = "M200-440v-80h560v80H200Z"
 const COPY_ICON = "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"
 
 // Which quick view is open is kept in `alternate.name` (with the big image in `alternate.uri`), so only one is
@@ -54,6 +58,7 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     const version = useSnapshot(alternate)
     const allPrints = useSnapshot(all_alt_art)
     const { cards: comparing } = useSnapshot(compare)
+    const { list: deckList, current: currentId } = useSnapshot(decks)
     const [copied, setCopied] = useState(false)
     const open = version.name === openKey
     // rulings are only fetched once the quick view opens
@@ -90,6 +95,10 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     const { faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = layout
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
     const compared = inCompare(comparing, card.id)
+    const currentDeck = currentDeckOf(deckList, currentId)
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, card.oracle_id) : 0
+    const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
+    const removeLabel = `Remove from ${currentDeck?.name ?? 'Untitled deck'}`
 
     // flipping also swaps the big image to the other face
     function turn() {
@@ -135,6 +144,16 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
                         <svg viewBox="0 -960 960 960"><path d={COMPARE_ICON} /></svg>
                         {compared ? 'Comparing ✓' : 'Compare'}
                     </button>
+                    <button className={styles.turn} onClick={() => addToCurrentDeck(card)} title={addLabel} aria-label={addLabel}>
+                        <svg viewBox="0 -960 960 960"><path d={ADD_ICON} /></svg>
+                        Add to deck{copies > 0 ? ` (${copies})` : ''}
+                    </button>
+                    {copies > 0 ? (
+                        <button className={styles.turn} onClick={() => removeFromCurrentDeck(card)} title={removeLabel} aria-label={removeLabel}>
+                            <svg viewBox="0 -960 960 960"><path d={REMOVE_ICON} /></svg>
+                            Remove
+                        </button>
+                    ) : null}
                     <ShareButton path={cardPath(card)} name={card.name} className={styles.turn} />
                     <Link className={styles.turn} to={cardPath(card)} onClick={handleFullPage} title="Open the card's own page">
                         <svg viewBox="0 -960 960 960"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z" /></svg>

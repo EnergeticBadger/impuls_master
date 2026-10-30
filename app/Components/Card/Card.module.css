@@ -32,6 +32,7 @@
 .button_box {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: var(--space-1);
   background-color: var(--raised-0);
@@ -47,6 +48,27 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background-color var(--ease);
+}
+
+.button_box>button {
+  position: relative;
+}
+
+/* copies already in the current deck, in the corner of the add button */
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  padding-inline: 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background-color: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  color: var(--text);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
 }
 
 .button_box>button:hover {

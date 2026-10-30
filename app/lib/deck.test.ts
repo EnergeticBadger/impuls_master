@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -30,6 +30,19 @@ test("addCard merges by name and does not mutate", () => {
     assert.equal(two.main.length, 1);
     assert.equal(two.main[0].count, 3);
     assert.equal(addCard(two, bear, "side").side[0].card.name, "Grizzly Bears");
+});
+
+test("copiesIn counts main deck copies by oracle id across printings", () => {
+    const a = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle" });
+    const b = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle", id: "other-printing" });
+    const other = card("Grizzly Bears", "Creature — Bear", { oracle_id: "bear-oracle" });
+    let deck = addCard(empty, a, "main", 2);
+    deck = { ...deck, main: [...deck.main, { card: b, count: 1 }] };
+    deck = addCard(addCard(deck, other), a, "side", 3);
+    assert.equal(copiesIn(deck, "bolt-oracle"), 3);
+    assert.equal(copiesIn(deck, "bear-oracle"), 1);
+    assert.equal(copiesIn(deck, "missing"), 0);
+    assert.equal(copiesIn(deck, undefined), 0);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
