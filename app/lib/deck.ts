@@ -25,10 +25,14 @@ export function addCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main",
     return { ...deck, [zone]: addTo(deck[zone], card, count) }
 }
 
+// same card by oracle id like copiesIn, falling back to the name when either has no oracle id
+const sameCard = (a: ScryfallCard, b: ScryfallCard) =>
+    a.oracle_id && b.oracle_id ? a.oracle_id === b.oracle_id : a.name === b.name
+
 // takes `count` copies out (default one); an entry with none left disappears
 export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main", count = 1): Deck {
     const entries = deck[zone]
-        .map(e => (e.card.name === card.name ? { ...e, count: e.count - count } : e))
+        .map(e => (sameCard(e.card, card) ?{ ...e, count: e.count - count } : e))
         .filter(e => e.count > 0)
     return { ...deck, [zone]: entries }
 }

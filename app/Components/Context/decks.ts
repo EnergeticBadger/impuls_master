@@ -1,7 +1,7 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
+import { deckToBuild, newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
@@ -36,18 +36,18 @@ export function updateDeck(id: string, fn: (deck: Deck) => Deck) {
 
 // one copy into the current deck's main deck; with no decks yet, makes "Untitled deck" first
 export function addToCurrentDeck(card: ScryfallCard) {
-    const id = decks.list.some((d) => d.id === decks.current) ? decks.current : decks.list.length ? undefined : createDeck("Untitled deck").id
-    if (!id) return
+    const id = deckToBuild(decks.list, decks.current)?.id ?? createDeck("Untitled deck").id
+    decks.current = id
     updateDeck(id, (deck) => addCard(deck, card))
 }
 
 export function removeFromCurrentDeck(card: ScryfallCard) {
-    if (decks.current) updateDeck(decks.current, (deck) => removeCard(deck, card))
+    const id = deckToBuild(decks.list, decks.current)?.id
+    if (id) updateDeck(id, (deck) => removeCard(deck, card))
 }
 
-// the deck being built, if there is one
-export const currentDeckOf = <T extends { id: string }>(list: readonly T[], current?: string): T | undefined =>
-    list.find((d) => d.id === current)
+// the deck being built, if there is one (see deckToBuild for when none is current)
+export const currentDeckOf = deckToBuild
 
 // saved decks are replaced rather than edited in place, so the ref() stays whole
 function update(id: string, fn: (saved: SavedDeck) => SavedDeck) {

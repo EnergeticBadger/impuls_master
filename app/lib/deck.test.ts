@@ -32,6 +32,15 @@ test("addCard merges by name and does not mutate", () => {
     assert.equal(addCard(two, bear, "side").side[0].card.name, "Grizzly Bears");
 });
 
+test("removeCard matches by oracle id across printings, by name without one", () => {
+    const a = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle" });
+    const b = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle", id: "other-printing" });
+    const other = card("Other Bolt", "Instant", { oracle_id: "other-oracle" });
+    assert.equal(removeCard(addCard(empty, a), b).main.length, 0);
+    assert.equal(removeCard(addCard(empty, a), other).main.length, 1);
+    assert.equal(removeCard(addCard(empty, bolt), bolt).main.length, 0);
+});
+
 test("copiesIn counts main deck copies by oracle id across printings", () => {
     const a = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle" });
     const b = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle", id: "other-printing" });
