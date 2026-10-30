@@ -6,7 +6,9 @@ import { Image } from '@unpic/react';
 import { useCardLayout } from '../Hooks/useCardLayout';
 import { view } from '../Context/view';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
-import { COMPARE_ICON, OPEN_ICON, TURN_ICON, QuickView, openQuickView } from './QuickView';
+import { decks, addToCurrentDeck, currentDeckOf } from '../Context/decks';
+import { copiesIn, type Deck } from '~/lib/deck';
+import { ADD_ICON, COMPARE_ICON, OPEN_ICON, TURN_ICON, QuickView, openQuickView } from './QuickView';
 
 // at this many per row or fewer, cards are wide enough that the normal image would look soft
 const LARGE_IMAGE_PER_ROW = 3
@@ -18,6 +20,10 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const { cards: comparing } = useSnapshot(compare)
     const compared = inCompare(comparing, card.id)
     const handleCompare = () => toggleCompare({ name, image_uri, card_uri, card })
+    const { list, current } = useSnapshot(decks)
+    const currentDeck = currentDeckOf(list, current)
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, card.oracle_id) : 0
+    const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
     const layout = useCardLayout(card)
     const { currentFace, canFlip, flip, canRotate, rotate, rotation } = layout
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
@@ -62,6 +68,12 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 {/* compare */}
                 <button onClick={handleCompare} aria-pressed={compared} title={compared ? 'Remove from compare' : 'Compare'} style={{ height: '24px' }}>
                     <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={COMPARE_ICON} /></svg>
+                </button>
+
+                {/* add to deck */}
+                <button onClick={() => addToCurrentDeck(card)} title={addLabel} aria-label={addLabel} style={{ height: '24px' }}>
+                    <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={ADD_ICON} /></svg>
+                    {copies > 0 ? <span className={styles.badge}>{copies}</span> : null}
                 </button>
 
                 {/* rotate */}

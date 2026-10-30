@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { newDeck, readSavedDecks } from "./savedDecks.ts";
+import { deckToBuild, newDeck, readSavedDecks } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -42,4 +42,13 @@ test("a good deck round-trips through JSON", () => {
         },
     }
     assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
+})
+
+test("deckToBuild prefers the current deck, else the most recently updated", () => {
+    const old = newDeck("Old", 1, "a")
+    const recent = newDeck("Recent", 5, "b")
+    assert.equal(deckToBuild([old, recent], "a"), old)
+    assert.equal(deckToBuild([old, recent], undefined), recent)
+    assert.equal(deckToBuild([old, recent], "gone"), recent)
+    assert.equal(deckToBuild([], "a"), undefined)
 })
