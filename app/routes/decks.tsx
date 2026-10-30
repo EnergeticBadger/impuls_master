@@ -20,7 +20,10 @@ export default function Decks() {
   const [renaming, setRenaming] = useState<{ id: string, name: string }>()
   const [deleting, setDeleting] = useState<string>()
 
-  useEffect(() => { loadDecks() }, [])
+  // the decks are read from localStorage after the first render; don't flash the empty state before that
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => { loadDecks(); setReady(true) }, [])
 
   const list = [...snap.list].sort((a, b) => b.updated - a.updated)
 
@@ -56,7 +59,7 @@ export default function Decks() {
       <SiteHeader />
       <main className={styles.page}>
         <h1 className={styles.title}>My decks</h1>
-        {list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
+        {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
         <div>{newDeckForm}</div>
         {list.length > 0 && (
           <ul className={styles.list}>
