@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Ruling, ScryfallCard } from "~/types";
 import { scryfallGet } from "./scryfall";
-import { SITE_URL, bucketHeader, bucketOf, oracleOf, paths, readRecord, slug, type CardRecord } from "./carddata";
+import { SITE_URL, bucketHeader, bucketOf, oracleOf, paths, pickPrinting, printingCard, readRecord, slug, type CardRecord } from "./carddata";
 
 export { SITE_URL, slug };
 
@@ -77,6 +77,44 @@ export async function loadRecord(card: Pick<ScryfallCard, "name" | "oracle_id" |
     const header = bucketHeader(bytes)
     const entry = header.entries.find((e) => e[1] === oracle)
     return entry ? readRecord(bytes, header, entry) : undefined
+}
+
+type NameLine = { name: string; set?: string; number?: string }
+
+// a card by name (and set and collector number) for deck import: the site's card data first, Scryfall when
+// the data files aren't there (local dev); undefined when no such card
+export async function cardByName(line: NameLine): Promise<ScryfallCard | undefined> {
+    const name = slug(line.name.split(" // ")[0])
+    const bytes = await dataFile(paths.bucket(bucketOf(name)))
+    if (bytes) {
+        const header = bucketHeader(bytes)
+        const entry = header.entries.find((e) => e[0] === name)
+        if (!entry) return undefined
+        const record = readRecord(bytes, header, entry)
+        return printingCard(record, pickPrinting(record, line.set, line.number))
+    }
+    try {
+        const query = `exact=${encodeURIComponent(line.name)}${line.set ? `&set=${encodeURIComponent(line.set)}` : ""}`
+        const card = await scryfallGet(`cards/named?${query}`)
+        return card?.object === "card" ? card as ScryfallCard : undefined
+    } catch (err) {
+        console.error(`Failed to look up ${line.name}: `, err)
+        return undefined
+    }
+}
+
+// looks the lines up one after another, so Scryfall fallbacks stay within the proxy's spacing
+export async function cardsByName<L extends NameLine>(lines: L[], onProgress?: (done: number, total: number) => void):
+    Promise<{ found: { line: L; card: ScryfallCard }[]; missing: L[] }> {
+    const found: { line: L; card: ScryfallCard }[] = []
+    const missing: L[] = []
+    for (const line of lines) {
+        const card = await cardByName(line)
+        if (card) found.push({ line, card })
+        else missing.push(line)
+        onProgress?.(found.length + missing.length, lines.length)
+    }
+    return { found, missing }
 }
 
 async function loadRulings(card: Pick<ScryfallCard, "name" | "oracle_id" | "rulings_uri" | "card_faces">, signal: AbortSignal): Promise<Ruling[]> {
