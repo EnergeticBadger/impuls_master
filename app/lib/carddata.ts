@@ -243,6 +243,18 @@ export function findPrinting(record: Pick<CardRecord, "prints">, key: string) {
     return record.prints.findIndex((p) => printKey(p).toLowerCase() === k);
 }
 
+// the printing a deck list line means: the set and number, else the set's first printing, else the page's own
+export function pickPrinting(record: CardRecord, set?: string, number?: string): Printing {
+    const s = set?.toLowerCase();
+    if (s) {
+        const inSet = record.prints.filter((p) => p.set.toLowerCase() === s);
+        const n = number?.toLowerCase();
+        const exact = n ? inSet.find((p) => p.number.toLowerCase() === n) : undefined;
+        if (exact ?? inSet[0]) return (exact ?? inSet[0])!;
+    }
+    return record.prints[record.main];
+}
+
 // the card as the app's components expect it (Scryfall's shape), for one of its printings
 export function printingCard(record: CardRecord, p: Printing): ScryfallCard {
     const api = `https://api.scryfall.com/cards/${p.id}`;
