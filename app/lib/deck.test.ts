@@ -16,9 +16,28 @@ const golem = card("Myr Golem", "Artifact Creature — Golem", { cmc: 9 });
 const forest = card("Forest", "Basic Land — Forest", { color_identity: ["G"] });
 const relentless = card("Relentless Rats", "Creature — Rat", { cmc: 2, colors: ["B"], color_identity: ["B"], oracle_text: "A deck can have any number of cards named Relentless Rats." });
 const mdfc = card("Valakut Awakening // Valakut Stoneforge", "Instant // Land", {
-    cmc: 3, colors: ["R"], color_identity: ["R"],
-    card_faces: [{ name: "Valakut Awakening", type_line: "Instant" }, { name: "Valakut Stoneforge", type_line: "Land" }],
+    cmc: 4, colors: undefined, color_identity: ["R"], layout: "modal_dfc",
+    card_faces: [
+        { name: "Valakut Awakening", mana_cost: "{2}{R}{R}", type_line: "Instant", colors: ["R"] },
+        { name: "Valakut Stoneforge", mana_cost: "", type_line: "Land" },
+    ],
 });
+const delverApi = card("Delver of Secrets // Insectile Aberration", "Creature — Human Wizard // Creature — Human Insect", {
+    cmc: 1, colors: undefined, color_identity: ["U"], layout: "transform",
+    card_faces: [
+        { name: "Delver of Secrets", mana_cost: "{U}", type_line: "Creature — Human Wizard", colors: ["U"] },
+        { name: "Insectile Aberration", mana_cost: "", type_line: "Creature — Human Insect", colors: ["U"] },
+    ],
+});
+const delverCompact = card("Delver of Secrets // Insectile Aberration", "Creature — Human Wizard // Creature — Human Insect", {
+    cmc: 1, colors: [], color_identity: ["U"], layout: "transform",
+    card_faces: [
+        { name: "Delver of Secrets", mana_cost: "{U}", type_line: "Creature — Human Wizard" },
+        { name: "Insectile Aberration", mana_cost: "", type_line: "Creature — Human Insect" },
+    ],
+});
+const nazgul = card("Nazgûl", "Creature — Wraith", { color_identity: ["B"], oracle_text: "A deck can have up to nine cards named Nazgûl." });
+const dwarves = card("Seven Dwarves", "Creature — Dwarf", { color_identity: ["R"], oracle_text: "A deck can have up to seven cards named Seven Dwarves." });
 
 const empty: Deck = { main: [], side: [] };
 
@@ -84,6 +103,31 @@ test("colorCounts counts cards per color and colorless spells", () => {
     let deck = addCard(empty, bear, "main", 2);
     deck = addCard(addCard(addCard(deck, bolt), golem), forest, "main", 5);
     assert.deepEqual(colorCounts(deck), { W: 0, U: 0, B: 0, R: 1, G: 2, C: 1 });
+});
+
+test("colorCounts reads a double-faced card's front face", () => {
+    const none = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+    assert.deepEqual(colorCounts(addCard(empty, delverApi, "main", 4)), { ...none, U: 4, C: 0 });
+    assert.deepEqual(colorCounts(addCard(empty, delverCompact, "main", 4)), { ...none, U: 4, C: 0 });
+    assert.deepEqual(colorCounts(addCard(empty, mdfc)), { ...none, R: 1, C: 0 });
+    const hybrid = card("Hybrid", "Creature", { colors: [], card_faces: [{ name: "Hybrid", mana_cost: "{W/U}{1}", type_line: "Creature" }, { name: "Back", type_line: "Creature" }] });
+    assert.deepEqual(colorCounts(addCard(empty, hybrid)), { ...none, W: 1, U: 1, C: 0 });
+    const ornithopter = card("Ornithopter", "Artifact Creature — Thopter");
+    assert.deepEqual(colorCounts(addCard(empty, ornithopter)), { ...none, C: 1 });
+});
+
+test("commander: 'up to N cards named' cards use their own limit", () => {
+    const general: Deck["commander"] = { card: card("Ghave", "Legendary Creature", { color_identity: ["B", "R"] }), count: 1 };
+    const withCards = (...adds: [ScryfallCard, number][]): string[] => {
+        let deck: Deck = { main: [], side: [], commander: general };
+        for (const [c, n] of adds) deck = addCard(deck, c, "main", n);
+        return legalityProblems(deck, "commander").filter(p => !p.includes("exactly 100"));
+    };
+    assert.deepEqual(withCards([nazgul, 9]), []);
+    assert.ok(withCards([nazgul, 10]).some(p => p.includes("Nazgûl appears 10 times") && p.includes("the limit is 9")));
+    assert.deepEqual(withCards([dwarves, 7]), []);
+    assert.ok(withCards([bear, 2]).some(p => p.includes("Commander decks are singleton")));
+    assert.ok(!withCards([relentless, 30]).some(p => p.includes("Relentless Rats appears")));
 });
 
 const sixty = (extra: Deck = empty): Deck => addCard({ main: [...extra.main], side: extra.side }, forest, "main", 60);
