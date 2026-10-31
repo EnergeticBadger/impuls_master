@@ -79,13 +79,23 @@ export function manaCurve(deck: Deck): number[] {
     return curve
 }
 
+// a card's colors: top-level when it has any, else the front face's (API shape), else the colored
+// symbols in the front face's mana cost (compact-data shape)
+function colorsOf(card: ScryfallCard): string[] {
+    if (card.colors && card.colors.length > 0) return card.colors
+    const front = card.card_faces?.[0]
+    if (!front) return []
+    if (front.colors && front.colors.length > 0) return front.colors
+    return COLORS.filter(c => new RegExp(`\\{(?:[^}]*/)?${c}(?:/[^}]*)?\\}`).test(front.mana_cost ?? ""))
+}
+
 // how many cards are each color (a two-color card counts for both), plus "C" for colorless spells.
 // Lands aren't counted.
 export function colorCounts(deck: Deck): Record<"W" | "U" | "B" | "R" | "G" | "C", number> {
     const counts = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
     for (const { card, count } of cardsOf(deck)) {
         if (isLand(card)) continue
-        const colors = card.colors ?? []
+        const colors = colorsOf(card)
         const known = COLORS.filter(c => colors.includes(c))
         if (known.length === 0) counts.C += count
         for (const c of known) counts[c] += count
@@ -131,7 +141,7 @@ export function legalityProblems(deck: Deck, format: string): string[] {
         totals.set(card.name, { card, count: (totals.get(card.name)?.count ?? 0) + count })
     }
     for (const { card, count } of totals.values()) {
-        const limit = commander ? (isBasicLand(card) || copyLimit(card) === Infinity ? Infinity : 1)
+        const limit = commander ? (copyLimit(card) !== 4 ? copyLimit(card) : 1)
             : card.legalities?.[fmt] === "restricted" ? 1 : copyLimit(card)
         if (count > limit) {
             problems.push(commander && limit === 1
