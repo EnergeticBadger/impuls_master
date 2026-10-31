@@ -1,0 +1,148 @@
+/* One deck (/decks/:id) */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-7);
+}
+
+.title {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.nameInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  color: var(--text-muted);
+}
+
+.empty {
+  color: var(--text-muted);
+}
+
+.link {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.heading {
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 1.1rem;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.count {
+  min-width: 1.5rem;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.cardName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cost {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.button,
+.step,
+.peek {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.step {
+  min-width: 2rem;
+  text-align: center;
+}
+
+.peek {
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.button:hover,
+.step:hover,
+.peek:hover {
+  background-color: var(--raised-hover);
+}
+
+.preview {
+  flex-basis: 100%;
+  max-width: 146px;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+@media screen and (max-width: 760px) {
+  .page {
+    padding-top: var(--space-5);
+  }
+
+  .nameInput {
+    font-size: 1.3rem;
+  }
+}
