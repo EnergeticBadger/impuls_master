@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { formatDeckList, parseDeckList, type Line } from "./decklist.ts";
+import { deckFromLines, formatDeckList, parseDeckList, type Line } from "./decklist.ts";
 
 const card = (name: string, set: string, collector_number: string): ScryfallCard =>
     ({ name, set, collector_number }) as unknown as ScryfallCard;
@@ -106,6 +106,20 @@ test("unreadable lines are reported with their line number", () => {
     assert.match(parsed.problems[1], /^Line 3:/);
     assert.deepEqual(names(parsed.main), ["4 Opt"]);
     assert.deepEqual(names(parsed.side), ["2 Shock"]);
+});
+
+test("deckFromLines sorts lines into zones and adds the counts of a card named twice", () => {
+    const opt = card("Opt", "xln", "65");
+    const built = deckFromLines([
+        { line: { count: 2, zone: "main" }, card: opt },
+        { line: { count: 3, zone: "main" }, card: card("Opt", "dom", "60") },
+        { line: { count: 1, zone: "side" }, card: opt },
+        { line: { count: 1, zone: "commander" }, card: card("Atraxa", "c16", "28") },
+    ]);
+    assert.deepEqual(built.main.map(e => [e.card.name, e.count]), [["Opt", 5]]);
+    assert.deepEqual(built.side.map(e => [e.card.name, e.count]), [["Opt", 1]]);
+    assert.equal(built.commander?.card.name, "Atraxa");
+    assert.deepEqual(deckFromLines([]), { main: [], side: [] });
 });
 
 test("an empty list parses to nothing and writes nothing", () => {
