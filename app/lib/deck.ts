@@ -1,6 +1,7 @@
 // ---- the deck model: pure functions over plain data, no state, no UI ----
 
 import type { ScryfallCard } from "~/types";
+import { oracleOf } from "./carddata.ts";
 
 export type DeckEntry = { card: ScryfallCard; count: number }
 export type Deck = { main: DeckEntry[]; side: DeckEntry[]; commander?: DeckEntry }
@@ -26,13 +27,18 @@ export function addCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main",
 }
 
 // same card by oracle id like copiesIn, falling back to the name when either has no oracle id
-const sameCard = (a: ScryfallCard, b: ScryfallCard) =>
-    a.oracle_id && b.oracle_id ? a.oracle_id === b.oracle_id : a.name === b.name
+const sameCard = (a: ScryfallCard, b: ScryfallCard) => {
+    const x = oracleOf(a)
+    const y = oracleOf(b)
+    return x && y ? x === y : a.name === b.name
+}
 
-// takes `count` copies out (default one); an entry with none left disappears
+// takes `count` copies out (default one) of the first matching entry; an entry with none left disappears
 export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main", count = 1): Deck {
+    const i = deck[zone].findIndex(e => sameCard(e.card, card))
+    if (i < 0) return deck
     const entries = deck[zone]
-        .map(e => (sameCard(e.card, card) ?{ ...e, count: e.count - count } : e))
+        .map((e, j) => (j === i ? { ...e, count: e.count - count } : e))
         .filter(e => e.count > 0)
     return { ...deck, [zone]: entries }
 }
@@ -40,7 +46,7 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
 // copies of a card in the main deck, whatever the printing (counted by oracle id)
 export function copiesIn(deck: Deck, oracleId: string | undefined): number {
     if (!oracleId) return 0
-    return deck.main.reduce((n, e) => (e.card.oracle_id === oracleId ? n + e.count : n), 0)
+    return deck.main.reduce((n, e) => (oracleOf(e.card) === oracleId ? n + e.count : n), 0)
 }
 
 const cardsOf =(deck: Deck): DeckEntry[] => (deck.commander ? [...deck.main, deck.commander] : deck.main)
