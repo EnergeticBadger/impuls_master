@@ -31,6 +31,12 @@
   height: 40px;
 }
 
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .back {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-faint);
@@ -44,6 +50,33 @@
 
 .back:hover {
   background-color: var(--raised-hover);
+}
+
+/* at 360px the brand and two buttons don't fit on a line: shrink them and let the header wrap */
+@media screen and (max-width: 480px) {
+  .header {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .brand {
+    gap: var(--space-2);
+    font-size: 1rem;
+  }
+
+  .brand img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav {
+    gap: var(--space-1, 0.25rem);
+  }
+
+  .back {
+    padding: var(--space-1, 0.25rem) var(--space-2);
+    font-size: var(--text-sm);
+  }
 }
 
 /* ---- Footer (every page) ---- */
