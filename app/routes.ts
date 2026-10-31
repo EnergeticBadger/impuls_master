@@ -9,5 +9,6 @@ export default [
   route("sets/:code", "routes/set.tsx"),
   route("syntax", "routes/syntax.tsx"),
   route("decks", "routes/decks.tsx"),
+  route("decks/:id", "routes/deck.tsx"),
   route("pc-builder", "routes/pc-builder.tsx"),
 ] satisfies RouteConfig;

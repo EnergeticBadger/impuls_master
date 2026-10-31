@@ -1,16 +1,18 @@
 // ---- deck lists as plain text: read what other sites export, write what they accept. Pure, no UI ----
 
-import type { Deck, DeckEntry } from "./deck.ts";
+import type { ScryfallCard } from "~/types";
+import { addCard, emptyDeck, type Deck, type DeckEntry } from "./deck.ts";
 
 export type Line = { count: number; name: string; set?: string; number?: string }
 export type DeckListStyle = "text" | "arena" | "mtgo"
 
-type Zone = "main" | "side" | "commander" | "companion"
+export type Zone = "main" | "side" | "commander"
+type ParseZone = Zone | "companion"
 
 // "4 Opt", "4x Opt", "4 Opt (XLN) 65"; an "SB:" prefix (MTGO) is dealt with before this
 const LINE = /^(\d+)\s*[xX]?\s+(.+?)(?:\s+\(([A-Za-z0-9]+)\)(?:\s+(\S+))?)?$/;
 
-const HEADERS: Record<string, Zone> = {
+const HEADERS: Record<string, ParseZone> = {
     deck: "main", maindeck: "main", main: "main",
     sideboard: "side", side: "side", companion: "companion",
     commander: "commander",
@@ -22,7 +24,7 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
     let commander: Line | undefined;
     const companions: Line[] = [];
     const problems: string[] = [];
-    let zone: Zone = "main";
+    let zone: ParseZone = "main";
 
     text.split(/\r?\n/).forEach((raw, i) => {
         let line = raw.trim();
@@ -72,6 +74,18 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
     }
 
     return commander ? { main, side, commander, problems } : { main, side, problems };
+}
+
+export type FoundLine = { line: { count: number; zone: Zone }; card: ScryfallCard }
+
+// a deck from looked-up lines; the same card on two lines of a zone adds the counts
+export function deckFromLines(found: FoundLine[]): Deck {
+    let deck = emptyDeck();
+    for (const { line, card } of found) {
+        if (line.zone === "commander") deck = { ...deck, commander: { card, count: line.count } };
+        else deck = addCard(deck, card, line.zone, line.count);
+    }
+    return deck;
 }
 
 function write(entry: DeckEntry, style: DeckListStyle): string {

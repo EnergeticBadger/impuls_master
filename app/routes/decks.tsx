@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
-import { createDeck, decks, deleteDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
+import { createDeck, createDeckWith, decks, deleteDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
+import { cardsByName } from "~/lib/card";
+import { emptyDeck, type Deck } from "~/lib/deck";
+import { deckFromLines, parseDeckList, type Line, type Zone } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
 
@@ -19,6 +22,10 @@ export default function Decks() {
   const [naming, setNaming] = useState<string>()
   const [renaming, setRenaming] = useState<{ id: string, name: string }>()
   const [deleting, setDeleting] = useState<string>()
+  const [importing, setImporting] = useState<{ name: string, text: string }>()
+  const [progress, setProgress] = useState<{ done: number, total: number }>()
+  const [review, setReview] = useState<{ deck: Deck, notes: string[] }>()
+  const navigate = useNavigate()
 
   // the decks are read from localStorage after the first render; don't flash the empty state before that
   const [ready, setReady] = useState(false)
@@ -37,7 +44,77 @@ export default function Decks() {
     setRenaming(undefined)
   }
 
-  const newDeckForm = naming === undefined ? (
+  const closeImport = () => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
+
+  const saveImport = (name: string, deck: Deck) => {
+    const made = createDeckWith(name.trim() || DEFAULT_NAME, deck)
+    navigate(`/decks/${made.id}`)
+  }
+
+  const runImport = async () => {
+    if (!importing || progress) return
+    const parsed = parseDeckList(importing.text)
+    const lines: (Line & { zone: Zone })[] = [
+      ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
+      ...parsed.main.map((l) => ({ ...l, zone: "main" as const })),
+      ...parsed.side.map((l) => ({ ...l, zone: "side" as const })),
+    ]
+    if (lines.length === 0 && parsed.problems.length === 0) return
+    setProgress({ done: 0, total: lines.length })
+    try {
+      const { found, missing } = await cardsByName(lines, (done, total) => setProgress({ done, total }))
+      const deck = deckFromLines(found)
+      const notes = [...parsed.problems, ...missing.map((l) => `Card not found: ${l.count} ${l.name}`)]
+      if (notes.length === 0) saveImport(importing.name, deck)
+      else setReview({ deck, notes })
+    } catch (e) {
+      console.error("Could not import the deck", e)
+      setReview({ deck: emptyDeck(), notes: ["Something went wrong looking up the cards."] })
+    }
+    setProgress(undefined)
+  }
+
+  const importForm = importing === undefined ? (
+    <button type="button" className={styles.button} onClick={() => setImporting({ name: "", text: "" })}>Import</button>
+  ) : review ? (
+    <div className={styles.importer}>
+      <p>These need a look before the deck is saved:</p>
+      <ul className={styles.problems}>
+        {review.notes.map((n, i) => <li key={i}>{n}</li>)}
+      </ul>
+      <div className={styles.actions}>
+        <button type="button" className={styles.button} onClick={() => saveImport(importing.name, review.deck)}>Import anyway</button>
+        <button type="button" className={styles.button} onClick={() => setReview(undefined)}>Back to the list</button>
+      </div>
+    </div>
+  ) : (
+    <form className={styles.importer} onSubmit={(e) => { e.preventDefault(); runImport() }}>
+      <input
+        className={styles.input}
+        value={importing.name}
+        onChange={(e) => setImporting({ ...importing, name: e.target.value })}
+        placeholder={DEFAULT_NAME}
+        aria-label="Deck name"
+        disabled={!!progress}
+      />
+      <textarea
+        className={styles.textarea}
+        value={importing.text}
+        onChange={(e) => setImporting({ ...importing, text: e.target.value })}
+        placeholder={"Paste a deck list from Arena, MTGO or another site\n4 Opt\n20 Island"}
+        aria-label="Deck list"
+        disabled={!!progress}
+        autoFocus
+      />
+      <div className={styles.actions}>
+        <button type="submit" className={styles.button} disabled={!!progress}>Import</button>
+        <button type="button" className={styles.button} onClick={closeImport} disabled={!!progress}>Cancel</button>
+        {progress && <span className={styles.meta} role="status">Finding cards… {progress.done} / {progress.total}</span>}
+      </div>
+    </form>
+  )
+
+  const newDeckForm =naming === undefined ? (
     <button type="button" className={styles.button} onClick={() => setNaming(DEFAULT_NAME)}>New deck</button>
   ) : (
     <form className={styles.form} onSubmit={(e) => { e.preventDefault(); create() }}>
@@ -60,7 +137,8 @@ export default function Decks() {
       <main className={styles.page}>
         <h1 className={styles.title}>My decks</h1>
         {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
-        <div>{newDeckForm}</div>
+        <div className={styles.actions}>{importing === undefined && newDeckForm}{importing === undefined && importForm}</div>
+        {importing !== undefined && importForm}
         {list.length > 0 && (
           <ul className={styles.list}>
             {list.map((d) => {
