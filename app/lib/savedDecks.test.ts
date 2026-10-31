@@ -52,3 +52,29 @@ test("deckToBuild prefers the current deck, else the most recently updated", () 
     assert.equal(deckToBuild([old, recent], "gone"), recent)
     assert.equal(deckToBuild([], "a"), undefined)
 })
+
+test("a well-formed deck re-serialises to the same JSON it was read from", () => {
+    const scry = (id: string, name: string, extra: object = {}) => ({
+        id, oracle_id: `o-${id}`, name, type_line: "Instant", mana_cost: "{R}",
+        legalities: { standard: "legal", commander: "legal" },
+        image_uris: { small: `https://img/${id}-s.jpg`, normal: `https://img/${id}-n.jpg` },
+        ...extra,
+    }) as unknown as ScryfallCard
+    const dfc = scry("d1", "Delver of Secrets // Insectile Aberration", {
+        image_uris: undefined,
+        card_faces: [
+            { name: "Delver of Secrets", type_line: "Creature", image_uris: { small: "https://img/d1a.jpg" } },
+            { name: "Insectile Aberration", type_line: "Creature", image_uris: { small: "https://img/d1b.jpg" } },
+        ],
+    })
+    const saved = [{
+        id: "deck-1", name: "Burn", updated: 1700000000000,
+        deck: {
+            main: [{ card: scry("c1", "Lightning Bolt"), count: 4 }, { card: dfc, count: 1 }],
+            side: [{ card: scry("c2", "Smash to Smithereens"), count: 2 }],
+            commander: { card: scry("c3", "Krenko, Mob Boss", { type_line: "Legendary Creature" }), count: 1 },
+        },
+    }]
+    const s = JSON.stringify(saved)
+    assert.equal(JSON.stringify(readSavedDecks(JSON.parse(s))), s)
+})

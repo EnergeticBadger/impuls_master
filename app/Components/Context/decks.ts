@@ -78,9 +78,25 @@ export function loadDecks() {
 if (typeof window !== 'undefined') {
     subscribe(decks, () => {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ list: decks.list, current: decks.current }))
+            const json = JSON.stringify({ list: decks.list, current: decks.current })
+            // skip writes that match what's stored (e.g. just reloaded from another tab): no ping-pong
+            if (localStorage.getItem(STORAGE_KEY) !== json) localStorage.setItem(STORAGE_KEY, json)
         } catch (e) {
             console.error('Could not save decks', e)
+        }
+    })
+
+    // another tab saved: take its decks so our next write doesn't overwrite them
+    window.addEventListener('storage', (event) => {
+        if (event.key !== STORAGE_KEY) return
+        try {
+            const saved = JSON.parse(event.newValue ?? 'null')
+            const list = readSavedDecks(saved?.list).map((d) => ref(d))
+            const current = decks.current
+            decks.list = list
+            decks.current = list.some((d) => d.id === current) ? current : undefined
+        } catch (e) {
+            console.error('Could not read saved decks', e)
         }
     })
 }
