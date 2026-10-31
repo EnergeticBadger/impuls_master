@@ -1,7 +1,7 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { deckToBuild, newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
+import { deckToBuild, newDeck, readSavedDecks, reloadFromStorage, writeGate, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
@@ -76,7 +76,10 @@ export function loadDecks() {
 }
 
 if (typeof window !== 'undefined') {
+    const gate = writeGate()
     subscribe(decks, () => {
+        // a reload from another tab must not be saved back, or tabs with different `current` ids echo forever
+        if (!gate.shouldWrite()) return
         try {
             const json = JSON.stringify({ list: decks.list, current: decks.current })
             // skip writes that match what's stored (e.g. just reloaded from another tab): no ping-pong
@@ -90,11 +93,10 @@ if (typeof window !== 'undefined') {
     window.addEventListener('storage', (event) => {
         if (event.key !== STORAGE_KEY) return
         try {
-            const saved = JSON.parse(event.newValue ?? 'null')
-            const list = readSavedDecks(saved?.list).map((d) => ref(d))
-            const current = decks.current
-            decks.list = list
-            decks.current = list.some((d) => d.id === current) ? current : undefined
+            const next = reloadFromStorage(event.newValue, decks.current)
+            gate.skipNext()
+            decks.list = next.list.map((d) => ref(d))
+            decks.current = next.current
         } catch (e) {
             console.error('Could not read saved decks', e)
         }

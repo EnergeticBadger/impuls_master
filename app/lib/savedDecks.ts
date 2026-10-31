@@ -40,3 +40,24 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
     }
     return decks
 }
+
+// what a tab holds after another tab saved: that tab's decks, keeping our `current` if that deck still exists
+export function reloadFromStorage(newValue: string | null, current?: string): { list: SavedDeck[]; current?: string } {
+    const saved: unknown = JSON.parse(newValue ?? 'null')
+    const list = readSavedDecks(isRecord(saved) ? saved.list : undefined)
+    return { list, current: list.some((d) => d.id === current) ? current : undefined }
+}
+
+// Lets a store skip the one write its own storage-driven reload triggers, so tabs never echo each other's saves.
+// Call skipNext() when a reload changes the store; shouldWrite() answers for each change notification after.
+export function writeGate() {
+    let skip = false
+    return {
+        skipNext() { skip = true },
+        shouldWrite(): boolean {
+            const write = !skip
+            skip = false
+            return write
+        },
+    }
+}
