@@ -12,6 +12,10 @@ export function deckToBuild<T extends { id: string; updated: number }>(list: rea
     return list.find((d) => d.id === current) ?? list.reduce<T | undefined>((best, d) => (!best || d.updated > best.updated ? d : best), undefined)
 }
 
+// most recently updated first; a new array, the input is left alone
+export const decksByRecent = <T extends { updated: number }>(list: readonly T[]): T[] =>
+    [...list].sort((a, b) => b.updated - a.updated)
+
 const isRecord =(v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null
 
 const isEntry = (v: unknown): v is DeckEntry =>
