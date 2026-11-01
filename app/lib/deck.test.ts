@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { oracleOf } from "./carddata.ts";
+import { addCard,colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -71,6 +72,33 @@ test("copiesIn counts main deck copies by oracle id across printings", () => {
     assert.equal(copiesIn(deck, "bear-oracle"), 1);
     assert.equal(copiesIn(deck, "missing"), 0);
     assert.equal(copiesIn(deck, undefined), 0);
+});
+
+const regularProp = card("Propaganda", "Enchantment", { oracle_id: "prop-oracle" });
+const reversibleProp = card("Propaganda // Propaganda", "Enchantment // Enchantment", {
+    layout: "reversible_card",
+    card_faces: [
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+    ] as unknown as ScryfallCard["card_faces"],
+});
+
+test("reversible cards (oracle id only on their faces) are counted and removed", () => {
+    let deck = empty;
+    for (let i = 0; i < 3; i++) deck = addCard(deck, reversibleProp);
+    assert.equal(copiesIn(deck, oracleOf(reversibleProp)), 3);
+
+    const mixed: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 1 }], side: [] };
+    assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
+    assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
+
+    const less = removeCard(mixed, reversibleProp);
+    // one copy comes out of the first matching entry; the other entry is left alone
+    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+
+    const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
