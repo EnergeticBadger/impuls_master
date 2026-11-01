@@ -5,6 +5,7 @@ import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
+import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardPath } from "~/lib/card";
 import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
@@ -147,6 +148,8 @@ export default function DeckPage() {
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}
+
+        <SampleHand deck={deck} />
 
         {deck.side.length > 0 && (
           <section>
