@@ -6,6 +6,7 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { cardPath } from "~/lib/card";
+import { formatDeckList, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
@@ -29,6 +30,79 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
   const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
   return addCard(without, entry.card, to, entry.count)
+}
+
+const EXPORT_BUTTONS: { style: DeckListStyle; label: string }[] = [
+  { style: "text", label: "Copy as text" },
+  { style: "arena", label: "Copy for Arena" },
+  { style: "mtgo", label: "Copy for MTGO" },
+]
+
+// a file name from the deck name: letters, digits, dashes and underscores only
+const fileNameOf = (name: string) => `${name.trim().replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-") || "deck"}.txt`
+
+// the Export section: copy the list in each style, or download the MTGO one. Holds its own state and
+// hooks, so it stays out of DeckPage's early returns.
+function ExportSection({ deck, name }: { deck: Deck; name: string }) {
+  const [copied, setCopied] = useState<DeckListStyle>()
+  const [fallback, setFallback] = useState<{ style: DeckListStyle; text: string }>()
+  const [url, setUrl] = useState<string>()
+
+  const mtgoText = formatDeckList(deck, "mtgo")
+
+  // the download is a Blob URL, made for the current list and released when it changes
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(new Blob([mtgoText], { type: "text/plain" }))
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [mtgoText])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(undefined), 2000) // "Copied" shows for 2 seconds
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  async function copy(style: DeckListStyle) {
+    const text = formatDeckList(deck, style)
+    try {
+      await navigator.clipboard.writeText(text)
+      setFallback(undefined)
+      setCopied(style)
+    } catch (err) {
+      console.error("Failed to copy: ", err)
+      setFallback({ style, text })
+    }
+  }
+
+  return (
+    <section>
+      <h2 className={styles.heading}>Export</h2>
+      <div className={styles.buttons}>
+        {EXPORT_BUTTONS.map(({ style, label }) => (
+          <button key={style} type="button" className={styles.button} onClick={() => copy(style)}>
+            {copied === style ? "Copied" : label}
+          </button>
+        ))}
+        {url && (
+          <a href={url} download={fileNameOf(name)} className={styles.button}>Download .txt</a>
+        )}
+      </div>
+      {fallback && (
+        <div className={styles.fallback}>
+          <p>Copying didn't work. Select the list below and copy it by hand.</p>
+          <textarea
+            className={styles.fallbackText}
+            readOnly
+            value={fallback.text}
+            aria-label={`Deck list, ${EXPORT_BUTTONS.find((b) => b.style === fallback.style)?.label ?? ""}`}
+            onFocus={(e) => e.currentTarget.select()}
+            rows={Math.min(20, fallback.text.split("\n").length + 1)}
+          />
+        </div>
+      )}
+    </section>
+  )
 }
 
 export default function DeckPage() {
@@ -157,6 +231,8 @@ export default function DeckPage() {
             <ul className={styles.rows}>{deck.side.map((e) => row(e, "side"))}</ul>
           </section>
         )}
+
+        <ExportSection deck={deck} name={saved.name} />
 
         {buyEntries.length > 0 && (
           <section>
