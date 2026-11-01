@@ -116,6 +116,15 @@ function copyLimit(card: ScryfallCard): number {
     return 4
 }
 
+// legendary creatures, and anything whose text says it can be your commander
+export function canBeCommander(card: ScryfallCard): boolean {
+    const faces = card.card_faces ?? []
+    const type = frontType(card)
+    if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
+    const text = [card.oracle_text, ...faces.map(f => f.oracle_text)].join("\n")
+    return /can be your commander/i.test(text)
+}
+
 const SIDEBOARD_MAX = 15
 const MIN_MAIN = 60
 

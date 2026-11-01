@@ -4,10 +4,11 @@ import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
-import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
+import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { cardPath } from "~/lib/card";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, groupByType, legalityProblems, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import type { ScryfallCard } from "~/types";
 
 export function meta() {
   return [
@@ -30,6 +31,22 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
   return addCard(without, entry.card, to, entry.count)
 }
+
+// one copy from the main deck becomes the commander; a commander already there goes back to the main deck
+const makeCommander = (deck: Deck, card: ScryfallCard): Deck => {
+  const back = deck.commander ? addCard(deck, deck.commander.card, "main", deck.commander.count) : deck
+  return { ...removeCard(back, card, "main"), commander: { card, count: 1 } }
+}
+
+const removeAsCommander = (deck: Deck): Deck => {
+  if (!deck.commander) return deck
+  return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
+}
+
+const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
+const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
+
+const anchorOf = (name: string) => `card-${name.replace(/[^a-z0-9]+/gi, "-")}`
 
 export default function DeckPage() {
   const { id = "" } = useParams()
@@ -66,12 +83,25 @@ export default function DeckPage() {
     setName(undefined)
   }
 
+  const format = saved.format
+  const isCommander = format === "commander"
+  const problems = format ? legalityProblems(deck, format) : []
+  // a card's row is the first one it appears in (commander, then main, then sideboard)
+  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...deck.side]
+  const anchored = new Map<string, string>()
+  for (const e of rowOrder) if (!anchored.has(e.card.name)) anchored.set(e.card.name, anchorOf(e.card.name))
+  const cardNamed = (problem: string) =>
+    [...anchored.keys()].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
+  const rowSeen = new Set<string>()
+
   const row = (entry: DeckEntry, section: Section) => {
     const key = `${section}:${entry.card.name}`
     const image = smallImage(entry)
     const cost = manaCostOf(entry)
+    const rowId = rowSeen.has(entry.card.name) ? undefined : anchorOf(entry.card.name)
+    rowSeen.add(entry.card.name)
     return (
-      <li key={key} className={styles.row}>
+      <li key={key} id={rowId} className={styles.row}>
         <div className={styles.line}>
           <span className={styles.count}>{entry.count}</span>
           <span className={styles.cardName}>
@@ -104,10 +134,19 @@ export default function DeckPage() {
                 onClick={() => updateDeck(id, (d) => addCard(d, entry.card, section))}>+</button>
             </>
           )}
-          <button type="button" className={styles.button}
-            onClick={() => updateDeck(id, (d) => move(d, entry, section))}>
-            {section === "main" ? "To sideboard" : "To main"}
-          </button>
+          {section === "commander" ? (
+            <button type="button" className={styles.button}
+              onClick={() => updateDeck(id, removeAsCommander)}>Remove as commander</button>
+          ) : (
+            <button type="button" className={styles.button}
+              onClick={() => updateDeck(id, (d) => move(d, entry, section))}>
+              {section === "main" ? "To sideboard" : "To main"}
+            </button>
+          )}
+          {isCommander && section === "main" && canBeCommander(entry.card) && (
+            <button type="button" className={styles.button}
+              onClick={() => updateDeck(id, (d) => makeCommander(d, entry.card))}>Make commander</button>
+          )}
         </div>
         {preview === key && image && <img className={styles.preview} src={image} alt={entry.card.name} width={146} height={204} />}
       </li>
@@ -135,6 +174,36 @@ export default function DeckPage() {
           <span>Sideboard: {total(deck.side)}</span>
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
+
+        <div className={styles.format}>
+          <label>
+            Format{" "}
+            <select
+              className={styles.select}
+              value={format ?? ""}
+              onChange={(e) => setDeckFormat(id, e.target.value)}
+            >
+              <option value="">No format</option>
+              {FORMATS.map((f) => <option key={f} value={f}>{formatLabel(f)}</option>)}
+            </select>
+          </label>
+          {format && (problems.length === 0
+            ? <p className={styles.legal}>Legal in {formatLabel(format)}</p>
+            : (
+              <ul className={styles.problems} aria-label={`Problems for ${formatLabel(format)}`}>
+                {problems.map((p) => {
+                  const name = cardNamed(p)
+                  return (
+                    <li key={p}>
+                      {name
+                        ? <><a href={`#${anchored.get(name)}`} className={styles.link}>{name}</a>{p.slice(name.length)}</>
+                        : p}
+                    </li>
+                  )
+                })}
+              </ul>
+            ))}
+        </div>
 
         {deck.commander && (
           <section>

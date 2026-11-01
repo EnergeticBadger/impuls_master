@@ -44,6 +44,13 @@ test("a good deck round-trips through JSON", () => {
     assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
 })
 
+test("a format is kept when it is a string, dropped otherwise", () => {
+    const base = newDeck("Burn", 5, "b")
+    assert.equal(readSavedDecks([{ ...base, format: "modern" }])[0].format, "modern")
+    assert.equal("format" in readSavedDecks([{ ...base, format: 3 }])[0], false)
+    assert.equal("format" in readSavedDecks([base])[0], false)
+})
+
 test("deckToBuild prefers the current deck, else the most recently updated", () => {
     const old = newDeck("Old", 1, "a")
     const recent = newDeck("Recent", 5, "b")

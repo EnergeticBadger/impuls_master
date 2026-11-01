@@ -34,6 +34,32 @@
   color: var(--text-muted);
 }
 
+.format {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.select {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.legal {
+  color: var(--text-muted);
+}
+
+.problems {
+  padding-left: var(--space-5);
+  list-style: disc;
+  overflow-wrap: anywhere;
+}
+
 .empty {
   color: var(--text-muted);
 }
