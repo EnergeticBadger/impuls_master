@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { deckToBuild, newDeck, readSavedDecks } from "./savedDecks.ts";
+import { addCard } from "./deck.ts";
+import { copyDeck, deckToBuild, newDeck, readSavedDecks } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -42,6 +43,32 @@ test("a good deck round-trips through JSON", () => {
         },
     }
     assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
+})
+
+test("a copy gets a new id, name and time, and equal cards", () => {
+    const original = {
+        ...newDeck("Mono-Red", 1, "a"),
+        deck: {
+            main: [{ card: card("1", "Bolt"), count: 4 }],
+            side: [{ card: card("3", "Neg"), count: 2 }],
+            commander: { card: card("4", "Boss"), count: 1 },
+        },
+    }
+    const copy = copyDeck(original, 9, "b")
+    assert.equal(copy.id, "b")
+    assert.equal(copy.name, "Mono-Red (copy)")
+    assert.equal(copy.updated, 9)
+    assert.deepEqual(copy.deck, original.deck)
+    assert.notEqual(copy.deck, original.deck)
+})
+
+test("changing a copy leaves the original's main unchanged", () => {
+    const original = { ...newDeck("Burn", 1, "a"), deck: { main: [{ card: card("1", "Bolt"), count: 4 }], side: [] } }
+    const copy = copyDeck(original, 2, "b")
+    const changed = { ...copy, deck: addCard(copy.deck, card("2", "Shock")) }
+    assert.deepEqual(changed.deck.main.map((e) => e.card.id), ["1", "2"])
+    assert.deepEqual(original.deck.main, [{ card: card("1", "Bolt"), count: 4 }])
+    assert.deepEqual(copy.deck.main, [{ card: card("1", "Bolt"), count: 4 }])
 })
 
 test("deckToBuild prefers the current deck, else the most recently updated", () => {

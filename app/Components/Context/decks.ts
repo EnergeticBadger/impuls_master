@@ -1,7 +1,7 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { deckToBuild, newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
+import { copyDeck, deckToBuild, newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
@@ -19,6 +19,16 @@ export function createDeck(name: string): SavedDeck {
 // a new deck holding `deck` (an import), made current
 export function createDeckWith(name: string, deck: Deck): SavedDeck {
     const made = { ...newDeck(name, Date.now(), crypto.randomUUID()), deck }
+    decks.list.push(ref(made))
+    decks.current = made.id
+    return made
+}
+
+// a copy of the deck `id` (see copyDeck), added to the list and made current; nothing happens for an unknown id
+export function duplicateDeck(id: string): SavedDeck | undefined {
+    const original = decks.list.find((d) => d.id === id)
+    if (!original) return undefined
+    const made = copyDeck(original, Date.now(), crypto.randomUUID())
     decks.list.push(ref(made))
     decks.current = made.id
     return made
