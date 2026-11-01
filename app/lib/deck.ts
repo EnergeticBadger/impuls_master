@@ -60,12 +60,18 @@ export function typeGroupOf(card: ScryfallCard): TypeGroup | "Other" {
     return GROUP_ORDER.find(g => new RegExp(`\\b${g}\\b`).test(type)) ?? "Other"
 }
 
+// a new array of the entries by mana value (missing counts as 0), then by name; the input is not changed
+export function sortEntries(entries: readonly DeckEntry[]): DeckEntry[] {
+    return [...entries].sort((a, b) =>
+        (a.card.cmc ?? 0) - (b.card.cmc ?? 0) || a.card.name.localeCompare(b.card.name))
+}
+
 // the main deck's entries by type, in TYPE_GROUPS order; empty groups are left out, and anything
-// that fits none of them (a Dungeon, say) goes last under "Other"
+// that fits none of them (a Dungeon, say) goes last under "Other". Each group is sorted by sortEntries.
 export function groupByType(deck: Deck): { group: TypeGroup | "Other"; entries: DeckEntry[] }[] {
     const groups = [...TYPE_GROUPS, "Other" as const]
     return groups
-        .map(group => ({ group, entries: cardsOf(deck).filter(e => typeGroupOf(e.card) === group) }))
+        .map(group => ({ group, entries: sortEntries(cardsOf(deck).filter(e => typeGroupOf(e.card) === group)) }))
         .filter(g => g.entries.length > 0)
 }
 
