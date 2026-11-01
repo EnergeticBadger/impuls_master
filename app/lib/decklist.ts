@@ -67,7 +67,16 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
     return commander ? { main, side, commander, problems } : { main, side, problems };
 }
 
-export type FoundLine = { line: { count: number; zone: Zone }; card: ScryfallCard }
+// one typed line ("4 Opt", "Opt", "1 Opt (M19) 65") as a Line; no count means 1
+export function quickAddLine(text: string): Line | undefined {
+    const trimmed = text.trim();
+    if (trimmed === "") return undefined;
+    const first = parseDeckList(trimmed).main[0];
+    if (first) return first;
+    return parseDeckList(`1 ${trimmed}`).main[0];
+}
+
+export type FoundLine ={ line: { count: number; zone: Zone }; card: ScryfallCard }
 
 // a deck from looked-up lines; the same card on two lines of a zone adds the counts
 export function deckFromLines(found: FoundLine[]): Deck {
