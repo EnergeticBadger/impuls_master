@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { deckToBuild, newDeck, readSavedDecks } from "./savedDecks.ts";
+import { deckToBuild, decksByRecent, newDeck, readSavedDecks } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -51,4 +51,14 @@ test("deckToBuild prefers the current deck, else the most recently updated", () 
     assert.equal(deckToBuild([old, recent], undefined), recent)
     assert.equal(deckToBuild([old, recent], "gone"), recent)
     assert.equal(deckToBuild([], "a"), undefined)
+})
+
+test("decksByRecent puts the most recently updated first without changing the input", () => {
+    const a = newDeck("A", 1, "a")
+    const b = newDeck("B", 3, "b")
+    const c = newDeck("C", 2, "c")
+    const list = [a, b, c]
+    assert.deepEqual(decksByRecent(list), [b, c, a])
+    assert.deepEqual(list, [a, b, c])
+    assert.deepEqual(decksByRecent([]), [])
 })
