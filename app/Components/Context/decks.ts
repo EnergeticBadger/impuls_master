@@ -1,7 +1,7 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { deckToBuild, newDeck, readSavedDecks, type SavedDeck } from "~/lib/savedDecks";
+import { deckToBuild, newDeck, readSavedDecks, slimDeck, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
@@ -39,7 +39,7 @@ export function setCurrentDeck(id: string) {
 
 // applies a function from deck.ts (addCard, removeCard, ...) to the deck and bumps `updated`
 export function updateDeck(id: string, fn: (deck: Deck) => Deck) {
-    update(id, (d) => ({ ...d, deck: fn(d.deck) }))
+    update(id, (d) => ({ ...d, deck: slimDeck(fn(d.deck)) }))
 }
 
 // one copy into the current deck's main deck; with no decks yet, makes "Untitled deck" first
