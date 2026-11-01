@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -91,6 +91,45 @@ test("groupByType uses the front face and puts creatures first", () => {
         Instant: ["Lightning Bolt", "Valakut Awakening // Valakut Stoneforge"],
         Land: ["Forest"],
     });
+});
+
+test("sortEntries orders by mana value, then by name", () => {
+    const entries: DeckEntry[] = [
+        { card: golem, count: 1 },
+        { card: bear, count: 2 },
+        { card: bolt, count: 1 },
+    ];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Lightning Bolt", "Grizzly Bears", "Myr Golem"]);
+});
+
+test("sortEntries breaks equal mana value ties by name", () => {
+    const zed = card("Zombie", "Creature — Zombie", { cmc: 2 });
+    const ant = card("Ant", "Creature — Insect", { cmc: 2 });
+    const entries: DeckEntry[] = [{ card: zed, count: 1 }, { card: bear, count: 1 }, { card: ant, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Ant", "Grizzly Bears", "Zombie"]);
+});
+
+test("sortEntries treats a card with no cmc as 0", () => {
+    const nocmc = card("Nameless Token", "Creature — Token", { cmc: undefined });
+    const entries: DeckEntry[] = [{ card: bolt, count: 1 }, { card: nocmc, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Nameless Token", "Lightning Bolt"]);
+});
+
+test("sortEntries returns a new array and leaves the input alone", () => {
+    const entries: DeckEntry[] = [{ card: golem, count: 1 }, { card: bolt, count: 1 }];
+    const before = [...entries];
+    const sorted = sortEntries(entries);
+    assert.notEqual(sorted, entries);
+    assert.deepEqual(entries, before);
+    assert.equal(entries[0].card.name, "Myr Golem");
+    assert.equal(sorted[0].card.name, "Lightning Bolt");
+});
+
+test("groupByType sorts entries inside each group", () => {
+    let deck = empty;
+    for (const c of [golem, bear, card("Elf", "Creature — Elf", { cmc: 2 }), bolt]) deck = addCard(deck, c);
+    const creatures = groupByType(deck).find(g => g.group === "Creature")!;
+    assert.deepEqual(creatures.entries.map(e => e.card.name), ["Elf", "Grizzly Bears", "Myr Golem"]);
 });
 
 test("manaCurve skips lands and folds 7+", () => {
