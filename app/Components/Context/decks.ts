@@ -28,6 +28,11 @@ export function renameDeck(id: string, name: string) {
     update(id, (d) => ({ ...d, name }))
 }
 
+// "" or undefined means no format
+export function setDeckFormat(id: string, format: string | undefined) {
+    update(id, (d) => ({ ...d, format: format || undefined }))
+}
+
 export function deleteDeck(id: string) {
     decks.list = decks.list.filter((d) => d.id !== id)
     if (decks.current === id) decks.current = undefined

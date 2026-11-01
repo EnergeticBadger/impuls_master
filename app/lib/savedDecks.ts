@@ -2,7 +2,7 @@
 
 import type { Deck, DeckEntry } from "./deck.ts";
 
-export type SavedDeck = { id: string; name: string; updated: number; deck: Deck }
+export type SavedDeck = { id: string; name: string; updated: number; deck: Deck; format?: string }
 
 export const newDeck = (name: string, now: number, id: string): SavedDeck =>
     ({ id, name, updated: now, deck: { main: [], side: [] } })
@@ -31,12 +31,14 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
         const deck = isRecord(item.deck) ? item.deck : {}
         const saved: Deck = { main: entriesOf(deck.main), side: entriesOf(deck.side) }
         if (isEntry(deck.commander)) saved.commander = deck.commander
-        decks.push({
+        const read: SavedDeck = {
             id: item.id,
             name: item.name,
             updated: typeof item.updated === "number" ? item.updated : 0,
             deck: saved,
-        })
+        }
+        if (typeof item.format === "string") read.format = item.format
+        decks.push(read)
     }
     return decks
 }
