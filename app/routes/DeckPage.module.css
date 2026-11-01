@@ -27,6 +27,40 @@
   font-weight: 700;
 }
 
+.quickAdd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.quickInput {
+  box-sizing: border-box;
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.quickZone {
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.quickMessage {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .totals {
   display: flex;
   flex-wrap: wrap;

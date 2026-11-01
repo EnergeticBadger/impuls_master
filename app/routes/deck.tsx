@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
-import { cardPath } from "~/lib/card";
+import { cardByName, cardPath } from "~/lib/card";
+import { quickAddLine } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
@@ -38,6 +39,11 @@ export default function DeckPage() {
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
   const [withSide, setWithSide] = useState(false)
+  const [quickText, setQuickText] = useState("")
+  const [quickZone, setQuickZone] = useState<DeckZone>("main")
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickMessage, setQuickMessage] = useState<string>()
+  const quickInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
 
@@ -64,6 +70,26 @@ export default function DeckPage() {
     const trimmed = name?.trim()
     if (trimmed && trimmed !== saved.name) renameDeck(id, trimmed)
     setName(undefined)
+  }
+
+  const quickAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (quickBusy) return
+    const line = quickAddLine(quickText)
+    if (!line) { setQuickMessage("Type a card name, like 4 Lightning Bolt."); return }
+    setQuickBusy(true)
+    setQuickMessage(undefined)
+    try {
+      const card = await cardByName(line)
+      if (!card) { setQuickMessage(`No card named ${line.name}.`); return }
+      updateDeck(id, (d) => addCard(d, card, quickZone, line.count))
+      setQuickText("")
+    } catch {
+      setQuickMessage(`No card named ${line.name}.`)
+    } finally {
+      setQuickBusy(false)
+      setTimeout(() => quickInput.current?.focus(), 0)
+    }
   }
 
   const row = (entry: DeckEntry, section: Section) => {
@@ -130,6 +156,27 @@ export default function DeckPage() {
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
           aria-label="Deck name"
         />
+        <form className={styles.quickAdd} onSubmit={quickAdd}>
+          <input
+            ref={quickInput}
+            className={styles.quickInput}
+            value={quickText}
+            onChange={(e) => setQuickText(e.target.value)}
+            placeholder="4 Lightning Bolt"
+            aria-label="Add a card"
+          />
+          <select
+            className={styles.quickZone}
+            value={quickZone}
+            onChange={(e) => setQuickZone(e.target.value as DeckZone)}
+            aria-label="Add to"
+          >
+            <option value="main">Main</option>
+            <option value="side">Sideboard</option>
+          </select>
+          <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
+          {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
+        </form>
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
