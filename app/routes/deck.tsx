@@ -6,6 +6,7 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { cardPath } from "~/lib/card";
+import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
@@ -36,6 +37,7 @@ export default function DeckPage() {
   const [ready, setReady] = useState(false)
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
+  const [withSide, setWithSide] = useState(false)
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
 
@@ -114,6 +116,7 @@ export default function DeckPage() {
 
   const groups = groupByType({ ...deck, commander: undefined })
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
+  const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
 
   return (
     <div>
@@ -152,6 +155,26 @@ export default function DeckPage() {
           <section>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
             <ul className={styles.rows}>{deck.side.map((e) => row(e, "side"))}</ul>
+          </section>
+        )}
+
+        {buyEntries.length > 0 && (
+          <section>
+            {deck.side.length > 0 && (
+              <label>
+                <input type="checkbox" checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
+                {" "}Include the sideboard
+              </label>
+            )}
+            <p>
+              <a
+                className={styles.link}
+                href={tcgplayerDeckLink(buyEntries.map((e) => ({ count: e.count, name: e.card.name })))}
+                target="_blank"
+                rel="noopener sponsored"
+              >Buy this deck on TCGplayer</a>
+            </p>
+            <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
           </section>
         )}
       </main>
