@@ -175,6 +175,17 @@ export function bucketHeader(bytes: Uint8Array): { entries: BucketEntry[]; body:
     return { entries: JSON.parse(decoder.decode(bytes.subarray(0, newline))), body: newline + 1 };
 }
 
+// the entry for a card's full name ("Fire // Ice"); front-face-only names don't match, callers fall back
+export function findEntryByName(entries: BucketEntry[], name: string): BucketEntry | undefined {
+    const wanted = slug(name);
+    return entries.find((e) => e[0] === wanted);
+}
+
+// the bucket a card's full name lives in
+export function bucketOfName(name: string) {
+    return bucketOf(slug(name));
+}
+
 // parses one record out of a bucket file, leaving the rest of the file alone
 export function readRecord(bytes: Uint8Array, header: { body: number }, entry: BucketEntry): CardRecord {
     const start = header.body + entry[2];
