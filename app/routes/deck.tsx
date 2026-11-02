@@ -7,7 +7,7 @@ import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { cardPath } from "~/lib/card";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, deckPrice, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -118,6 +118,8 @@ export default function DeckPage() {
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
   const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
 
+  const price = deckPrice(deck, { side: withSide, currency: "usd" })
+
   return (
     <div>
       <SiteHeader />
@@ -174,6 +176,13 @@ export default function DeckPage() {
                 rel="noopener sponsored"
               >Buy this deck on TCGplayer</a>
             </p>
+            <p>
+              About ${price.total.toFixed(2)}
+              {price.missing.length > 0 && (
+                <>{" "}<span title={price.missing.join(", ")}>({price.missing.length} {price.missing.length === 1 ? "card has" : "cards have"} no price)</span></>
+              )}
+            </p>
+            <p className={styles.empty}>An estimate from the prices of the printings in your deck.</p>
             <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
           </section>
         )}

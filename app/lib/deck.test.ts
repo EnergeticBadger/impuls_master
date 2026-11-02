@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { addCard, colorCounts, copiesIn, deckPrice, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -164,4 +164,24 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
+
+test("deckPrice multiplies by count, falls back to foil, lists unpriced cards once", () => {
+    const a = priced("A", { usd: "1.10", usd_foil: null });
+    const b = priced("B", { usd: null, usd_foil: "2.50" });
+    const c = priced("C", { usd: null, usd_foil: null });
+    let deck: Deck = addCard(addCard(addCard({ main: [], side: [] }, a, "main", 3), b), c);
+    deck = addCard(deck, c, "side", 2);
+    deck = addCard(deck, a, "side", 1);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 5.8, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: true, currency: "usd" }), { total: 6.9, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }).missing, ["A", "B", "C"]);
+});
+
+test("deckPrice counts the commander; an empty deck is free", () => {
+    const a = priced("A", { usd: "0.10" });
+    assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
+    assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
 });

@@ -103,6 +103,25 @@ export function colorCounts(deck: Deck): Record<"W" | "U" | "B" | "R" | "G" | "C
     return counts
 }
 
+// a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
+// no price are listed by name (once) and add nothing
+export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
+    const entries = [...cardsOf(deck), ...(opts.side ? deck.side : [])]
+    let cents = 0
+    const missing: string[] = []
+    for (const { card, count } of entries) {
+        const prices = card.prices as Partial<Record<string, string | null>> | undefined
+        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil : undefined)
+        const price = raw == null ? NaN : parseFloat(raw)
+        if (Number.isNaN(price)) {
+            if (!missing.includes(card.name)) missing.push(card.name)
+            continue
+        }
+        cents += Math.round(price * 100) * count
+    }
+    return { total: cents / 100, missing }
+}
+
 const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
 
 // most copies the rules let a deck hold: 4 normally, no limit for basic lands and "any number" cards,
