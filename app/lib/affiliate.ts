@@ -47,6 +47,14 @@ export function buyLink(store: Store, link: string, ids = AFFILIATE_IDS): string
     return url.toString();
 }
 
+// a whole deck on TCGplayer's mass entry page: "count name" per card (front face), joined by "||"
+export function tcgplayerDeckLink(lines: { count: number; name: string }[], ids = AFFILIATE_IDS): string {
+    const url = new URL("https://www.tcgplayer.com/massentry");
+    url.searchParams.set("productline", "Magic");
+    url.searchParams.set("c", lines.map((l) => `${l.count} ${l.name.split(" // ")[0]}`).join("||"));
+    return buyLink("tcgplayer", url.toString(), ids);
+}
+
 // Card Kingdom isn't in Scryfall's data, so its link is a search by the front face's name
 export function cardKingdomLink(name: string, ids = AFFILIATE_IDS): string {
     const url = new URL("https://www.cardkingdom.com/catalog/search");

@@ -2,7 +2,7 @@
 // npm run test-affiliate. Offline; exit code 1 on any failure.
 
 import assert from "node:assert/strict";
-import { buyLink, cardKingdomLink, AFFILIATE_IDS } from "../app/lib/affiliate.ts";
+import { buyLink, cardKingdomLink, tcgplayerDeckLink, AFFILIATE_IDS } from "../app/lib/affiliate.ts";
 
 const none = { tcgplayer: "", cardmarket: "", cardhoarder: "", cardkingdom: "" };
 const ours = { tcgplayer: "111/222/333", cardmarket: "impulse", cardhoarder: "impulse", cardkingdom: "impulse" };
@@ -66,6 +66,21 @@ check("card kingdom searches the front face, with our partner id when set", () =
     assert.equal(plain.searchParams.get("filter[name]"), "Delver of Secrets");
     assert.equal(plain.searchParams.get("partner"), null);
     assert.equal(new URL(cardKingdomLink("Opt", ours)).searchParams.get("partner"), "impulse");
+});
+
+const DECK = [{ count: 4, name: "Opt" }, { count: 1, name: "Delver of Secrets // Insectile Aberration" }];
+check("deck link, no id: plain mass entry URL with front-face names", () => {
+    const out = new URL(tcgplayerDeckLink(DECK, none));
+    assert.equal(out.origin + out.pathname, "https://www.tcgplayer.com/massentry");
+    assert.equal(out.searchParams.get("productline"), "Magic");
+    assert.equal(out.searchParams.get("c"), "4 Opt||1 Delver of Secrets");
+});
+check("deck link, our id: partner link with the mass entry URL in u=", () => {
+    const out = new URL(tcgplayerDeckLink(DECK, ours));
+    assert.equal(out.pathname, "/c/111/222/333");
+    const target = new URL(out.searchParams.get("u") ?? "");
+    assert.equal(target.origin + target.pathname, "https://www.tcgplayer.com/massentry");
+    assert.equal(target.searchParams.get("c"), "4 Opt||1 Delver of Secrets");
 });
 
 console.log(failed ? `\n${failed} failed` : "\nall passed");
