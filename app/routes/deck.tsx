@@ -7,7 +7,8 @@ import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { cardPath } from "~/lib/card";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { canUndo, record, undo, type History } from "~/lib/history";
+import { addCard,groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -38,10 +39,15 @@ export default function DeckPage() {
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
   const [withSide, setWithSide] = useState(false)
+  const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
+  const [status, setStatus] = useState("")
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
+  useEffect(() => { setStatus("") }, [id])
 
   const saved = decks.list.find((d) => d.id === id)
+  // opening another deck starts a fresh history
+  const earlier = past.id === id ? past.past : []
 
   useEffect(() => { if (ready && saved) setCurrentDeck(id) }, [ready, saved?.id, id])
 
@@ -60,6 +66,22 @@ export default function DeckPage() {
   }
 
   const deck = saved.deck
+  const history: History<Deck> = { past: earlier, present: deck }
+
+  // every change made on this page goes through here, so it can be undone
+  const change = (fn: (d: Deck) => Deck) => {
+    setPast({ id, past: record(history, fn(deck)).past })
+    setStatus("")
+    updateDeck(id, fn)
+  }
+  const undoChange = () => {
+    if (!canUndo(history)) return
+    const previous = undo(history)
+    setPast({ id, past: previous.past })
+    updateDeck(id, () => previous.present)
+    setStatus("Undone")
+  }
+
   const commit = () => {
     const trimmed = name?.trim()
     if (trimmed && trimmed !== saved.name) renameDeck(id, trimmed)
@@ -99,15 +121,19 @@ export default function DeckPage() {
           {section !== "commander" && (
             <>
               <button type="button" className={styles.step} aria-label={`Remove one ${entry.card.name}`}
-                onClick={() => updateDeck(id, (d) => removeCard(d, entry.card, section))}>−</button>
+                onClick={() => change((d) => removeCard(d, entry.card, section))}>−</button>
               <button type="button" className={styles.step} aria-label={`Add one ${entry.card.name}`}
-                onClick={() => updateDeck(id, (d) => addCard(d, entry.card, section))}>+</button>
+                onClick={() => change((d) => addCard(d, entry.card, section))}>+</button>
             </>
           )}
           <button type="button" className={styles.button}
-            onClick={() => updateDeck(id, (d) => move(d, entry, section))}>
+            onClick={() => change((d) => move(d, entry, section))}>
             {section === "main" ? "To sideboard" : "To main"}
           </button>
+          {section !== "commander" && (
+            <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
+              onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
+          )}
         </div>
         {preview === key && image && <img className={styles.preview} src={image} alt={entry.card.name} width={146} height={204} />}
       </li>
@@ -133,8 +159,10 @@ export default function DeckPage() {
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
+          <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
+        <p role="status" className={styles.empty}>{status}</p>
 
         {deck.commander && (
           <section>
