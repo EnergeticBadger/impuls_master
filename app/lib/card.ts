@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Ruling, ScryfallCard } from "~/types";
 import { scryfallGet } from "./scryfall";
-import { SITE_URL, bucketHeader, bucketOf, oracleOf, paths, pickPrinting, printingCard, readRecord, slug, type CardRecord } from "./carddata";
+import { SITE_URL, bucketHeader, bucketOf, bucketOfName, findEntryByName, oracleOf, paths, pickPrinting, printingCard, readRecord, slug, type CardRecord } from "./carddata";
 
 export { SITE_URL, slug };
 
@@ -84,14 +84,15 @@ type NameLine = { name: string; set?: string; number?: string }
 // a card by name (and set and collector number) for deck import: the site's card data first, Scryfall when
 // the data files aren't there (local dev); undefined when no such card
 export async function cardByName(line: NameLine): Promise<ScryfallCard | undefined> {
-    const name = slug(line.name.split(" // ")[0])
-    const bytes = await dataFile(paths.bucket(bucketOf(name)))
+    const bytes = await dataFile(paths.bucket(bucketOfName(line.name)))
     if (bytes) {
         const header = bucketHeader(bytes)
-        const entry = header.entries.find((e) => e[0] === name)
-        if (!entry) return undefined
-        const record = readRecord(bytes, header, entry)
-        return printingCard(record, pickPrinting(record, line.set, line.number))
+        const entry = findEntryByName(header.entries, line.name)
+        if (entry) {
+            const record = readRecord(bytes, header, entry)
+            return printingCard(record, pickPrinting(record, line.set, line.number))
+        }
+        // front-face-only names fall through to Scryfall, which matches face names
     }
     try {
         const query = `exact=${encodeURIComponent(line.name)}${line.set ? `&set=${encodeURIComponent(line.set)}` : ""}`
