@@ -24,8 +24,14 @@ for (const style of ["text", "arena", "mtgo"] as const) {
         const parsed = parseDeckList(formatDeckList(deck, style));
         assert.deepEqual(parsed.problems, []);
         assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
-        assert.deepEqual(names(parsed.side), ["3 Negate"]);
-        assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+        if (style === "mtgo") {
+            // MTGO has no commander zone: the commander comes back as a sideboard line
+            assert.deepEqual(names(parsed.side), ["1 Atraxa, Praetors' Voice", "3 Negate"]);
+            assert.equal(parsed.commander, undefined);
+        } else {
+            assert.deepEqual(names(parsed.side), ["3 Negate"]);
+            assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+        }
     });
 
     test(`${style}: reads back a deck with only a sideboard`, () => {
@@ -34,6 +40,25 @@ for (const style of ["text", "arena", "mtgo"] as const) {
         assert.equal(parsed.main.length, 0);
     });
 }
+
+test("mtgo: a commander deck has no headers and the commander after the blank line", () => {
+    const commanderDeck: Deck = {
+        main: [
+            { card: card("Sol Ring", "c16", "1"), count: 1 },
+            { card: card("Command Tower", "c16", "2"), count: 1 },
+            { card: card("Forest", "c16", "3"), count: 30 },
+        ],
+        side: [],
+        commander: { card: card("Atraxa, Praetors' Voice", "c16", "28"), count: 1 },
+    };
+    const text = formatDeckList(commanderDeck, "mtgo");
+    assert.equal(text, "1 Sol Ring\n1 Command Tower\n30 Forest\n\n1 Atraxa, Praetors' Voice\n");
+    assert.doesNotMatch(text, /^(Commander|Deck|Sideboard)$/m);
+    const parsed = parseDeckList(text);
+    assert.deepEqual(parsed.problems, []);
+    assert.equal(parsed.main.reduce((n, l) => n + l.count, 0), 32);
+    assert.deepEqual(names(parsed.side), ["1 Atraxa, Praetors' Voice"]);
+});
 
 test("arena writes set and number, and they read back", () => {
     const text = formatDeckList(deck, "arena");

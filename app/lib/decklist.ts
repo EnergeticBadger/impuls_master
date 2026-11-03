@@ -103,6 +103,13 @@ export function formatDeckList(deck: Deck, style: DeckListStyle): string {
     const blocks: string[][] = [];
     const lines = (entries: DeckEntry[]) => entries.map(e => write(e, style));
 
+    if (style === "mtgo" && deck.main.length > 0) {
+        // MTGO has no section headers: a blank line starts the sideboard, and the commander lives there
+        const sideLines = lines([...(deck.commander ? [deck.commander] : []), ...deck.side]);
+        const out = [lines(deck.main).join("\n"), ...(sideLines.length > 0 ? [sideLines.join("\n")] : [])];
+        return out.join("\n\n") + "\n";
+    }
+
     if (deck.commander) blocks.push(["Commander", ...lines([deck.commander])]);
     if (deck.main.length > 0 || (style === "arena" && deck.commander)) {
         // Arena names the main deck when something else comes before it; MTGO and plain text don't
