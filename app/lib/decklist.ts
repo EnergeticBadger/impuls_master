@@ -7,13 +7,14 @@ export type Line = { count: number; name: string; set?: string; number?: string 
 export type DeckListStyle = "text" | "arena" | "mtgo"
 
 export type Zone = "main" | "side" | "commander"
+type ParseZone = Zone | "companion"
 
 // "4 Opt", "4x Opt", "4 Opt (XLN) 65"; an "SB:" prefix (MTGO) is dealt with before this
 const LINE = /^(\d+)\s*[xX]?\s+(.+?)(?:\s+\(([A-Za-z0-9]+)\)(?:\s+(\S+))?)?$/;
 
-const HEADERS: Record<string, Zone> = {
+const HEADERS: Record<string, ParseZone> = {
     deck: "main", maindeck: "main", main: "main",
-    sideboard: "side", side: "side", companion: "side",
+    sideboard: "side", side: "side", companion: "companion",
     commander: "commander",
 };
 
@@ -21,8 +22,9 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
     const main: Line[] = [];
     const side: Line[] = [];
     let commander: Line | undefined;
+    const companions: Line[] = [];
     const problems: string[] = [];
-    let zone: Zone = "main";
+    let zone: ParseZone = "main";
 
     text.split(/\r?\n/).forEach((raw, i) => {
         let line = raw.trim();
@@ -59,10 +61,17 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
         if (target === "commander") {
             if (commander) problems.push(`Line ${i + 1}: there is already a commander, "${raw.trim()}" is extra.`);
             else commander = entry;
+        } else if (target === "companion") {
+            companions.push(entry);
         } else {
             (target === "side" ? side : main).push(entry);
         }
     });
+
+    // Arena lists the companion again in the sideboard: only add it when the sideboard doesn't have it
+    for (const c of companions) {
+        if (!side.some(s => s.name.toLowerCase() === c.name.toLowerCase())) side.push(c);
+    }
 
     return commander ? { main, side, commander, problems } : { main, side, problems };
 }
@@ -80,7 +89,10 @@ export function deckFromLines(found: FoundLine[]): Deck {
 }
 
 function write(entry: DeckEntry, style: DeckListStyle): string {
-    const name = entry.card.name;
+    const card = entry.card;
+    // Arena and MTGO list double-faced cards by their front face; split cards keep the full name
+    const frontOnly = style !== "text" && ["transform", "modal_dfc", "adventure", "flip"].includes(card.layout);
+    const name = frontOnly && card.card_faces?.[0]?.name ? card.card_faces[0].name : card.name;
     if (style === "arena" && entry.card.set && entry.card.collector_number) {
         return `${entry.count} ${name} (${entry.card.set.toUpperCase()}) ${entry.card.collector_number}`;
     }
