@@ -116,3 +116,34 @@ export function formatDeckList(deck: Deck, style: DeckListStyle): string {
     }
     return blocks.map(b => b.join("\n")).join("\n\n") + (blocks.length > 0 ? "\n" : "");
 }
+
+// ---- deck links: the deck rides in the URL hash, so it never reaches our Worker ----
+
+function toBase64Url(text: string): string {
+    let binary = "";
+    for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(encoded: string): string {
+    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
+}
+
+export function deckLinkHash(name: string, deck: Deck): string {
+    return `#deck=${toBase64Url(JSON.stringify({ n: name, l: formatDeckList(deck, "text") }))}`;
+}
+
+export function readDeckLinkHash(hash: string): { name: string; text: string } | undefined {
+    const m = /^#?deck=([A-Za-z0-9_-]+)$/.exec(hash);
+    if (!m) return undefined;
+    try {
+        const data: unknown = JSON.parse(fromBase64Url(m[1]));
+        if (typeof data !== "object" || data === null) return undefined;
+        const { n, l } = data as { n?: unknown; l?: unknown };
+        if (typeof n !== "string" || typeof l !== "string") return undefined;
+        return { name: n, text: l };
+    } catch {
+        return undefined;
+    }
+}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { deckFromLines, formatDeckList, parseDeckList, type Line } from "./decklist.ts";
+import { deckFromLines, deckLinkHash, formatDeckList, parseDeckList, readDeckLinkHash, type Line } from "./decklist.ts";
 
 const card = (name: string, set: string, collector_number: string): ScryfallCard =>
     ({ name, set, collector_number }) as unknown as ScryfallCard;
@@ -164,4 +164,23 @@ test("deckFromLines sorts lines into zones and adds the counts of a card named t
 test("an empty list parses to nothing and writes nothing", () => {
     assert.deepEqual(parseDeckList(""), { main: [], side: [], problems: [] });
     assert.equal(formatDeckList({ main: [], side: [] }, "text"), "");
+});
+
+test("deck link: round trips a non-ASCII name and a commander", () => {
+    const hash = deckLinkHash("Æther Vial deck", deck);
+    assert.match(hash, /^#deck=[A-Za-z0-9_-]+$/);
+    const back = readDeckLinkHash(hash);
+    assert.equal(back?.name, "Æther Vial deck");
+    assert.equal(back?.text, formatDeckList(deck, "text"));
+    const parsed = parseDeckList(back?.text ?? "");
+    assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+    assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
+});
+
+test("deck link: garbage gives undefined", () => {
+    const enc = (v: unknown) => `#deck=${Buffer.from(JSON.stringify(v)).toString("base64url")}`;
+    for (const hash of ["", "#", "#deck=", "#other=abc", "#deck=!!!", "#deck=a", "#deck=bm90IGpzb24",
+        enc({ n: "x" }), enc({ l: "1 Opt" }), enc({ n: 1, l: "1 Opt" }), enc(null), enc("str")]) {
+        assert.equal(readDeckLinkHash(hash), undefined, hash);
+    }
 });
