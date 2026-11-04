@@ -8,7 +8,7 @@ import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Comp
 import { cardPath } from "~/lib/card";
 import { formatDeckList, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, groupByType, manaCostOf, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -20,8 +20,6 @@ export function meta() {
 type Section = "main" | "side" | "commander"
 
 const total = (entries: DeckEntry[]) => entries.reduce((n, e) => n + e.count, 0)
-
-const manaCostOf = (entry: DeckEntry) => entry.card.mana_cost ?? entry.card.card_faces?.map(f => f.mana_cost).filter(Boolean).join(" // ") ?? ""
 
 const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.card.card_faces?.[0]?.image_uris?.small
 
@@ -143,7 +141,7 @@ export default function DeckPage() {
   const row = (entry: DeckEntry, section: Section) => {
     const key = `${section}:${entry.card.name}`
     const image = smallImage(entry)
-    const cost = manaCostOf(entry)
+    const cost = manaCostOf(entry.card)
     return (
       <li key={key} className={styles.row}>
         <div className={styles.line}>
