@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { printingCard, type CardRecord, type Printing } from "./carddata.ts";
+import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, type Deck } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -164,4 +165,35 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+// ---- manaCostOf, on cards built the way the site builds them from its card data ----
+
+const printing: Printing = { id: "p1", set: "tst", set_name: "Test", number: "1", rarity: "common", released: "2020-01-01" };
+const fromData = (name: string, layout: string, extra: Partial<CardRecord> = {}): ScryfallCard =>
+    printingCard({
+        oracle_id: `oracle-${name}`, name, slug: name.toLowerCase(), layout, cmc: 0, type_line: "Card",
+        color_identity: [], keywords: [], legalities: {}, rulings: [], prints: [printing], main: 0,
+        ...extra,
+    }, printing);
+
+test("manaCostOf reads the faces of double-faced cards from card data", () => {
+    const delver = fromData("Delver of Secrets // Insectile Aberration", "transform", {
+        faces: [{ name: "Delver of Secrets", mana_cost: "{U}" }, { name: "Insectile Aberration", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(delver), "{U}");
+    const valakut = fromData("Valakut Awakening // Valakut Stoneforge", "modal_dfc", {
+        faces: [{ name: "Valakut Awakening", mana_cost: "{2}{R}{R}" }, { name: "Valakut Stoneforge", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(valakut), "{2}{R}{R}");
+});
+
+test("manaCostOf keeps a split card's own cost, and is empty for lands", () => {
+    const fire = fromData("Fire // Ice", "split", { mana_cost: "{1}{R} // {1}{U}" });
+    assert.equal(manaCostOf(fire), "{1}{R} // {1}{U}");
+    assert.equal(manaCostOf(fromData("Forest", "normal")), "");
+});
+
+test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
+    assert.equal(manaCostOf(delverApi), "{U}");
 });
