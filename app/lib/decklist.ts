@@ -100,7 +100,9 @@ export function deckFromLines(found: FoundLine[]): Deck {
 function write(entry: DeckEntry, style: DeckListStyle): string {
     const card = entry.card;
     // Arena and MTGO list double-faced cards by their front face; split cards keep the full name
-    const frontOnly = style !== "text" && ["transform", "modal_dfc", "adventure", "flip"].includes(card.layout);
+    // reversible cards ("Propaganda // Propaganda") are known by their one face name everywhere, text included
+    const frontOnly = card.layout === "reversible_card"
+        || (style !== "text" && ["transform", "modal_dfc", "adventure", "flip"].includes(card.layout));
     const name = frontOnly && card.card_faces?.[0]?.name ? card.card_faces[0].name : card.name;
     if (style === "arena" && entry.card.set && entry.card.collector_number) {
         return `${entry.count} ${name} (${entry.card.set.toUpperCase()}) ${entry.card.collector_number}`;
