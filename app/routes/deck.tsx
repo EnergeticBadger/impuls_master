@@ -122,6 +122,12 @@ export default function DeckPage() {
 
   useEffect(() => { if (ready && saved) setCurrentDeck(id) }, [ready, saved?.id, id])
 
+  // meta() can't see localStorage, so the tab title follows the deck name once it's loaded
+  useEffect(() => {
+    if (!ready) return
+    document.title = saved ? `${saved.name} | Impulse Caster` : "No deck here | Impulse Caster"
+  }, [ready, saved?.name])
+
   if (!ready) return <div><SiteHeader /></div>
 
   if (!saved) {
