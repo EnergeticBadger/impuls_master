@@ -262,7 +262,7 @@ export default function DeckPage() {
           </section>
         )}
 
-        {groups.length === 0 && <p className={styles.empty}>No cards yet. Add some from a card page.</p>}
+        {groups.length === 0 && <p className={styles.empty}>No cards yet. Add some from search or a card page.</p>}
         {groups.map((g) => (
           <section key={g.group}>
             <h2 className={styles.heading}>{g.group} ({total(g.entries)})</h2>
