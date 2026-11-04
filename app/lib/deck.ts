@@ -11,7 +11,14 @@ export type TypeGroup = (typeof TYPE_GROUPS)[number]
 
 export const COLORS = ["W", "U", "B", "R", "G"] as const
 
-export const emptyDeck = (): Deck => ({ main: [], side: [] })
+// The mana cost to show. Scryfall leaves it off transform and modal cards, and our card data turns that
+// into "", so an empty top-level cost falls through to the faces' costs.
+export function manaCostOf(card: ScryfallCard): string {
+  if (card.mana_cost) return card.mana_cost
+  return (card.card_faces ?? []).map((f) => f.mana_cost).filter(Boolean).join(" // ")
+}
+
+export const emptyDeck =(): Deck => ({ main: [], side: [] })
 
 // copies are told apart by name, so any printing of a card counts as the same card
 function addTo(entries: DeckEntry[], card: ScryfallCard, count: number): DeckEntry[] {

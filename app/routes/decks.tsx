@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
-import { createDeck, createDeckWith, decks, deleteDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
+import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
 import { cardsByName } from "~/lib/card";
 import { emptyDeck, type Deck } from "~/lib/deck";
 import { deckFromLines, parseDeckList, type Line, type Zone } from "~/lib/decklist";
@@ -175,6 +175,7 @@ export default function Decks() {
                         ) : (
                           <>
                             <button type="button" className={styles.button} onClick={() => setRenaming({ id: d.id, name: d.name })}>Rename</button>
+                            <button type="button" className={styles.button} onClick={() => duplicateDeck(d.id)}>Copy</button>
                             <button type="button" className={styles.button} onClick={() => setDeleting(d.id)}>Delete</button>
                           </>
                         )}

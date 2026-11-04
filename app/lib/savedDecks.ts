@@ -7,6 +7,15 @@ export type SavedDeck = { id: string; name: string; updated: number; deck: Deck 
 export const newDeck = (name: string, now: number, id: string): SavedDeck =>
     ({ id, name, updated: now, deck: { main: [], side: [] } })
 
+// a copy of a saved deck under a new id and time, named "<name> (copy)"; the lists are new arrays and entries,
+// so changing the copy can't change the original
+export function copyDeck(saved: SavedDeck, now: number, id: string): SavedDeck {
+    const copyEntries = (entries: DeckEntry[]): DeckEntry[] => entries.map((e) => ({ ...e }))
+    const deck: Deck = { main: copyEntries(saved.deck.main), side: copyEntries(saved.deck.side) }
+    if (saved.deck.commander) deck.commander = { ...saved.deck.commander }
+    return { id, name: `${saved.name} (copy)`, updated: now, deck }
+}
+
 // the deck being built: the current one, or when that's gone (deleted, stale saved id) the most recently updated
 export function deckToBuild<T extends { id: string; updated: number }>(list: readonly T[], current?: string): T | undefined {
     return list.find((d) => d.id === current) ?? list.reduce<T | undefined>((best, d) => (!best || d.updated > best.updated ? d : best), undefined)
