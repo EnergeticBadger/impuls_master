@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { deckFromLines, formatDeckList, parseDeckList, type Line } from "./decklist.ts";
+import { deckFromLines, formatDeckList, parseDeckList, quickAddLine, type Line } from "./decklist.ts";
+
+test("quickAddLine reads one typed line", () => {
+  assert.deepEqual(quickAddLine("4 Opt"), { count: 4, name: "Opt" });
+  assert.deepEqual(quickAddLine("Opt"), { count: 1, name: "Opt" });
+  assert.deepEqual(quickAddLine("2x Opt"), { count: 2, name: "Opt" });
+  assert.deepEqual(quickAddLine("1 Opt (M19) 65"), { count: 1, name: "Opt", set: "m19", number: "65" });
+  assert.equal(quickAddLine(""), undefined);
+  assert.equal(quickAddLine("   "), undefined);
+});
 
 const card = (name: string, set: string, collector_number: string): ScryfallCard =>
     ({ name, set, collector_number }) as unknown as ScryfallCard;
