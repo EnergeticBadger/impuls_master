@@ -68,6 +68,12 @@
   min-width: 0;
 }
 
+/* In the column layout a flex basis would set the height, so drop it. */
+.importer .input {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
 .textarea {
   box-sizing: border-box;
   width: 100%;
