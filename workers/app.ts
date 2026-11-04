@@ -59,7 +59,13 @@ async function cachedPage(request: Request, env: Env, ctx: ExecutionContext, ren
 
 export default {
 	async fetch(request, env, ctx) {
-		const { pathname } = new URL(request.url);
+		const url = new URL(request.url);
+		// one host for every page: www served the whole site too, so crawlers fetched each page twice
+		if (url.hostname.startsWith("www.")) {
+			url.hostname = url.hostname.slice(4);
+			return Response.redirect(url.toString(), 301);
+		}
+		const { pathname } = url;
 		if (pathname.startsWith(SEARCH_PREFIX)) {
 			return handleSearch(request, env, ctx);
 		}
