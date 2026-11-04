@@ -7,6 +7,15 @@ export type SavedDeck = { id: string; name: string; updated: number; deck: Deck 
 export const newDeck = (name: string, now: number, id: string): SavedDeck =>
     ({ id, name, updated: now, deck: { main: [], side: [] } })
 
+// a copy of a saved deck under a new id and time, named "<name> (copy)"; the lists are new arrays and entries,
+// so changing the copy can't change the original
+export function copyDeck(saved: SavedDeck, now: number, id: string): SavedDeck {
+    const copyEntries = (entries: DeckEntry[]): DeckEntry[] => entries.map((e) => ({ ...e }))
+    const deck: Deck = { main: copyEntries(saved.deck.main), side: copyEntries(saved.deck.side) }
+    if (saved.deck.commander) deck.commander = { ...saved.deck.commander }
+    return { id, name: `${saved.name} (copy)`, updated: now, deck }
+}
+
 // the deck being built: the current one, or when that's gone (deleted, stale saved id) the most recently updated
 export function deckToBuild<T extends { id: string; updated: number }>(list: readonly T[], current?: string): T | undefined {
     return list.find((d) => d.id === current) ?? list.reduce<T | undefined>((best, d) => (!best || d.updated > best.updated ? d : best), undefined)
@@ -39,4 +48,25 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
         })
     }
     return decks
+}
+
+// what a tab holds after another tab saved: that tab's decks, keeping our `current` if that deck still exists
+export function reloadFromStorage(newValue: string | null, current?: string): { list: SavedDeck[]; current?: string } {
+    const saved: unknown = JSON.parse(newValue ?? 'null')
+    const list = readSavedDecks(isRecord(saved) ? saved.list : undefined)
+    return { list, current: list.some((d) => d.id === current) ? current : undefined }
+}
+
+// Lets a store skip the one write its own storage-driven reload triggers, so tabs never echo each other's saves.
+// Call skipNext() when a reload changes the store; shouldWrite() answers for each change notification after.
+export function writeGate() {
+    let skip = false
+    return {
+        skipNext() { skip = true },
+        shouldWrite(): boolean {
+            const write = !skip
+            skip = false
+            return write
+        },
+    }
 }

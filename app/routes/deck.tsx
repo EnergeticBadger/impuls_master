@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
-import { cardPath } from "~/lib/card";
+import { SampleHand } from "~/Components/Deck/SampleHand";
+import { cardByName, cardPath } from "~/lib/card";
+import { formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard,groupByType, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, groupByType, manaCostOf, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -21,8 +23,6 @@ type Section = "main" | "side" | "commander"
 
 const total = (entries: DeckEntry[]) => entries.reduce((n, e) => n + e.count, 0)
 
-const manaCostOf = (entry: DeckEntry) => entry.card.mana_cost ?? entry.card.card_faces?.map(f => f.mana_cost).filter(Boolean).join(" // ") ?? ""
-
 const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.card.card_faces?.[0]?.image_uris?.small
 
 // out of one zone and into the other
@@ -30,6 +30,79 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
   const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
   return addCard(without, entry.card, to, entry.count)
+}
+
+const EXPORT_BUTTONS: { style: DeckListStyle; label: string }[] = [
+  { style: "text", label: "Copy as text" },
+  { style: "arena", label: "Copy for Arena" },
+  { style: "mtgo", label: "Copy for MTGO" },
+]
+
+// a file name from the deck name: letters, digits, dashes and underscores only
+const fileNameOf = (name: string) => `${name.trim().replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-") || "deck"}.txt`
+
+// the Export section: copy the list in each style, or download the MTGO one. Holds its own state and
+// hooks, so it stays out of DeckPage's early returns.
+function ExportSection({ deck, name }: { deck: Deck; name: string }) {
+  const [copied, setCopied] = useState<DeckListStyle>()
+  const [fallback, setFallback] = useState<{ style: DeckListStyle; text: string }>()
+  const [url, setUrl] = useState<string>()
+
+  const mtgoText = formatDeckList(deck, "mtgo")
+
+  // the download is a Blob URL, made for the current list and released when it changes
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(new Blob([mtgoText], { type: "text/plain" }))
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [mtgoText])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(undefined), 2000) // "Copied" shows for 2 seconds
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  async function copy(style: DeckListStyle) {
+    const text = formatDeckList(deck, style)
+    try {
+      await navigator.clipboard.writeText(text)
+      setFallback(undefined)
+      setCopied(style)
+    } catch (err) {
+      console.error("Failed to copy: ", err)
+      setFallback({ style, text })
+    }
+  }
+
+  return (
+    <section>
+      <h2 className={styles.heading}>Export</h2>
+      <div className={styles.buttons}>
+        {EXPORT_BUTTONS.map(({ style, label }) => (
+          <button key={style} type="button" className={styles.button} onClick={() => copy(style)}>
+            {copied === style ? "Copied" : label}
+          </button>
+        ))}
+        {url && (
+          <a href={url} download={fileNameOf(name)} className={styles.button}>Download .txt</a>
+        )}
+      </div>
+      {fallback && (
+        <div className={styles.fallback}>
+          <p>Copying didn't work. Select the list below and copy it by hand.</p>
+          <textarea
+            className={styles.fallbackText}
+            readOnly
+            value={fallback.text}
+            aria-label={`Deck list, ${EXPORT_BUTTONS.find((b) => b.style === fallback.style)?.label ?? ""}`}
+            onFocus={(e) => e.currentTarget.select()}
+            rows={Math.min(20, fallback.text.split("\n").length + 1)}
+          />
+        </div>
+      )}
+    </section>
+  )
 }
 
 export default function DeckPage() {
@@ -41,6 +114,11 @@ export default function DeckPage() {
   const [withSide, setWithSide] = useState(false)
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
+  const [quickText, setQuickText] = useState("")
+  const [quickZone, setQuickZone] = useState<DeckZone>("main")
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickMessage, setQuickMessage] = useState<string>()
+  const quickInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
   useEffect(() => { setStatus("") }, [id])
@@ -88,10 +166,30 @@ export default function DeckPage() {
     setName(undefined)
   }
 
+  const quickAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (quickBusy) return
+    const line = quickAddLine(quickText)
+    if (!line) { setQuickMessage("Type a card name, like 4 Lightning Bolt."); return }
+    setQuickBusy(true)
+    setQuickMessage(undefined)
+    try {
+      const card = await cardByName(line)
+      if (!card) { setQuickMessage(`No card named ${line.name}.`); return }
+      change((d) => addCard(d, card, quickZone, line.count))
+      setQuickText("")
+    } catch {
+      setQuickMessage(`No card named ${line.name}.`)
+    } finally {
+      setQuickBusy(false)
+      setTimeout(() => quickInput.current?.focus(), 0)
+    }
+  }
+
   const row = (entry: DeckEntry, section: Section) => {
     const key = `${section}:${entry.card.name}`
     const image = smallImage(entry)
-    const cost = manaCostOf(entry)
+    const cost = manaCostOf(entry.card)
     return (
       <li key={key} className={styles.row}>
         <div className={styles.line}>
@@ -156,6 +254,27 @@ export default function DeckPage() {
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
           aria-label="Deck name"
         />
+        <form className={styles.quickAdd} onSubmit={quickAdd}>
+          <input
+            ref={quickInput}
+            className={styles.quickInput}
+            value={quickText}
+            onChange={(e) => setQuickText(e.target.value)}
+            placeholder="4 Lightning Bolt"
+            aria-label="Add a card"
+          />
+          <select
+            className={styles.quickZone}
+            value={quickZone}
+            onChange={(e) => setQuickZone(e.target.value as DeckZone)}
+            aria-label="Add to"
+          >
+            <option value="main">Main</option>
+            <option value="side">Sideboard</option>
+          </select>
+          <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
+          {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
+        </form>
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
@@ -179,12 +298,16 @@ export default function DeckPage() {
           </section>
         ))}
 
+        <SampleHand deck={deck} />
+
         {deck.side.length > 0 && (
           <section>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
             <ul className={styles.rows}>{deck.side.map((e) => row(e, "side"))}</ul>
           </section>
         )}
+
+        <ExportSection deck={deck} name={saved.name} />
 
         {buyEntries.length > 0 && (
           <section>

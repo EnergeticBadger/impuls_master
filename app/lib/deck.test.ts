@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
+import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, type Deck } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -71,6 +72,33 @@ test("copiesIn counts main deck copies by oracle id across printings", () => {
     assert.equal(copiesIn(deck, "bear-oracle"), 1);
     assert.equal(copiesIn(deck, "missing"), 0);
     assert.equal(copiesIn(deck, undefined), 0);
+});
+
+const regularProp = card("Propaganda", "Enchantment", { oracle_id: "prop-oracle" });
+const reversibleProp = card("Propaganda // Propaganda", "Enchantment // Enchantment", {
+    layout: "reversible_card",
+    card_faces: [
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+    ] as unknown as ScryfallCard["card_faces"],
+});
+
+test("reversible cards (oracle id only on their faces) are counted and removed", () => {
+    let deck = empty;
+    for (let i = 0; i < 3; i++) deck = addCard(deck, reversibleProp);
+    assert.equal(copiesIn(deck, oracleOf(reversibleProp)), 3);
+
+    const mixed: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 1 }], side: [] };
+    assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
+    assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
+
+    const less = removeCard(mixed, reversibleProp);
+    // one copy comes out of the first matching entry; the other entry is left alone
+    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+
+    const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
@@ -164,4 +192,35 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+// ---- manaCostOf, on cards built the way the site builds them from its card data ----
+
+const printing: Printing = { id: "p1", set: "tst", set_name: "Test", number: "1", rarity: "common", released: "2020-01-01" };
+const fromData = (name: string, layout: string, extra: Partial<CardRecord> = {}): ScryfallCard =>
+    printingCard({
+        oracle_id: `oracle-${name}`, name, slug: name.toLowerCase(), layout, cmc: 0, type_line: "Card",
+        color_identity: [], keywords: [], legalities: {}, rulings: [], prints: [printing], main: 0,
+        ...extra,
+    }, printing);
+
+test("manaCostOf reads the faces of double-faced cards from card data", () => {
+    const delver = fromData("Delver of Secrets // Insectile Aberration", "transform", {
+        faces: [{ name: "Delver of Secrets", mana_cost: "{U}" }, { name: "Insectile Aberration", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(delver), "{U}");
+    const valakut = fromData("Valakut Awakening // Valakut Stoneforge", "modal_dfc", {
+        faces: [{ name: "Valakut Awakening", mana_cost: "{2}{R}{R}" }, { name: "Valakut Stoneforge", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(valakut), "{2}{R}{R}");
+});
+
+test("manaCostOf keeps a split card's own cost, and is empty for lands", () => {
+    const fire = fromData("Fire // Ice", "split", { mana_cost: "{1}{R} // {1}{U}" });
+    assert.equal(manaCostOf(fire), "{1}{R} // {1}{U}");
+    assert.equal(manaCostOf(fromData("Forest", "normal")), "");
+});
+
+test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
+    assert.equal(manaCostOf(delverApi), "{U}");
 });
