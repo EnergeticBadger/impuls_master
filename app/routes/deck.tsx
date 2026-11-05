@@ -136,6 +136,7 @@ export default function DeckPage() {
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
   useEffect(() => { setStatus("") }, [id])
@@ -170,14 +171,23 @@ export default function DeckPage() {
   const history: History<Deck> = { past: earlier, present: deck }
 
   // every change made on this page goes through here, so it can be undone
+  // (reads the latest deck and past from a ref, so a call after an await isn't working from a stale render)
+  latest.current = { id, deck, past: earlier }
   const change = (fn: (d: Deck) => Deck) => {
-    setPast({ id, past: record(history, fn(deck)).past })
+    const cur = latest.current
+    const next = fn(cur.deck)
+    const recorded = record({ past: cur.past, present: cur.deck }, next).past
+    latest.current = { id: cur.id, deck: next, past: recorded }
+    setPast({ id: cur.id, past: recorded })
     setStatus("")
-    updateDeck(id, fn)
+    updateDeck(cur.id, fn)
   }
   const undoChange = () => {
-    if (!canUndo(history)) return
-    const previous = undo(history)
+    const cur = latest.current
+    const h: History<Deck> = { past: cur.past, present: cur.deck }
+    if (!canUndo(h)) return
+    const previous = undo(h)
+    latest.current = { id: cur.id, deck: previous.present, past: previous.past }
     setPast({ id, past: previous.past })
     updateDeck(id, () => previous.present)
     setStatus("Undone")
