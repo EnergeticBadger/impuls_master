@@ -9,7 +9,7 @@ import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardByName, cardPath } from "~/lib/card";
 import { formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, manaCostOf, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, groupByType, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -275,7 +275,7 @@ export default function DeckPage() {
         {deck.side.length > 0 && (
           <section>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
-            <ul className={styles.rows}>{deck.side.map((e) => row(e, "side"))}</ul>
+            <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
 
