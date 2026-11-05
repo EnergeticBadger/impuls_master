@@ -284,9 +284,9 @@ export default function DeckPage() {
         {buyEntries.length > 0 && (
           <section>
             {deck.side.length > 0 && (
-              <label>
-                <input type="checkbox" checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
-                {" "}Include the sideboard
+              <label className={styles.checkLabel}>
+                <input type="checkbox" className={styles.checkbox} checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
+                Include the sideboard
               </label>
             )}
             <p>
