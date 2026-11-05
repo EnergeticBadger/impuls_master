@@ -158,6 +158,18 @@ test("arena and mtgo write double-faced cards by front name, split cards in full
     assert.match(formatDeckList(d, "text"), /^4 Bonecrusher Giant \/\/ Stomp$/m);
 });
 
+test("reversible cards are written by their one name in every style", () => {
+    const face = { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment", mana_cost: "{2}{U}" };
+    const propaganda = {
+        name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1446",
+        card_faces: [face, { ...face }],
+    } as unknown as ScryfallCard;
+    const d: Deck = { main: [{ card: propaganda, count: 1 }], side: [] };
+    assert.match(formatDeckList(d, "arena"), /^1 Propaganda \(SLD\) 1446$/m);
+    assert.match(formatDeckList(d, "mtgo"), /^1 Propaganda$/m);
+    assert.match(formatDeckList(d, "text"), /^1 Propaganda$/m);
+});
+
 test("an Arena companion that is also in the sideboard is read once", () => {
     const parsed = parseDeckList(`Companion
 1 Lurrus of the Dream-Den (IKO) 226
