@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, type Deck } from "./deck.ts";
+import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
+import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -74,6 +74,33 @@ test("copiesIn counts main deck copies by oracle id across printings", () => {
     assert.equal(copiesIn(deck, undefined), 0);
 });
 
+const regularProp = card("Propaganda", "Enchantment", { oracle_id: "prop-oracle" });
+const reversibleProp = card("Propaganda // Propaganda", "Enchantment // Enchantment", {
+    layout: "reversible_card",
+    card_faces: [
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+    ] as unknown as ScryfallCard["card_faces"],
+});
+
+test("reversible cards (oracle id only on their faces) are counted and removed", () => {
+    let deck = empty;
+    for (let i = 0; i < 3; i++) deck = addCard(deck, reversibleProp);
+    assert.equal(copiesIn(deck, oracleOf(reversibleProp)), 3);
+
+    const mixed: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 1 }], side: [] };
+    assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
+    assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
+
+    const less = removeCard(mixed, reversibleProp);
+    // one copy comes out of the first matching entry; the other entry is left alone
+    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+
+    const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
+});
+
 test("removeCard lowers the count and drops an entry at zero", () => {
     const deck = addCard(empty, bolt, "main", 2);
     const less = removeCard(deck, bolt);
@@ -92,6 +119,45 @@ test("groupByType uses the front face and puts creatures first", () => {
         Instant: ["Lightning Bolt", "Valakut Awakening // Valakut Stoneforge"],
         Land: ["Forest"],
     });
+});
+
+test("sortEntries orders by mana value, then by name", () => {
+    const entries: DeckEntry[] = [
+        { card: golem, count: 1 },
+        { card: bear, count: 2 },
+        { card: bolt, count: 1 },
+    ];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Lightning Bolt", "Grizzly Bears", "Myr Golem"]);
+});
+
+test("sortEntries breaks equal mana value ties by name", () => {
+    const zed = card("Zombie", "Creature — Zombie", { cmc: 2 });
+    const ant = card("Ant", "Creature — Insect", { cmc: 2 });
+    const entries: DeckEntry[] = [{ card: zed, count: 1 }, { card: bear, count: 1 }, { card: ant, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Ant", "Grizzly Bears", "Zombie"]);
+});
+
+test("sortEntries treats a card with no cmc as 0", () => {
+    const nocmc = card("Nameless Token", "Creature — Token", { cmc: undefined });
+    const entries: DeckEntry[] = [{ card: bolt, count: 1 }, { card: nocmc, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Nameless Token", "Lightning Bolt"]);
+});
+
+test("sortEntries returns a new array and leaves the input alone", () => {
+    const entries: DeckEntry[] = [{ card: golem, count: 1 }, { card: bolt, count: 1 }];
+    const before = [...entries];
+    const sorted = sortEntries(entries);
+    assert.notEqual(sorted, entries);
+    assert.deepEqual(entries, before);
+    assert.equal(entries[0].card.name, "Myr Golem");
+    assert.equal(sorted[0].card.name, "Lightning Bolt");
+});
+
+test("groupByType sorts entries inside each group", () => {
+    let deck = empty;
+    for (const c of [golem, bear, card("Elf", "Creature — Elf", { cmc: 2 }), bolt]) deck = addCard(deck, c);
+    const creatures = groupByType(deck).find(g => g.group === "Creature")!;
+    assert.deepEqual(creatures.entries.map(e => e.card.name), ["Elf", "Grizzly Bears", "Myr Golem"]);
 });
 
 test("manaCurve skips lands and folds 7+", () => {

@@ -7,7 +7,7 @@ import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks
 import { cardsByName } from "~/lib/card";
 import { emptyDeck, type Deck } from "~/lib/deck";
 import { decksByRecent } from "~/lib/savedDecks";
-import { deckFromLines, parseDeckList, type Line, type Zone } from "~/lib/decklist";
+import { deckFromLines, parseDeckList, readDeckLinkHash, type Line, type Zone } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
 
@@ -32,6 +32,15 @@ export default function Decks() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
+
+  // a shared deck link opens the importer filled in (it doesn't import by itself); then the hash goes
+  useEffect(() => {
+    if (!ready) return
+    const shared = readDeckLinkHash(window.location.hash)
+    if (!shared) return
+    setImporting(shared)
+    history.replaceState(null, "", window.location.pathname + window.location.search)
+  }, [ready])
 
   const list = decksByRecent(snap.list)
 

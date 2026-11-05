@@ -4,11 +4,13 @@ import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
+import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
-import { cardByName, cardPath } from "~/lib/card";
-import { formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
+import { SampleHand } from "~/Components/Deck/SampleHand";
+import { cardByName, cardPath, shareLink } from "~/lib/card";
+import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
-import { addCard, groupByType, manaCostOf, removeCard, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, groupByType, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -36,6 +38,8 @@ const EXPORT_BUTTONS: { style: DeckListStyle; label: string }[] = [
   { style: "mtgo", label: "Copy for MTGO" },
 ]
 
+const SHARE_LABELS = { idle: "Share link", shared: "Shared", copied: "Link copied", failed: "Couldn't share" }
+
 // a file name from the deck name: letters, digits, dashes and underscores only
 const fileNameOf = (name: string) => `${name.trim().replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-") || "deck"}.txt`
 
@@ -45,6 +49,7 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
   const [copied, setCopied] = useState<DeckListStyle>()
   const [fallback, setFallback] = useState<{ style: DeckListStyle; text: string }>()
   const [url, setUrl] = useState<string>()
+  const [shared, setShared] = useState<"shared" | "copied" | "failed">()
 
   const mtgoText = formatDeckList(deck, "mtgo")
 
@@ -60,6 +65,16 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
     const timer = setTimeout(() => setCopied(undefined), 2000) // "Copied" shows for 2 seconds
     return () => clearTimeout(timer)
   }, [copied])
+
+  useEffect(() => {
+    if (!shared) return
+    const timer = setTimeout(() => setShared(undefined), 2000)
+    return () => clearTimeout(timer)
+  }, [shared])
+
+  async function share() {
+    setShared(await shareLink(`/decks${deckLinkHash(name, deck)}`, name))
+  }
 
   async function copy(style: DeckListStyle) {
     const text = formatDeckList(deck, style)
@@ -85,6 +100,9 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
         {url && (
           <a href={url} download={fileNameOf(name)} className={styles.button}>Download .txt</a>
         )}
+        <button type="button" className={styles.button} onClick={share} title="Share a link that imports this deck" aria-live="polite">
+          {SHARE_LABELS[shared ?? "idle"]}
+        </button>
       </div>
       {fallback && (
         <div className={styles.fallback}>
@@ -121,6 +139,12 @@ export default function DeckPage() {
   const saved = decks.list.find((d) => d.id === id)
 
   useEffect(() => { if (ready && saved) setCurrentDeck(id) }, [ready, saved?.id, id])
+
+  // meta() can't see localStorage, so the tab title follows the deck name once it's loaded
+  useEffect(() => {
+    if (!ready) return
+    document.title = saved ? `${saved.name} | Impulse Caster` : "No deck here | Impulse Caster"
+  }, [ready, saved?.name])
 
   if (!ready) return <div><SiteHeader /></div>
 
@@ -254,6 +278,8 @@ export default function DeckPage() {
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
 
+        <DeckStats deck={deck} />
+
         {deck.commander && (
           <section>
             <h2 className={styles.heading}>Commander</h2>
@@ -261,7 +287,7 @@ export default function DeckPage() {
           </section>
         )}
 
-        {groups.length === 0 && <p className={styles.empty}>No cards yet. Add some from a card page.</p>}
+        {groups.length === 0 && <p className={styles.empty}>No cards yet. Add some from search or a card page.</p>}
         {groups.map((g) => (
           <section key={g.group}>
             <h2 className={styles.heading}>{g.group} ({total(g.entries)})</h2>
@@ -269,10 +295,12 @@ export default function DeckPage() {
           </section>
         ))}
 
+        <SampleHand deck={deck} />
+
         {deck.side.length > 0 && (
           <section>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
-            <ul className={styles.rows}>{deck.side.map((e) => row(e, "side"))}</ul>
+            <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
 
@@ -281,9 +309,9 @@ export default function DeckPage() {
         {buyEntries.length > 0 && (
           <section>
             {deck.side.length > 0 && (
-              <label>
-                <input type="checkbox" checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
-                {" "}Include the sideboard
+              <label className={styles.checkLabel}>
+                <input type="checkbox" className={styles.checkbox} checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
+                Include the sideboard
               </label>
             )}
             <p>

@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSnapshot } from "valtio";
+import { decks, addToCurrentDeck, removeFromCurrentDeck, currentDeckOf, loadDecks } from "~/Components/Context/decks";
+import { copiesIn, type Deck } from "~/lib/deck";
+import { ADD_ICON } from "~/Components/Card/QuickView";
 import { data, Link, redirect, useNavigate } from "react-router";
 import { Image } from "@unpic/react";
 import type { Route } from "./+types/card";
@@ -8,7 +12,7 @@ import { isScryfallCard, type Ruling, type ScryfallCard } from "~/types";
 import { scryfallServerGet, unavailable } from "~/lib/scryfall.server";
 import { findCard, sameName } from "~/lib/carddata.server";
 import {
-  SITE_URL, findPrinting, imageUris, printEntry, printKey, printingCard, priceRange, setPath, slug,
+  SITE_URL, findPrinting, imageUris, oracleOf, printEntry, printKey, printingCard, priceRange, setPath, slug,
   type PrintEntry, type RelatedCard,
 } from "~/lib/carddata";
 import { SiteHeader, backLinkClass } from "~/Components/Site/SiteHeader";
@@ -259,6 +263,33 @@ function BackLink() {
 const printingPath = (page: Pick<PageData, "slug" | "main">, key: string) =>
   `/card/${page.slug}${key === page.main ? "" : `?print=${encodeURIComponent(key)}`}`
 
+// add to / remove from the deck being built. Decks are read after hydration so the server and first client render agree.
+function DeckButtons({ card }: { card: ScryfallCard }) {
+  const { list, current } = useSnapshot(decks)
+  const [ready, setReady] = useState(false)
+  useEffect(() => { loadDecks(); setReady(true) }, [])
+  const currentDeck = ready ? currentDeckOf(list, current) : undefined
+  const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
+  const deckName = currentDeck?.name ?? "Untitled deck"
+  return (
+    <div className={styles.actions}>
+      <button type="button" className={cardStyles.turn} onClick={() => addToCurrentDeck(card)}>
+        <svg viewBox="0 -960 960 960"><path d={ADD_ICON} /></svg>
+        Add to {deckName}
+      </button>
+      {copies > 0 ? (
+        <>
+          <span aria-live="polite">In deck: {copies}</span>
+          <button type="button" className={cardStyles.turn} onClick={() => removeFromCurrentDeck(card)}>
+            <svg viewBox="0 -960 960 960"><path d="M200-440v-80h560v80H200Z" /></svg>
+            Remove one
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 // the image with flip/rotate, reset for each printing
 function CardMedia({ card, sharePath }: { card: ScryfallCard, sharePath: string }) {
   const { currentFace, canFlip, flip, canRotate, rotate, rotation } = useCardLayout(card)
@@ -277,6 +308,7 @@ function CardMedia({ card, sharePath }: { card: ScryfallCard, sharePath: string 
         ) : null}
         <ShareButton path={sharePath} name={card.name} className={cardStyles.turn} />
       </div>
+      <DeckButtons card={card} />
     </div>
   )
 }
