@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { deckFromLines, formatDeckList, parseDeckList, type Line } from "./decklist.ts";
+import { deckFromLines, formatDeckList, parseDeckList, quickAddLine, type Line } from "./decklist.ts";
+
+test("quickAddLine reads one typed line", () => {
+  assert.deepEqual(quickAddLine("4 Opt"), { count: 4, name: "Opt" });
+  assert.deepEqual(quickAddLine("Opt"), { count: 1, name: "Opt" });
+  assert.deepEqual(quickAddLine("2x Opt"), { count: 2, name: "Opt" });
+  assert.deepEqual(quickAddLine("1 Opt (M19) 65"), { count: 1, name: "Opt", set: "m19", number: "65" });
+  assert.equal(quickAddLine(""), undefined);
+  assert.equal(quickAddLine("   "), undefined);
+});
 
 const card = (name: string, set: string, collector_number: string): ScryfallCard =>
     ({ name, set, collector_number }) as unknown as ScryfallCard;
@@ -106,6 +115,45 @@ test("unreadable lines are reported with their line number", () => {
     assert.match(parsed.problems[1], /^Line 3:/);
     assert.deepEqual(names(parsed.main), ["4 Opt"]);
     assert.deepEqual(names(parsed.side), ["2 Shock"]);
+});
+
+test("arena and mtgo write double-faced cards by front name, split cards in full", () => {
+    const giant = {
+        name: "Bonecrusher Giant // Stomp", layout: "adventure", set: "eld", collector_number: "115",
+        card_faces: [{ name: "Bonecrusher Giant" }, { name: "Stomp" }],
+    } as unknown as ScryfallCard;
+    const fireIce = { ...card("Fire // Ice", "mh2", "290"), layout: "split" } as ScryfallCard;
+    const d: Deck = { main: [{ card: giant, count: 4 }, { card: fireIce, count: 2 }], side: [] };
+    const arena = formatDeckList(d, "arena");
+    assert.match(arena, /^4 Bonecrusher Giant \(ELD\) 115$/m);
+    assert.match(arena, /^2 Fire \/\/ Ice \(MH2\) 290$/m);
+    const mtgo = formatDeckList(d, "mtgo");
+    assert.match(mtgo, /^4 Bonecrusher Giant$/m);
+    assert.match(mtgo, /^2 Fire \/\/ Ice$/m);
+    assert.match(formatDeckList(d, "text"), /^4 Bonecrusher Giant \/\/ Stomp$/m);
+});
+
+test("an Arena companion that is also in the sideboard is read once", () => {
+    const parsed = parseDeckList(`Companion
+1 Lurrus of the Dream-Den (IKO) 226
+
+Deck
+4 Opt (XLN) 65
+56 Island (SNC) 270
+
+Sideboard
+1 Lurrus of the Dream-Den (IKO) 226
+14 Negate (M21) 62
+`);
+    assert.deepEqual(parsed.problems, []);
+    assert.equal(parsed.side.filter(l => l.name.startsWith("Lurrus")).length, 1);
+    assert.equal(parsed.side.reduce((n, l) => n + l.count, 0), 15);
+    assert.deepEqual(names(parsed.main), ["4 Opt", "56 Island"]);
+});
+
+test("a companion missing from the sideboard is added to it", () => {
+    const parsed = parseDeckList("Companion\n1 Lurrus of the Dream-Den\n\nDeck\n4 Opt\n");
+    assert.deepEqual(names(parsed.side), ["1 Lurrus of the Dream-Den"]);
 });
 
 test("deckFromLines sorts lines into zones and adds the counts of a card named twice", () => {
