@@ -5,6 +5,7 @@ import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
+import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardByName, cardPath } from "~/lib/card";
 import { formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
@@ -272,6 +273,8 @@ export default function DeckPage() {
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}
+
+        <SampleHand deck={deck} />
 
         {deck.side.length > 0 && (
           <section>

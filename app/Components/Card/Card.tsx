@@ -8,6 +8,7 @@ import { view } from '../Context/view';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
 import { decks, addToCurrentDeck, currentDeckOf } from '../Context/decks';
 import { copiesIn, type Deck } from '~/lib/deck';
+import { oracleOf } from '~/lib/carddata';
 import { ADD_ICON, COMPARE_ICON, OPEN_ICON, TURN_ICON, QuickView, openQuickView } from './QuickView';
 
 // at this many per row or fewer, cards are wide enough that the normal image would look soft
@@ -22,7 +23,7 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const handleCompare = () => toggleCompare({ name, image_uri, card_uri, card })
     const { list, current } = useSnapshot(decks)
     const currentDeck = currentDeckOf(list, current)
-    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, card.oracle_id) : 0
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
     const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
     const layout = useCardLayout(card)
     const { currentFace, canFlip, flip, canRotate, rotate, rotation } = layout

@@ -14,6 +14,7 @@ import { quickViewAction } from './quickViewKeys';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
 import { decks, addToCurrentDeck, removeFromCurrentDeck, currentDeckOf } from '../Context/decks';
 import { copiesIn, type Deck } from '~/lib/deck';
+import { oracleOf } from '~/lib/carddata';
 import { cardPath,useRulings } from '~/lib/card';
 import { CardText } from '../CardDetails/CardText';
 import { Rulings } from '../CardDetails/Rulings';
@@ -96,7 +97,7 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
     const compared = inCompare(comparing, card.id)
     const currentDeck = currentDeckOf(deckList, currentId)
-    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, card.oracle_id) : 0
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
     const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
     const removeLabel = `Remove from ${currentDeck?.name ?? 'Untitled deck'}`
 
