@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Ruling, ScryfallCard } from "~/types";
 import { scryfallGet } from "./scryfall";
-import { SITE_URL, bucketHeader, bucketOf, bucketOfName, findEntryByName, oracleOf, paths, pickPrinting, printingCard, readRecord, slug, type CardRecord } from "./carddata";
+import { SITE_URL, bucketHeader, bucketOf, bucketOfName, oracleOf, paths, pickByName, pickPrinting, printingCard, readRecord, slug, type CardRecord } from "./carddata";
 
 export { SITE_URL, slug };
 
@@ -87,9 +87,8 @@ export async function cardByName(line: NameLine): Promise<ScryfallCard | undefin
     const bytes = await dataFile(paths.bucket(bucketOfName(line.name)))
     if (bytes) {
         const header = bucketHeader(bytes)
-        const entry = findEntryByName(header.entries, line.name)
-        if (entry) {
-            const record = readRecord(bytes, header, entry)
+        const record = pickByName(bytes, header, line.name, line.set, line.number)
+        if (record) {
             return printingCard(record, pickPrinting(record, line.set, line.number))
         }
         // front-face-only names fall through to Scryfall, which matches face names
