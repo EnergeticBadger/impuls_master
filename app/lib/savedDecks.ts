@@ -94,6 +94,39 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
     return decks
 }
 
+const BACKUP_APP = "impulse-caster"
+
+// every deck as one file's text, cards slimmed
+export function backupJson(list: SavedDeck[]): string {
+    const decks = list.map((d) => ({ ...d, deck: slimDeck(d.deck) }))
+    return JSON.stringify({ app: BACKUP_APP, version: 1, decks })
+}
+
+// the decks in a backup file's text; a bad file gives no decks and a one-line error, bad entries are dropped
+export function readBackup(text: string): { decks: SavedDeck[]; error?: string } {
+    let json: unknown
+    try {
+        json = JSON.parse(text)
+    } catch {
+        return { decks: [], error: "That file isn't a deck backup (it isn't valid JSON)." }
+    }
+    if (!isRecord(json) || json.app !== BACKUP_APP) {
+        return { decks: [], error: "That file isn't an Impulse Caster deck backup." }
+    }
+    return { decks: readSavedDecks(json.decks) }
+}
+
+// existing decks plus the incoming ones: a new id is added; for an id already there the later `updated` wins
+export function mergeDecks(existing: SavedDeck[], incoming: SavedDeck[]): SavedDeck[] {
+    const merged = [...existing]
+    for (const deck of incoming) {
+        const at = merged.findIndex((d) => d.id === deck.id)
+        if (at < 0) merged.push(deck)
+        else if (deck.updated > merged[at].updated) merged[at] = deck
+    }
+    return merged
+}
+
 // what a tab holds after another tab saved: that tab's decks, keeping our `current` if that deck still exists
 export function reloadFromStorage(newValue: string | null, current?: string): { list: SavedDeck[]; current?: string } {
     const saved: unknown = JSON.parse(newValue ?? 'null')
