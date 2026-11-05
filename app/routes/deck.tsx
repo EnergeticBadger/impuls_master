@@ -4,6 +4,7 @@ import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { ManaText } from "~/Components/CardDetails/ManaText";
+import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardByName, cardPath } from "~/lib/card";
@@ -254,6 +255,8 @@ export default function DeckPage() {
           <span>Sideboard: {total(deck.side)}</span>
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
+
+        <DeckStats deck={deck} />
 
         {deck.commander && (
           <section>
