@@ -7,8 +7,8 @@ import { ManaText } from "~/Components/CardDetails/ManaText";
 import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
-import { cardByName, cardPath } from "~/lib/card";
-import { formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
+import { cardByName, cardPath, shareLink } from "~/lib/card";
+import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { addCard, groupByType, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
@@ -38,6 +38,8 @@ const EXPORT_BUTTONS: { style: DeckListStyle; label: string }[] = [
   { style: "mtgo", label: "Copy for MTGO" },
 ]
 
+const SHARE_LABELS = { idle: "Share link", shared: "Shared", copied: "Link copied", failed: "Couldn't share" }
+
 // a file name from the deck name: letters, digits, dashes and underscores only
 const fileNameOf = (name: string) => `${name.trim().replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-") || "deck"}.txt`
 
@@ -47,6 +49,7 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
   const [copied, setCopied] = useState<DeckListStyle>()
   const [fallback, setFallback] = useState<{ style: DeckListStyle; text: string }>()
   const [url, setUrl] = useState<string>()
+  const [shared, setShared] = useState<"shared" | "copied" | "failed">()
 
   const mtgoText = formatDeckList(deck, "mtgo")
 
@@ -62,6 +65,16 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
     const timer = setTimeout(() => setCopied(undefined), 2000) // "Copied" shows for 2 seconds
     return () => clearTimeout(timer)
   }, [copied])
+
+  useEffect(() => {
+    if (!shared) return
+    const timer = setTimeout(() => setShared(undefined), 2000)
+    return () => clearTimeout(timer)
+  }, [shared])
+
+  async function share() {
+    setShared(await shareLink(`/decks${deckLinkHash(name, deck)}`, name))
+  }
 
   async function copy(style: DeckListStyle) {
     const text = formatDeckList(deck, style)
@@ -87,6 +100,9 @@ function ExportSection({ deck, name }: { deck: Deck; name: string }) {
         {url && (
           <a href={url} download={fileNameOf(name)} className={styles.button}>Download .txt</a>
         )}
+        <button type="button" className={styles.button} onClick={share} title="Share a link that imports this deck" aria-live="polite">
+          {SHARE_LABELS[shared ?? "idle"]}
+        </button>
       </div>
       {fallback && (
         <div className={styles.fallback}>
