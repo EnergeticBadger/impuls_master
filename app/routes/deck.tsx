@@ -10,6 +10,7 @@ import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
+import { canUndo, record, undo, type History } from "~/lib/history";
 import { addCard, groupByType, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
@@ -128,15 +129,21 @@ export default function DeckPage() {
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
   const [withSide, setWithSide] = useState(false)
+  const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
+  const [status, setStatus] = useState("")
   const [quickText, setQuickText] = useState("")
   const [quickZone, setQuickZone] = useState<DeckZone>("main")
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
+  useEffect(() => { setStatus("") }, [id])
 
   const saved = decks.list.find((d) => d.id === id)
+  // opening another deck starts a fresh history
+  const earlier = past.id === id ? past.past : []
 
   useEffect(() => { if (ready && saved) setCurrentDeck(id) }, [ready, saved?.id, id])
 
@@ -161,6 +168,31 @@ export default function DeckPage() {
   }
 
   const deck = saved.deck
+  const history: History<Deck> = { past: earlier, present: deck }
+
+  // every change made on this page goes through here, so it can be undone
+  // (reads the latest deck and past from a ref, so a call after an await isn't working from a stale render)
+  latest.current = { id, deck, past: earlier }
+  const change = (fn: (d: Deck) => Deck) => {
+    const cur = latest.current
+    const next = fn(cur.deck)
+    const recorded = record({ past: cur.past, present: cur.deck }, next).past
+    latest.current = { id: cur.id, deck: next, past: recorded }
+    setPast({ id: cur.id, past: recorded })
+    setStatus("")
+    updateDeck(cur.id, fn)
+  }
+  const undoChange = () => {
+    const cur = latest.current
+    const h: History<Deck> = { past: cur.past, present: cur.deck }
+    if (!canUndo(h)) return
+    const previous = undo(h)
+    latest.current = { id: cur.id, deck: previous.present, past: previous.past }
+    setPast({ id, past: previous.past })
+    updateDeck(id, () => previous.present)
+    setStatus("Undone")
+  }
+
   const commit = () => {
     const trimmed = name?.trim()
     if (trimmed && trimmed !== saved.name) renameDeck(id, trimmed)
@@ -177,7 +209,7 @@ export default function DeckPage() {
     try {
       const card = await cardByName(line)
       if (!card) { setQuickMessage(`No card named ${line.name}.`); return }
-      updateDeck(id, (d) => addCard(d, card, quickZone, line.count))
+      change((d) => addCard(d, card, quickZone, line.count))
       setQuickText("")
     } catch {
       setQuickMessage(`No card named ${line.name}.`)
@@ -220,15 +252,19 @@ export default function DeckPage() {
           {section !== "commander" && (
             <>
               <button type="button" className={styles.step} aria-label={`Remove one ${entry.card.name}`}
-                onClick={() => updateDeck(id, (d) => removeCard(d, entry.card, section))}>−</button>
+                onClick={() => change((d) => removeCard(d, entry.card, section))}>−</button>
               <button type="button" className={styles.step} aria-label={`Add one ${entry.card.name}`}
-                onClick={() => updateDeck(id, (d) => addCard(d, entry.card, section))}>+</button>
+                onClick={() => change((d) => addCard(d, entry.card, section))}>+</button>
             </>
           )}
           <button type="button" className={styles.button}
-            onClick={() => updateDeck(id, (d) => move(d, entry, section))}>
+            onClick={() => change((d) => move(d, entry, section))}>
             {section === "main" ? "To sideboard" : "To main"}
           </button>
+          {section !== "commander" && (
+            <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
+              onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
+          )}
         </div>
         {preview === key && image && <img className={styles.preview} src={image} alt={entry.card.name} width={146} height={204} />}
       </li>
@@ -275,8 +311,10 @@ export default function DeckPage() {
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
+          <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
+        <p role="status" className={styles.empty}>{status}</p>
 
         <DeckStats deck={deck} />
 
@@ -287,7 +325,11 @@ export default function DeckPage() {
           </section>
         )}
 
-        {groups.length === 0 && <p className={styles.empty}>No cards yet. Add some from search or a card page.</p>}
+        {groups.length === 0 && (
+          <p className={styles.empty}>
+            No cards yet. <Link to="/" className={styles.link}>Search for cards</Link> and press Add to deck.
+          </p>
+        )}
         {groups.map((g) => (
           <section key={g.group}>
             <h2 className={styles.heading}>{g.group} ({total(g.entries)})</h2>
