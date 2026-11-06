@@ -6,6 +6,7 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
 import { cardsByName } from "~/lib/card";
 import { emptyDeck, type Deck } from "~/lib/deck";
+import { decksByRecent } from "~/lib/savedDecks";
 import { deckFromLines, parseDeckList, readDeckLinkHash, type Line, type Zone } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
@@ -41,7 +42,7 @@ export default function Decks() {
     history.replaceState(null, "", window.location.pathname + window.location.search)
   }, [ready])
 
-  const list = [...snap.list].sort((a, b) => b.updated - a.updated)
+  const list = decksByRecent(snap.list)
 
   const create = () => {
     createDeck(naming?.trim() || DEFAULT_NAME)
