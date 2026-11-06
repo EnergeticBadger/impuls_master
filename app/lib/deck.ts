@@ -50,6 +50,24 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
     return { ...deck, [zone]: entries }
 }
 
+// a legendary creature (judged by the front face), or a card that says it can be your commander
+export function canBeCommander(card: ScryfallCard): boolean {
+    const type = frontType(card)
+    if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
+    const text = [card.oracle_text, ...(card.card_faces ?? []).map(f => f.oracle_text)].join("\n")
+    return /can be your commander/i.test(text)
+}
+
+// moves one copy of the card from the main deck to the commander slot; a commander already there goes
+// back to the main deck. A card that isn't in the main deck leaves the deck as it was.
+export function setCommander(deck: Deck, card: ScryfallCard): Deck {
+    const entry = deck.main.find(e => sameCard(e.card, card))
+    if (!entry) return deck
+    const taken = removeCard(deck, card, "main")
+    const main = deck.commander ? addTo(taken.main, deck.commander.card, deck.commander.count) : taken.main
+    return { ...taken, main, commander: { card: entry.card, count: 1 } }
+}
+
 // copies of a card in the main deck, whatever the printing (counted by oracle id)
 export function copiesIn(deck: Deck, oracleId: string | undefined): number {
     if (!oracleId) return 0

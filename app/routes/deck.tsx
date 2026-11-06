@@ -11,7 +11,7 @@ import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, groupByType, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, groupByType, manaCostOf, removeCard, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -261,6 +261,10 @@ export default function DeckPage() {
             onClick={() => change((d) => move(d, entry, section))}>
             {section === "main" ? "To sideboard" : "To main"}
           </button>
+          {section === "main" && canBeCommander(entry.card) && (
+            <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
+              onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
+          )}
           {section !== "commander" && (
             <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
               onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
