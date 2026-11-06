@@ -22,6 +22,10 @@ export function deckToBuild<T extends { id: string; updated: number }>(list: rea
     return list.find((d) => d.id === current) ?? list.reduce<T | undefined>((best, d) => (!best || d.updated > best.updated ? d : best), undefined)
 }
 
+// most recently updated first; a new array, the input is left alone
+export const decksByRecent = <T extends { updated: number }>(list: readonly T[]): T[] =>
+    [...list].sort((a, b) => b.updated - a.updated)
+
 type Bag = Record<string, unknown>
 
 // a copy of `from` with only the listed keys that are present (never an `undefined` key)
