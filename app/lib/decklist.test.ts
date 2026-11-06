@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { deckFromLines, formatDeckList, parseDeckList, quickAddLine, type Line } from "./decklist.ts";
+import { deckFromLines, deckLinkHash, formatDeckList, parseDeckList, quickAddLine, readDeckLinkHash, type Line } from "./decklist.ts";
 
 test("quickAddLine reads one typed line", () => {
   assert.deepEqual(quickAddLine("4 Opt"), { count: 4, name: "Opt" });
@@ -33,8 +33,14 @@ for (const style of ["text", "arena", "mtgo"] as const) {
         const parsed = parseDeckList(formatDeckList(deck, style));
         assert.deepEqual(parsed.problems, []);
         assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
-        assert.deepEqual(names(parsed.side), ["3 Negate"]);
-        assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+        if (style === "mtgo") {
+            // MTGO has no commander zone: the commander comes back as a sideboard line
+            assert.deepEqual(names(parsed.side), ["1 Atraxa, Praetors' Voice", "3 Negate"]);
+            assert.equal(parsed.commander, undefined);
+        } else {
+            assert.deepEqual(names(parsed.side), ["3 Negate"]);
+            assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+        }
     });
 
     test(`${style}: reads back a deck with only a sideboard`, () => {
@@ -43,6 +49,25 @@ for (const style of ["text", "arena", "mtgo"] as const) {
         assert.equal(parsed.main.length, 0);
     });
 }
+
+test("mtgo: a commander deck has no headers and the commander after the blank line", () => {
+    const commanderDeck: Deck = {
+        main: [
+            { card: card("Sol Ring", "c16", "1"), count: 1 },
+            { card: card("Command Tower", "c16", "2"), count: 1 },
+            { card: card("Forest", "c16", "3"), count: 30 },
+        ],
+        side: [],
+        commander: { card: card("Atraxa, Praetors' Voice", "c16", "28"), count: 1 },
+    };
+    const text = formatDeckList(commanderDeck, "mtgo");
+    assert.equal(text, "1 Sol Ring\n1 Command Tower\n30 Forest\n\n1 Atraxa, Praetors' Voice\n");
+    assert.doesNotMatch(text, /^(Commander|Deck|Sideboard)$/m);
+    const parsed = parseDeckList(text);
+    assert.deepEqual(parsed.problems, []);
+    assert.equal(parsed.main.reduce((n, l) => n + l.count, 0), 32);
+    assert.deepEqual(names(parsed.side), ["1 Atraxa, Praetors' Voice"]);
+});
 
 test("arena writes set and number, and they read back", () => {
     const text = formatDeckList(deck, "arena");
@@ -133,6 +158,18 @@ test("arena and mtgo write double-faced cards by front name, split cards in full
     assert.match(formatDeckList(d, "text"), /^4 Bonecrusher Giant \/\/ Stomp$/m);
 });
 
+test("reversible cards are written by their one name in every style", () => {
+    const face = { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment", mana_cost: "{2}{U}" };
+    const propaganda = {
+        name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1446",
+        card_faces: [face, { ...face }],
+    } as unknown as ScryfallCard;
+    const d: Deck = { main: [{ card: propaganda, count: 1 }], side: [] };
+    assert.match(formatDeckList(d, "arena"), /^1 Propaganda \(SLD\) 1446$/m);
+    assert.match(formatDeckList(d, "mtgo"), /^1 Propaganda$/m);
+    assert.match(formatDeckList(d, "text"), /^1 Propaganda$/m);
+});
+
 test("an Arena companion that is also in the sideboard is read once", () => {
     const parsed = parseDeckList(`Companion
 1 Lurrus of the Dream-Den (IKO) 226
@@ -173,4 +210,23 @@ test("deckFromLines sorts lines into zones and adds the counts of a card named t
 test("an empty list parses to nothing and writes nothing", () => {
     assert.deepEqual(parseDeckList(""), { main: [], side: [], problems: [] });
     assert.equal(formatDeckList({ main: [], side: [] }, "text"), "");
+});
+
+test("deck link: round trips a non-ASCII name and a commander", () => {
+    const hash = deckLinkHash("Æther Vial deck", deck);
+    assert.match(hash, /^#deck=[A-Za-z0-9_-]+$/);
+    const back = readDeckLinkHash(hash);
+    assert.equal(back?.name, "Æther Vial deck");
+    assert.equal(back?.text, formatDeckList(deck, "text"));
+    const parsed = parseDeckList(back?.text ?? "");
+    assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+    assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
+});
+
+test("deck link: garbage gives undefined", () => {
+    const enc = (v: unknown) => `#deck=${Buffer.from(JSON.stringify(v)).toString("base64url")}`;
+    for (const hash of ["", "#", "#deck=", "#other=abc", "#deck=!!!", "#deck=a", "#deck=bm90IGpzb24",
+        enc({ n: "x" }), enc({ l: "1 Opt" }), enc({ n: 1, l: "1 Opt" }), enc(null), enc("str")]) {
+        assert.equal(readDeckLinkHash(hash), undefined, hash);
+    }
 });

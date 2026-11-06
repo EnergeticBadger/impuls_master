@@ -181,6 +181,29 @@ export function findEntryByName(entries: BucketEntry[], name: string): BucketEnt
     return entries.find((e) => e[0] === wanted);
 }
 
+// the card a deck line means. Cards sharing a name sit in one bucket (the first gets the plain slug, the others
+// "<slug>-2", "<slug>-token"...), so this looks at all of them: the one with the line's set and collector
+// number, else one with a printing in the set, else the plain-slug card
+export function pickByName(
+    bytes: Uint8Array, header: { entries: BucketEntry[]; body: number }, name: string, set?: string, number?: string,
+): CardRecord | undefined {
+    const wanted = slug(name);
+    const sibling = new RegExp(`^${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+|token)$`);
+    const candidates = header.entries
+        .filter((e) => e[0] === wanted || sibling.test(e[0]))
+        .map((e) => readRecord(bytes, header, e))
+        .filter((r) => slug(r.name) === wanted);
+    const plain = candidates.find((r) => r.slug === wanted) ?? candidates[0];
+    const s = set?.toLowerCase();
+    if (s && candidates.length > 1) {
+        const n = number?.toLowerCase();
+        const inSet = (r: CardRecord) => r.prints.some((p) => p.set.toLowerCase() === s);
+        const exact = n && candidates.find((r) => r.prints.some((p) => p.set.toLowerCase() === s && p.number.toLowerCase() === n));
+        return exact || candidates.find(inSet) || plain;
+    }
+    return plain;
+}
+
 // the bucket a card's full name lives in
 export function bucketOfName(name: string) {
     return bucketOf(slug(name));
