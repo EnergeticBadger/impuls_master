@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -231,6 +231,15 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
+    assert.equal(canBeCommander(card("Ghave", "Legendary Creature — Fungus")), true);
+    assert.equal(canBeCommander(card("Bear", "Creature — Bear")), false);
+    assert.equal(canBeCommander(card("Crown", "Legendary Artifact")), false);
+    assert.equal(canBeCommander(card("Teferi", "Legendary Planeswalker — Teferi", { oracle_text: "Teferi can be your commander." })), true);
+    const faces = [{ name: "Front", type_line: "Legendary Creature — Human" }, { name: "Back", type_line: "Legendary Enchantment" }];
+    assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
 });
 
 // ---- manaCostOf, on cards built the way the site builds them from its card data ----
