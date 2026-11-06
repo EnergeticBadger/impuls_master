@@ -8,6 +8,7 @@ import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
+import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
@@ -136,6 +137,8 @@ export default function DeckPage() {
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState<{ text: string; notes?: string[]; next?: Deck }>()
+  const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
@@ -217,6 +220,20 @@ export default function DeckPage() {
       setQuickBusy(false)
       setTimeout(() => quickInput.current?.focus(), 0)
     }
+  }
+
+  const saveText = async () => {
+    if (!editing || editProgress) return
+    setEditProgress({ done: 0, total: 0 })
+    try {
+      const { deck: next, notes } = await lookUpDeckList(editing.text, (done, total) => setEditProgress({ done, total }), latest.current.deck)
+      if (notes.length === 0) { change(() => next); setEditing(undefined) }
+      else setEditing({ ...editing, next, notes })
+    } catch (e) {
+      console.error("Could not look up the deck list", e)
+      setEditing({ ...editing, next: undefined, notes: ["Something went wrong looking up the cards."] })
+    }
+    setEditProgress(undefined)
   }
 
   const row = (entry: DeckEntry, section: Section) => {
@@ -312,10 +329,48 @@ export default function DeckPage() {
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
           <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
+          {!editing && (
+            <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
+          )}
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
         <p role="status" className={styles.empty}>{status}</p>
 
+        {editing ? (
+          <section className={styles.editor}>
+            {editing.notes ? (
+              <>
+                <p>These need a look before the deck is saved:</p>
+                <ul>{editing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                <div className={styles.buttons}>
+                  {editing.next && (
+                    <button type="button" className={styles.button}
+                      onClick={() => { const next = editing.next as Deck; change(() => next); setEditing(undefined) }}>Save anyway</button>
+                  )}
+                  <button type="button" className={styles.button} onClick={() => setEditing({ text: editing.text })}>Back to the list</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <textarea
+                  className={styles.editText}
+                  value={editing.text}
+                  onChange={(e) => setEditing({ text: e.target.value })}
+                  aria-label="Deck list"
+                  rows={Math.min(24, editing.text.split("\n").length + 2)}
+                  disabled={!!editProgress}
+                  autoFocus
+                />
+                <div className={styles.buttons}>
+                  <button type="button" className={styles.button} onClick={saveText} disabled={!!editProgress}>Save</button>
+                  <button type="button" className={styles.button} onClick={() => setEditing(undefined)} disabled={!!editProgress}>Cancel</button>
+                  {editProgress && <span className={styles.empty} role="status">Finding cards… {editProgress.done} / {editProgress.total}</span>}
+                </div>
+              </>
+            )}
+          </section>
+        ) : (
+        <>
         <DeckStats deck={deck} />
 
         {deck.commander && (
@@ -366,6 +421,8 @@ export default function DeckPage() {
             </p>
             <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
           </section>
+        )}
+        </>
         )}
       </main>
     </div>
