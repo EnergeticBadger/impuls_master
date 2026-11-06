@@ -1,7 +1,7 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { copyDeck, deckToBuild, newDeck, readSavedDecks, reloadFromStorage, slimDeck, writeGate, type SavedDeck } from "~/lib/savedDecks";
+import { copyDeck, deckToBuild, mergeDecks, newDeck, readSavedDecks, reloadFromStorage, slimDeck, writeGate, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
@@ -41,6 +41,11 @@ export function renameDeck(id: string, name: string) {
 export function deleteDeck(id: string) {
     decks.list = decks.list.filter((d) => d.id !== id)
     if (decks.current === id) decks.current = undefined
+}
+
+// merges decks from a backup file into the list (see mergeDecks)
+export function restoreDecks(incoming: SavedDeck[]) {
+    decks.list = mergeDecks(decks.list, incoming).map((d) => ref(d))
 }
 
 export function setCurrentDeck(id: string) {

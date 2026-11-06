@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { addCard, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
-import { copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -253,4 +253,35 @@ test("two tabs with different current decks do not ping-pong", () => {
     assert.equal(writes, 1)
     assert.equal(searchTab.list.length, 1)
     assert.equal(searchTab.current, undefined)
+})
+
+test("backup then read gives the same decks", () => {
+    const a = { ...newDeck("A", 5, "a"), deck: { main: [{ card: card("1", "Bolt"), count: 4 }], side: [] } }
+    const b = newDeck("B", 7, "b")
+    const read = readBackup(backupJson([a, b]))
+    assert.equal(read.error, undefined)
+    assert.deepEqual(read.decks, [a, b])
+})
+
+test("a bad backup file gives an error and no decks", () => {
+    for (const text of ["not json at all", "{}", "[]", "null", JSON.stringify({ app: "other-app", version: 1, decks: [newDeck("X", 1, "x")] })]) {
+        const read = readBackup(text)
+        assert.deepEqual(read.decks, [])
+        assert.equal(typeof read.error, "string")
+    }
+})
+
+test("a backup drops bad deck entries", () => {
+    const good = newDeck("Good", 1, "g")
+    const read = readBackup(JSON.stringify({ app: "impulse-caster", version: 1, decks: [null, { id: "x" }, good] }))
+    assert.equal(read.error, undefined)
+    assert.deepEqual(read.decks, [good])
+})
+
+test("merging adds new ids and keeps the newer deck for a shared id", () => {
+    const old = newDeck("Old", 1, "same")
+    const newer = newDeck("Newer", 2, "same")
+    const other = newDeck("Other", 1, "other")
+    assert.deepEqual(mergeDecks([old], [newer, other]), [newer, other])
+    assert.deepEqual(mergeDecks([newer], [old]), [newer])
 })
