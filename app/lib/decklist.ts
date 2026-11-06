@@ -100,7 +100,9 @@ export function deckFromLines(found: FoundLine[]): Deck {
 function write(entry: DeckEntry, style: DeckListStyle): string {
     const card = entry.card;
     // Arena and MTGO list double-faced cards by their front face; split cards keep the full name
-    const frontOnly = style !== "text" && ["transform", "modal_dfc", "adventure", "flip"].includes(card.layout);
+    // reversible cards ("Propaganda // Propaganda") are known by their one face name everywhere, text included
+    const frontOnly = card.layout === "reversible_card"
+        || (style !== "text" && ["transform", "modal_dfc", "adventure", "flip"].includes(card.layout));
     const name = frontOnly && card.card_faces?.[0]?.name ? card.card_faces[0].name : card.name;
     if (style === "arena" && entry.card.set && entry.card.collector_number) {
         return `${entry.count} ${name} (${entry.card.set.toUpperCase()}) ${entry.card.collector_number}`;
@@ -111,6 +113,13 @@ function write(entry: DeckEntry, style: DeckListStyle): string {
 export function formatDeckList(deck: Deck, style: DeckListStyle): string {
     const blocks: string[][] = [];
     const lines = (entries: DeckEntry[]) => entries.map(e => write(e, style));
+
+    if (style === "mtgo" && deck.main.length > 0) {
+        // MTGO has no section headers: a blank line starts the sideboard, and the commander lives there
+        const sideLines = lines([...(deck.commander ? [deck.commander] : []), ...deck.side]);
+        const out = [lines(deck.main).join("\n"), ...(sideLines.length > 0 ? [sideLines.join("\n")] : [])];
+        return out.join("\n\n") + "\n";
+    }
 
     if (deck.commander) blocks.push(["Commander", ...lines([deck.commander])]);
     if (deck.main.length > 0 || (style === "arena" && deck.commander)) {
@@ -124,4 +133,35 @@ export function formatDeckList(deck: Deck, style: DeckListStyle): string {
         blocks.push([...head, ...lines(deck.side)]);
     }
     return blocks.map(b => b.join("\n")).join("\n\n") + (blocks.length > 0 ? "\n" : "");
+}
+
+// ---- deck links: the deck rides in the URL hash, so it never reaches our Worker ----
+
+function toBase64Url(text: string): string {
+    let binary = "";
+    for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(encoded: string): string {
+    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
+}
+
+export function deckLinkHash(name: string, deck: Deck): string {
+    return `#deck=${toBase64Url(JSON.stringify({ n: name, l: formatDeckList(deck, "text") }))}`;
+}
+
+export function readDeckLinkHash(hash: string): { name: string; text: string } | undefined {
+    const m = /^#?deck=([A-Za-z0-9_-]+)$/.exec(hash);
+    if (!m) return undefined;
+    try {
+        const data: unknown = JSON.parse(fromBase64Url(m[1]));
+        if (typeof data !== "object" || data === null) return undefined;
+        const { n, l } = data as { n?: unknown; l?: unknown };
+        if (typeof n !== "string" || typeof l !== "string") return undefined;
+        return { name: n, text: l };
+    } catch {
+        return undefined;
+    }
 }
