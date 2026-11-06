@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { deckFromLines, deckLinkHash, formatDeckList, parseDeckList, quickAddLine, readDeckLinkHash, type Line } from "./decklist.ts";
+import { deckFromLines, deckLinkHash, formatDeckList, parseDeckList, quickAddLine, readDeckLinkHash, unchangedEntries, type Line } from "./decklist.ts";
 
 test("quickAddLine reads one typed line", () => {
   assert.deepEqual(quickAddLine("4 Opt"), { count: 4, name: "Opt" });
@@ -229,4 +229,44 @@ test("deck link: garbage gives undefined", () => {
         enc({ n: "x" }), enc({ l: "1 Opt" }), enc({ n: 1, l: "1 Opt" }), enc(null), enc("str")]) {
         assert.equal(readDeckLinkHash(hash), undefined, hash);
     }
+});
+
+// ---- unchangedEntries: which lines of an edited list need no lookup ----
+
+const base = formatDeckList(deck, "text");
+const reusedNames = (r: { line: { count: number; zone: string }; card: ScryfallCard }[]) =>
+    r.map(x => `${x.line.zone}:${x.line.count} ${x.card.name}`);
+
+test("unchangedEntries: an unchanged list reuses every card", () => {
+    const r = unchangedEntries(deck, base);
+    assert.deepEqual(r.lookups, []);
+    assert.deepEqual(r.problems, []);
+    assert.equal(r.reused.length, 5);
+    assert.equal(r.reused.find(x => x.card.name === "Opt")?.card, deck.main[0].card);
+});
+
+test("unchangedEntries: a changed count reuses the card with the new count", () => {
+    const r = unchangedEntries(deck, base.replace("4 Opt", "3 Opt"));
+    assert.deepEqual(r.lookups, []);
+    assert.ok(reusedNames(r.reused).includes("main:3 Opt"));
+});
+
+test("unchangedEntries: an added card is looked up", () => {
+    const r = unchangedEntries(deck, base.replace("20 Island", "20 Island\n2 Shock"));
+    assert.deepEqual(r.lookups, [{ count: 2, name: "Shock", zone: "main" }]);
+    assert.equal(r.reused.length, 5);
+});
+
+test("unchangedEntries: a removed card just leaves the list", () => {
+    const r = unchangedEntries(deck, base.replace("20 Island\n", ""));
+    assert.deepEqual(r.lookups, []);
+    assert.equal(r.reused.length, 4);
+    assert.ok(!r.reused.some(x => x.card.name === "Island"));
+});
+
+test("unchangedEntries: a card moved to the sideboard is looked up again", () => {
+    const text = base.replace("4 Opt\n", "").replace("3 Negate", "3 Negate\n4 Opt");
+    const r = unchangedEntries(deck, text);
+    assert.deepEqual(r.lookups, [{ count: 4, name: "Opt", zone: "side" }]);
+    assert.equal(r.reused.length, 4);
 });

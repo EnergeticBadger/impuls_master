@@ -97,6 +97,36 @@ export function deckFromLines(found: FoundLine[]): Deck {
     return deck;
 }
 
+export type ZoneLine = Line & { zone: Zone }
+
+// the lines of an edited list, split into those whose card the deck already has (the card object is kept,
+// only the count comes from the text) and those that need a lookup
+export function unchangedEntries(deck: Deck, text: string): { reused: FoundLine[]; lookups: ZoneLine[]; problems: string[] } {
+    const parsed = parseDeckList(text);
+    const lines: ZoneLine[] = [
+        ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
+        ...parsed.main.map(l => ({ ...l, zone: "main" as const })),
+        ...parsed.side.map(l => ({ ...l, zone: "side" as const })),
+    ];
+    const known = (zone: Zone): DeckEntry[] =>
+        zone === "commander" ? (deck.commander ? [deck.commander] : []) : deck[zone];
+    const reused: FoundLine[] = [];
+    const lookups: ZoneLine[] = [];
+    for (const line of lines) {
+        const wanted = line.name.toLowerCase();
+        const entry = known(line.zone).find(e => {
+            const c = e.card;
+            const sameName = c.name.toLowerCase() === wanted || c.card_faces?.[0]?.name?.toLowerCase() === wanted;
+            const sameSet = !line.set || c.set === line.set;
+            const sameNumber = !line.number || c.collector_number === line.number;
+            return sameName && sameSet && sameNumber;
+        });
+        if (entry) reused.push({ line: { count: line.count, zone: line.zone }, card: entry.card });
+        else lookups.push(line);
+    }
+    return { reused, lookups, problems: parsed.problems };
+}
+
 function write(entry: DeckEntry, style: DeckListStyle): string {
     const card = entry.card;
     // Arena and MTGO list double-faced cards by their front face; split cards keep the full name
