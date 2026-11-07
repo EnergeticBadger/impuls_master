@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -330,4 +330,48 @@ test("deckSummary counts a modal DFC by its front face", () => {
 
 test("deckSummary of an empty deck is all zeros", () => {
     assert.deepEqual(deckSummary(empty), { lands: 0, spells: 0, averageManaValue: 0 })
+});
+
+const boltM10 = card("Lightning Bolt", "Instant", { id: "bolt-m10", cmc: 1 });
+const boltA25 = card("Lightning Bolt", "Instant", { id: "bolt-a25", cmc: 1 });
+const bearPrint = card("Grizzly Bears", "Creature — Bear", { id: "bear-1", cmc: 2 });
+const elfPrint = card("Llanowar Elves", "Creature — Elf", { id: "elf-1", cmc: 1 });
+
+test("replacePrinting swaps a main-deck row's card, keeping its count and place", () => {
+    const deck: Deck = { main: [{ card: bearPrint, count: 2 }, { card: boltM10, count: 4 }, { card: elfPrint, count: 1 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bear-1", 2], ["bolt-a25", 4], ["elf-1", 1]]);
+    assert.equal(deck.main[1].card.id, "bolt-m10", "the input is not changed");
+});
+
+test("replacePrinting in the sideboard leaves the main deck alone", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [{ card: boltM10, count: 1 }] };
+    const next = replacePrinting(deck, "side", boltM10, boltA25);
+    assert.equal(next.side[0].card.id, "bolt-a25");
+    assert.equal(next.main[0].card.id, "bolt-m10");
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting swaps the commander", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 1 }], side: [], commander: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "commander", bearPrint, other);
+    assert.equal(next.commander?.card.id, "bear-2");
+    assert.equal(next.commander?.count, 1);
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting merges into a row that already holds the new printing", () => {
+    const deck: Deck = { main: [{ card: boltA25, count: 1 }, { card: elfPrint, count: 2 }, { card: boltM10, count: 3 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bolt-a25", 4], ["elf-1", 2]]);
+    const back = replacePrinting(deck, "main", boltA25, boltM10);
+    assert.deepEqual(back.main.map((e) => [e.card.id, e.count]), [["bolt-m10", 4], ["elf-1", 2]]);
+});
+
+test("replacePrinting of a card not in the zone changes nothing", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [] };
+    assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
+    assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
+    assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
 });

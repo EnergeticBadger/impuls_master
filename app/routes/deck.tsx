@@ -9,12 +9,13 @@ import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
+import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -148,6 +149,8 @@ export default function DeckPage() {
   const [ready, setReady] = useState(false)
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
+  // the row whose printing list is open: "<section>:<card id>"
+  const [printingsOf, setPrintingsOf] = useState<string>()
   const [withSide, setWithSide] = useState(false)
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
@@ -268,6 +271,7 @@ export default function DeckPage() {
 
   const row = (entry: DeckEntry, section: Section) => {
     const key = `${section}:${entry.card.name}`
+    const pickerKey = `${section}:${entry.card.id}`
     const image = smallImage(entry)
     const cost = manaCostOf(entry.card)
     const rowId = rowSeen.has(entry.card.name) ? undefined : anchorOf(entry.card.name)
@@ -319,11 +323,24 @@ export default function DeckPage() {
             <button type="button" className={styles.button}
               onClick={() => change((d) => makeCommander(d, entry.card))}>Make commander</button>
           )}
+          <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
+            aria-expanded={printingsOf === pickerKey}
+            onClick={() => setPrintingsOf((p) => (p === pickerKey ? undefined : pickerKey))}>Printing</button>
           {section !== "commander" && (
             <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
               onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
           )}
         </div>
+        {printingsOf === pickerKey && (
+          <PrintingPicker
+            card={entry.card}
+            onClose={() => setPrintingsOf(undefined)}
+            onChoose={(to) => {
+              change((d) => replacePrinting(d, section, entry.card, to))
+              setPrintingsOf(undefined)
+            }}
+          />
+        )}
         {preview === key && image && <img className={styles.preview} src={image} alt={entry.card.name} width={146} height={204} />}
       </li>
     )
