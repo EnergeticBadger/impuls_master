@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -374,4 +374,11 @@ test("replacePrinting of a card not in the zone changes nothing", () => {
     assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
     assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
     assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
+});
+
+test("identityTerm writes colors in WUBRG order, lower case", () => {
+    assert.equal(identityTerm(["U", "B"]), "id<=ub");
+    assert.equal(identityTerm(["G", "W"]), "id<=wg");
+    assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
+    assert.equal(identityTerm([]), "id:c");
 });

@@ -12,6 +12,12 @@ export type TypeGroup = (typeof TYPE_GROUPS)[number]
 
 export const COLORS = ["W", "U", "B", "R", "G"] as const
 
+// the search term for "inside these colors": `id<=ub` (WUBRG order), or `id:c` for colorless
+export function identityTerm(colors: readonly string[]): string {
+  const kept = COLORS.filter((c) => colors.some((x) => x.toUpperCase() === c))
+  return kept.length ? `id<=${kept.join("").toLowerCase()}` : "id:c"
+}
+
 // The mana cost to show. Scryfall leaves it off transform and modal cards, and our card data turns that
 // into "", so an empty top-level cost falls through to the faces' costs.
 export function manaCostOf(card: ScryfallCard): string {
