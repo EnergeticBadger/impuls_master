@@ -269,3 +269,17 @@
     font-size: 1.3rem;
   }
 }
+
+/* "Group by: Type | Mana value" above the main deck */
+.grouping {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.grouping [aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background-color: var(--accent-tint);
+}

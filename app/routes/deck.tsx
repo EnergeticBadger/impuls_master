@@ -10,13 +10,14 @@ import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
 import { DeckNotes } from "~/Components/Deck/DeckNotes";
+import { deckGrouping, loadDeckGrouping } from "~/Components/Context/deckGrouping";
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, deckPrice, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -164,7 +165,8 @@ export default function DeckPage() {
   const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
-  useEffect(() => { loadDecks(); setReady(true) }, [])
+  useEffect(() => { loadDecks(); loadDeckGrouping(); setReady(true) }, [])
+  const grouping = useSnapshot(deckGrouping).by
   useEffect(() => { setStatus("") }, [id])
 
   const saved = decks.list.find((d) => d.id === id)
@@ -347,7 +349,10 @@ export default function DeckPage() {
     )
   }
 
-  const groups = groupByType({ ...deck, commander: undefined })
+  // the main deck's sections, by type or by mana value (the toggle above them)
+  const groups = grouping === "manaValue"
+    ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
+    : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
   const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
 
@@ -477,9 +482,18 @@ export default function DeckPage() {
             No cards yet. <Link to="/" className={styles.link}>Search for cards</Link> and press Add to deck.
           </p>
         )}
+        {groups.length > 0 && (
+          <div className={styles.grouping} role="group" aria-label="Group the main deck by">
+            <span>Group by:</span>
+            <button type="button" className={styles.button} aria-pressed={grouping === "type"}
+              onClick={() => { deckGrouping.by = "type" }}>Type</button>
+            <button type="button" className={styles.button} aria-pressed={grouping === "manaValue"}
+              onClick={() => { deckGrouping.by = "manaValue" }}>Mana value</button>
+          </div>
+        )}
         {groups.map((g) => (
-          <section key={g.group}>
-            <h2 className={styles.heading}>{g.group} ({total(g.entries)})</h2>
+          <section key={g.key}>
+            <h2 className={styles.heading}>{g.heading} ({total(g.entries)})</h2>
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}

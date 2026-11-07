@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -390,4 +390,32 @@ test("deckColors of a 60-card deck is the colors its spells use, in WUBRG order"
 test("deckColors of an empty or colorless deck is empty", () => {
     assert.deepEqual(deckColors(empty), []);
     assert.deepEqual(deckColors(addCard(addCard(empty, golem, "main", 4), forest)), []);
+});
+
+test("groupByManaValue puts spells in ascending mana value groups and lands last", () => {
+    const deck = addCard(addCard(addCard(addCard(empty, forest, "main", 24), bear, "main", 4), bolt, "main", 4), golem, "main", 2);
+    const groups = groupByManaValue(deck);
+    assert.deepEqual(groups.map((g) => g.group), ["1", "2", "7+", "Lands"]);
+    assert.deepEqual(groups.map((g) => g.entries.reduce((n, e) => n + e.count, 0)), [4, 4, 2, 24]);
+});
+
+test("groupByManaValue puts an 8-drop under 7+ and leaves out the commander and sideboard", () => {
+    const eight = card("Eight-and-a-Half-Tails", "Creature", { cmc: 8 });
+    const deck: Deck = { ...addCard(addCard(empty, eight), bolt, "side", 3), commander: { card: bear, count: 1 } };
+    assert.deepEqual(groupByManaValue(deck).map((g) => [g.group, g.entries.map((e) => e.card.name)]), [["7+", ["Eight-and-a-Half-Tails"]]]);
+});
+
+test("groupByManaValue goes by a modal DFC's front face", () => {
+    // Valakut Awakening // Valakut Stoneforge: an instant (mana value 4) on the front, a land on the back
+    assert.deepEqual(groupByManaValue(addCard(empty, mdfc)).map((g) => g.group), ["4"]);
+});
+
+test("groupByManaValue sorts each group like sortEntries", () => {
+    const a = card("Abrade", "Instant", { cmc: 2 });
+    const deck = addCard(addCard(empty, bear), a);
+    assert.deepEqual(groupByManaValue(deck)[0].entries.map((e) => e.card.name), ["Abrade", "Grizzly Bears"]);
+});
+
+test("groupByManaValue of an empty deck is empty", () => {
+    assert.deepEqual(groupByManaValue(empty), []);
 });

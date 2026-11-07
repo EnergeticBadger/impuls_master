@@ -111,12 +111,32 @@ export function groupByType(deck: Deck): { group: TypeGroup | "Other"; entries: 
         .filter(g => g.entries.length > 0)
 }
 
+// a non-land card's place on the curve: its mana value, 0 up to 7 ("7 or more"), as manaCurve counts it
+const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))
+
+// the main deck (no commander) by mana value: non-land cards in "0" ... "6", "7+", then every land under "Lands";
+// empty groups are left out, and each group is sorted by sortEntries. Lands go by the front face, like manaCurve.
+export function groupByManaValue(deck: Deck): { group: string; entries: DeckEntry[] }[] {
+    const slots: DeckEntry[][] = Array.from({ length: 8 }, () => [])
+    const lands: DeckEntry[] = []
+    for (const e of deck.main) {
+        if (isLand(e.card)) lands.push(e)
+        else slots[curveSlot(e.card)].push(e)
+    }
+    return [
+        ...slots.map((entries, i) => ({ group: i === 7 ? "7+" : String(i), entries })),
+        { group: "Lands", entries: lands },
+    ]
+        .filter(g => g.entries.length > 0)
+        .map(g => ({ ...g, entries: sortEntries(g.entries) }))
+}
+
 // cards at each mana value, 0 up to 7 (index 7 is "7 or more"); lands aren't counted
 export function manaCurve(deck: Deck): number[] {
     const curve = new Array<number>(8).fill(0)
     for (const { card, count } of cardsOf(deck)) {
         if (isLand(card)) continue
-        curve[Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))] += count
+        curve[curveSlot(card)] += count
     }
     return curve
 }
