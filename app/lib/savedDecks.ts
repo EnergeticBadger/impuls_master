@@ -3,7 +3,8 @@
 import type { Deck, DeckEntry } from "./deck.ts";
 import type { ScryfallCard } from "~/types";
 
-export type SavedDeck = { id: string; name: string; updated: number; deck: Deck; format?: string }
+// notes: free text the deck page keeps with the deck (plan, sideboard guide, cards to buy)
+export type SavedDeck = { id: string; name: string; updated: number; deck: Deck; format?: string; notes?: string }
 
 export const newDeck = (name: string, now: number, id: string): SavedDeck =>
     ({ id, name, updated: now, deck: { main: [], side: [] } })
@@ -25,6 +26,20 @@ export function deckToBuild<T extends { id: string; updated: number }>(list: rea
 // most recently updated first; a new array, the input is left alone
 export const decksByRecent = <T extends { updated: number }>(list: readonly T[]): T[] =>
     [...list].sort((a, b) => b.updated - a.updated)
+
+// lower case without accents, so "Éowyn" matches "eowyn"
+const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+
+// the decks whose name holds every word of `query` (any order, any case, accents ignored), in the list's order;
+// an empty query keeps them all
+export function filterDecks<T extends { name: string }>(list: readonly T[], query: string): T[] {
+    const words = folded(query).split(/\s+/).filter(Boolean)
+    if (words.length === 0) return [...list]
+    return list.filter((d) => {
+        const name = folded(d.name)
+        return words.every((w) => name.includes(w))
+    })
+}
 
 type Bag = Record<string, unknown>
 
@@ -96,6 +111,7 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
             deck: slimDeck(saved),
         }
         if (typeof item.format === "string") read.format = item.format
+        if (typeof item.notes === "string") read.notes = item.notes
         decks.push(read)
     }
     return decks

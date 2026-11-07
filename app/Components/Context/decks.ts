@@ -42,6 +42,11 @@ export function renameDeck(id: string, name: string) {
     update(id, (d) => ({ ...d, name }))
 }
 
+// the deck's free-text notes; "" removes them
+export function setDeckNotes(id: string, notes: string) {
+    update(id, (d) => ({ ...d, notes: notes || undefined }))
+}
+
 // "" or undefined means no format
 export function setDeckFormat(id: string, format: string | undefined) {
     update(id, (d) => ({ ...d, format: format || undefined }))

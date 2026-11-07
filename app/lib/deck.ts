@@ -12,6 +12,13 @@ export type TypeGroup = (typeof TYPE_GROUPS)[number]
 
 export const COLORS = ["W", "U", "B", "R", "G"] as const
 
+// the search term for "inside these colors": `id<=ub` (WUBRG order), or `id<=c` for colorless. Always `id<=`, the
+// form the search bar's chips write it back in (they turn `id:c` into `id<=c`), so the deck bar's toggle can find it
+export function identityTerm(colors: readonly string[]): string {
+  const kept = COLORS.filter((c) => colors.some((x) => x.toUpperCase() === c))
+  return `id<=${kept.length ? kept.join("").toLowerCase() : "c"}`
+}
+
 // The mana cost to show. Scryfall leaves it off transform and modal cards, and our card data turns that
 // into "", so an empty top-level cost falls through to the faces' costs.
 export function manaCostOf(card: ScryfallCard): string {
@@ -50,6 +57,16 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
         .map((e, j) => (j === i ? { ...e, count: e.count - count } : e))
         .filter(e => e.count > 0)
     return { ...deck, [zone]: entries }
+}
+
+// moves one copy of the card from the main deck to the commander slot; a commander already there goes
+// back to the main deck. A card that isn't in the main deck leaves the deck as it was.
+export function setCommander(deck: Deck, card: ScryfallCard): Deck {
+    const entry = deck.main.find(e => sameCard(e.card, card))
+    if (!entry) return deck
+    const taken = removeCard(deck, card, "main")
+    const main = deck.commander ? addTo(taken.main, deck.commander.card, deck.commander.count) : taken.main
+    return { ...taken, main, commander: { card: entry.card, count: 1 } }
 }
 
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
@@ -111,12 +128,32 @@ export function groupByType(deck: Deck): { group: TypeGroup | "Other"; entries: 
         .filter(g => g.entries.length > 0)
 }
 
+// a non-land card's place on the curve: its mana value, 0 up to 7 ("7 or more"), as manaCurve counts it
+const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))
+
+// the main deck (no commander) by mana value: non-land cards in "0" ... "6", "7+", then every land under "Lands";
+// empty groups are left out, and each group is sorted by sortEntries. Lands go by the front face, like manaCurve.
+export function groupByManaValue(deck: Deck): { group: string; entries: DeckEntry[] }[] {
+    const slots: DeckEntry[][] = Array.from({ length: 8 }, () => [])
+    const lands: DeckEntry[] = []
+    for (const e of deck.main) {
+        if (isLand(e.card)) lands.push(e)
+        else slots[curveSlot(e.card)].push(e)
+    }
+    return [
+        ...slots.map((entries, i) => ({ group: i === 7 ? "7+" : String(i), entries })),
+        { group: "Lands", entries: lands },
+    ]
+        .filter(g => g.entries.length > 0)
+        .map(g => ({ ...g, entries: sortEntries(g.entries) }))
+}
+
 // cards at each mana value, 0 up to 7 (index 7 is "7 or more"); lands aren't counted
 export function manaCurve(deck: Deck): number[] {
     const curve = new Array<number>(8).fill(0)
     for (const { card, count } of cardsOf(deck)) {
         if (isLand(card)) continue
-        curve[Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))] += count
+        curve[curveSlot(card)] += count
     }
     return curve
 }
@@ -158,6 +195,48 @@ export function deckSummary(deck: Deck): { lands: number; spells: number; averag
         }
     }
     return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }
+}
+
+// the deck's colors in WUBRG order: its commander's color identity when it has one, else every color its spells
+// use (colorCounts); [] for an empty or colorless deck
+export function deckColors(deck: Deck): string[] {
+    if (deck.commander) {
+        const identity = deck.commander.card.color_identity ?? []
+        return COLORS.filter(c => identity.includes(c))
+    }
+    const counts = colorCounts(deck)
+    return COLORS.filter(c => counts[c] > 0)
+}
+
+// shares `count` basic lands between the colors by the colored mana symbols in the main deck's and commander's
+// mana costs (front face), weighted by card count. A hybrid symbol counts half for each of its colors;
+// generic, colorless and X don't count. Largest-remainder rounding, ties in WUBRG order, so the parts add up
+// to `count`. Returned in WUBRG order without zeros; no colored symbols gives [].
+export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | "B" | "R" | "G"; count: number }[] {
+    // weights in half symbols
+    const weight: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 }
+    for (const { card, count: copies } of cardsOf(deck)) {
+        const front = manaCostOf(card).split(" // ")[0]
+        for (const [, code] of front.matchAll(/\{([^}]+)\}/g)) {
+            const colored = code.split("/").filter(p => COLORS.some(c => c === p))
+            for (const c of colored) weight[c] += (2 / colored.length) * copies
+        }
+    }
+    const sum = COLORS.reduce((n, c) => n + weight[c], 0)
+    const total = Math.max(0, Math.floor(count))
+    if (sum === 0 || total === 0) return []
+    const parts = COLORS.map((color, order) => ({
+        color, order,
+        count: Math.floor((total * weight[color]) / sum),
+        rest: (total * weight[color]) % sum,
+    }))
+    let left = total - parts.reduce((n, p) => n + p.count, 0)
+    const byRest = [...parts].sort((a, b) => b.rest - a.rest || a.order - b.order)
+    for (const p of byRest) {
+        if (left <= 0) break
+        if (p.rest > 0 || weight[p.color] > 0) { p.count++; left-- }
+    }
+    return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
 // a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with

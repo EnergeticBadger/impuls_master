@@ -9,13 +9,15 @@ import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
+import { DeckNotes } from "~/Components/Deck/DeckNotes";
+import { deckGrouping, loadDeckGrouping } from "~/Components/Context/deckGrouping";
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, basicLandSplit, canBeCommander, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -38,16 +40,12 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   return addCard(without, entry.card, to, entry.count)
 }
 
-// one copy from the main deck becomes the commander; a commander already there goes back to the main deck
-const makeCommander = (deck: Deck, card: ScryfallCard): Deck => {
-  const back = deck.commander ? addCard(deck, deck.commander.card, "main", deck.commander.count) : deck
-  return { ...removeCard(back, card, "main"), commander: { card, count: 1 } }
-}
-
 const removeAsCommander = (deck: Deck): Deck => {
   if (!deck.commander) return deck
   return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
 }
+
+const BASIC_NAMES = { W: "Plains", U: "Island", B: "Swamp", R: "Mountain", G: "Forest" } as const
 
 const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
 const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
@@ -159,11 +157,16 @@ export default function DeckPage() {
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const [basicsOpen, setBasicsOpen] = useState(false)
+  const [basicsText, setBasicsText] = useState<string>() // undefined: show the suggested number
+  const [basicsBusy, setBasicsBusy] = useState(false)
+  const [basicsMessage, setBasicsMessage] = useState<string>()
   const [editing, setEditing] = useState<{ text: string; notes?: string[]; next?: Deck }>()
   const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
-  useEffect(() => { loadDecks(); setReady(true) }, [])
+  useEffect(() => { loadDecks(); loadDeckGrouping(); setReady(true) }, [])
+  const grouping = useSnapshot(deckGrouping).by
   useEffect(() => { setStatus("") }, [id])
 
   const saved = decks.list.find((d) => d.id === id)
@@ -255,6 +258,29 @@ export default function DeckPage() {
     }
   }
 
+  // basic lands: 40% of the deck's size by default, less the lands it already has
+  const suggestedBasics = Math.max(0, Math.round((isCommander ? 100 : 60) * 0.4) - deckSummary(deck).lands)
+  const basicsCount = Math.max(0, Math.floor(Number(basicsText ?? suggestedBasics)) || 0)
+  const basicsSplit = basicLandSplit(deck, basicsCount)
+
+  const addBasics = async () => {
+    if (basicsBusy || basicsSplit.length === 0) return
+    setBasicsBusy(true)
+    setBasicsMessage(undefined)
+    try {
+      const found = await Promise.all(basicsSplit.map(async (p) => ({ count: p.count, card: await cardByName({ name: BASIC_NAMES[p.color] }) })))
+      const missing = found.find((f) => !f.card)
+      if (missing) { setBasicsMessage("Couldn't look up the basic lands. Nothing was added."); return }
+      change((d) => found.reduce((acc, f) => (f.card ? addCard(acc, f.card, "main", f.count) : acc), d))
+      setBasicsOpen(false)
+      setBasicsText(undefined)
+    } catch {
+      setBasicsMessage("Couldn't look up the basic lands. Nothing was added.")
+    } finally {
+      setBasicsBusy(false)
+    }
+  }
+
   const saveText = async () => {
     if (!editing || editProgress) return
     setEditProgress({ done: 0, total: 0 })
@@ -320,8 +346,8 @@ export default function DeckPage() {
             </button>
           )}
           {isCommander && section === "main" && canBeCommander(entry.card) && (
-            <button type="button" className={styles.button}
-              onClick={() => change((d) => makeCommander(d, entry.card))}>Make commander</button>
+            <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
+              onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
           )}
           <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
             aria-expanded={printingsOf === pickerKey}
@@ -346,7 +372,10 @@ export default function DeckPage() {
     )
   }
 
-  const groups = groupByType({ ...deck, commander: undefined })
+  // the main deck's sections, by type or by mana value (the toggle above them)
+  const groups = grouping === "manaValue"
+    ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
+    : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
   const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
 
@@ -386,6 +415,31 @@ export default function DeckPage() {
           <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
           {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
         </form>
+        <div className={styles.basics}>
+          <button type="button" className={styles.button} aria-expanded={basicsOpen} onClick={() => setBasicsOpen(!basicsOpen)}>Add basic lands</button>
+          {basicsOpen && (
+            <form className={styles.basicsForm} onSubmit={(e) => { e.preventDefault(); addBasics() }}>
+              <input
+                className={styles.basicsInput}
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={basicsText ?? String(suggestedBasics)}
+                onChange={(e) => setBasicsText(e.target.value)}
+                aria-label="Number of basic lands"
+              />
+              <span className={styles.basicsSplit}>
+                {basicsSplit.length === 0
+                  ? "No colored mana symbols in the deck yet."
+                  : basicsSplit.map((p, i) => (
+                    <span key={p.color}>{i > 0 && " · "}<ManaText text={`{${p.color}}`} /> {p.count}</span>
+                  ))}
+              </span>
+              <button type="submit" className={styles.button} disabled={basicsBusy || basicsSplit.length === 0}>{basicsBusy ? "Adding…" : "Add"}</button>
+              {basicsMessage && <p className={styles.quickMessage} role="status">{basicsMessage}</p>}
+            </form>
+          )}
+        </div>
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
@@ -476,9 +530,18 @@ export default function DeckPage() {
             No cards yet. <Link to="/" className={styles.link}>Search for cards</Link> and press Add to deck.
           </p>
         )}
+        {groups.length > 0 && (
+          <div className={styles.grouping} role="group" aria-label="Group the main deck by">
+            <span>Group by:</span>
+            <button type="button" className={styles.button} aria-pressed={grouping === "type"}
+              onClick={() => { deckGrouping.by = "type" }}>Type</button>
+            <button type="button" className={styles.button} aria-pressed={grouping === "manaValue"}
+              onClick={() => { deckGrouping.by = "manaValue" }}>Mana value</button>
+          </div>
+        )}
         {groups.map((g) => (
-          <section key={g.group}>
-            <h2 className={styles.heading}>{g.group} ({total(g.entries)})</h2>
+          <section key={g.key}>
+            <h2 className={styles.heading}>{g.heading} ({total(g.entries)})</h2>
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}
@@ -492,6 +555,8 @@ export default function DeckPage() {
             <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
+
+        <DeckNotes key={saved.id} id={saved.id} notes={saved.notes} />
 
         <ExportSection deck={deck} name={saved.name} />
 

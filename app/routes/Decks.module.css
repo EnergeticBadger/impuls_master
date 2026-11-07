@@ -121,7 +121,12 @@
 }
 
 .name {
-  overflow-wrap: anywhere;
+  /* one line, cut with an ellipsis, so a long name never pushes the buttons off screen */
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text);
   font-weight: 700;
   text-decoration: none;
@@ -161,4 +166,19 @@
   .title {
     font-size: 1.6rem;
   }
+}
+
+.colors {
+  display: inline-flex;
+  align-items: center;
+}
+
+.filter {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
 }

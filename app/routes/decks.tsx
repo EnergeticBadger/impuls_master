@@ -7,11 +7,16 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
-import { emptyDeck, type Deck } from "~/lib/deck";
-import { decksByRecent } from "~/lib/savedDecks";
+import { deckColors, emptyDeck, type Deck } from "~/lib/deck";
+import { ManaText } from "~/Components/CardDetails/ManaText";
+import { decksByRecent, filterDecks } from "~/lib/savedDecks";
 import { readDeckLinkHash } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
+const FILTER_FROM = 6;
+
+// "commander" -> "Commander", as the deck page's format picker shows it
+const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1);
 
 export function meta() {
   return [
@@ -29,6 +34,7 @@ export default function Decks() {
   const [progress, setProgress] = useState<{ done: number, total: number }>()
   const [review, setReview] = useState<{ deck: Deck, notes: string[] }>()
   const [backupNote, setBackupNote] = useState<string>()
+  const [filter, setFilter] = useState("")
   const navigate = useNavigate()
 
   // the decks are read from localStorage after the first render; don't flash the empty state before that
@@ -45,7 +51,11 @@ export default function Decks() {
     history.replaceState(null, "", window.location.pathname + window.location.search)
   }, [ready])
 
-  const list = decksByRecent(snap.list)
+  // re-rendered by the snapshot above; the decks themselves are ref()s, so they are read unwrapped (as on the deck page)
+  const list = decksByRecent(decks.list)
+  // a name filter once the list is long enough to scroll on a phone
+  const filtering = list.length >= FILTER_FROM
+  const shown = filtering ? filterDecks(list, filter) : list
 
   const create = () => {
     createDeck(naming?.trim() || DEFAULT_NAME)
@@ -171,10 +181,22 @@ export default function Decks() {
         {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
         <div className={styles.actions}>{importing === undefined && newDeckForm}{importing === undefined && importForm}</div>
         {importing !== undefined && importForm}
-        {list.length > 0 && (
+        {filtering && (
+          <input
+            type="search"
+            className={styles.filter}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter decks"
+            aria-label="Filter decks"
+          />
+        )}
+        {filtering && shown.length === 0 && <p className={styles.intro}>No decks match "{filter.trim()}".</p>}
+        {shown.length > 0 && (
           <ul className={styles.list}>
-            {list.map((d) => {
-              const cards = d.deck.main.reduce((n, e) => n + e.count, 0)
+            {shown.map((d) => {
+              const cards = d.deck.main.reduce((n, e) => n + e.count, 0) + (d.deck.commander?.count ?? 0)
+              const colors = deckColors(d.deck)
               return (
                 <li key={d.id} className={styles.deck}>
                   {renaming?.id === d.id ? (
@@ -192,9 +214,13 @@ export default function Decks() {
                   ) : (
                     <>
                       <div className={styles.info}>
-                        <Link to={`/decks/${d.id}`} className={styles.name}>{d.name}</Link>
+                        <Link to={`/decks/${d.id}`} className={styles.name} title={d.name}>{d.name}</Link>
                         <span className={styles.meta}>
                           {cards} {cards === 1 ? "card" : "cards"}
+                          <span className={styles.colors} aria-label={colors.length ? `Colors: ${colors.join("")}` : "Colorless"}>
+                            <ManaText text={colors.length ? colors.map((c) => `{${c}}`).join("") : "{C}"} />
+                          </span>
+                          {d.format && <span>{formatLabel(d.format)}</span>}
                           {snap.current === d.id && <span className={styles.current}>Current deck</span>}
                         </span>
                       </div>

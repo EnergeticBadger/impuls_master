@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -304,6 +304,47 @@ test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
     assert.equal(manaCostOf(delverApi), "{U}");
 });
 
+const legend =card("Isamaru, Hound of Konda", "Legendary Creature — Dog", { cmc: 1 });
+const legend2 = card("Kenrith, the Returned King", "Legendary Creature — Human Noble", { cmc: 5 });
+const walker = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", { oracle_text: "Grist, the Hunger Tide can be your commander." });
+const legendDfc = card("Jace, Vryn's Prodigy // Jace, Telepath Unbound", "Legendary Creature — Human Wizard // Legendary Planeswalker — Jace", {
+    card_faces: [
+        { name: "Jace, Vryn's Prodigy", mana_cost: "{1}{U}", type_line: "Legendary Creature — Human Wizard" },
+        { name: "Jace, Telepath Unbound", mana_cost: "", type_line: "Legendary Planeswalker — Jace" },
+    ],
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' cards", () => {
+    assert.equal(canBeCommander(legend), true);
+    assert.equal(canBeCommander(walker), true);
+    assert.equal(canBeCommander(legendDfc), true);
+    assert.equal(canBeCommander(bear), false);
+    assert.equal(canBeCommander(card("Jace Beleren", "Legendary Planeswalker — Jace")), false);
+});
+
+test("setCommander takes one copy from main and does not mutate", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }, { card: bear, count: 1 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
+    assert.deepEqual(next.main.map(e => e.card.name), ["Grizzly Bears"]);
+    assert.equal(deck.main.length, 2);
+    assert.equal(deck.commander, undefined);
+});
+
+test("setCommander sends the old commander back to main", () => {
+    const deck: Deck = { main: [{ card: legend2, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const next = setCommander(deck, legend2);
+    assert.equal(next.commander?.card.name, legend2.name);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+});
+
+test("setCommander from a 2-of leaves one copy in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 2 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
+});
+
 test("deckSummary counts lands and spells and averages the spells' mana value", () => {
     let deck = addCard(empty, forest, "main", 24)
     deck = addCard(deck, bolt, "main", 20)
@@ -374,4 +415,98 @@ test("replacePrinting of a card not in the zone changes nothing", () => {
     assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
     assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
     assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
+});
+
+test("deckColors of a commander deck is the commander's color identity", () => {
+    const atraxa = card("Atraxa, Praetors' Voice", "Legendary Creature — Phyrexian Angel Horror", { color_identity: ["G", "W", "U", "B"] });
+    const deck: Deck = { ...addCard(empty, bolt), commander: { card: atraxa, count: 1 } };
+    assert.deepEqual(deckColors(deck), ["W", "U", "B", "G"]);
+});
+
+test("deckColors of a 60-card deck is the colors its spells use, in WUBRG order", () => {
+    const deck = addCard(addCard(addCard(empty, bear, "main", 20), bolt, "main", 16), forest, "main", 24);
+    assert.deepEqual(deckColors(deck), ["R", "G"]);
+});
+
+test("deckColors of an empty or colorless deck is empty", () => {
+    assert.deepEqual(deckColors(empty), []);
+    assert.deepEqual(deckColors(addCard(addCard(empty, golem, "main", 4), forest)), []);
+});
+
+test("groupByManaValue puts spells in ascending mana value groups and lands last", () => {
+    const deck = addCard(addCard(addCard(addCard(empty, forest, "main", 24), bear, "main", 4), bolt, "main", 4), golem, "main", 2);
+    const groups = groupByManaValue(deck);
+    assert.deepEqual(groups.map((g) => g.group), ["1", "2", "7+", "Lands"]);
+    assert.deepEqual(groups.map((g) => g.entries.reduce((n, e) => n + e.count, 0)), [4, 4, 2, 24]);
+});
+
+test("groupByManaValue puts an 8-drop under 7+ and leaves out the commander and sideboard", () => {
+    const eight = card("Eight-and-a-Half-Tails", "Creature", { cmc: 8 });
+    const deck: Deck = { ...addCard(addCard(empty, eight), bolt, "side", 3), commander: { card: bear, count: 1 } };
+    assert.deepEqual(groupByManaValue(deck).map((g) => [g.group, g.entries.map((e) => e.card.name)]), [["7+", ["Eight-and-a-Half-Tails"]]]);
+});
+
+test("groupByManaValue goes by a modal DFC's front face", () => {
+    // Valakut Awakening // Valakut Stoneforge: an instant (mana value 4) on the front, a land on the back
+    assert.deepEqual(groupByManaValue(addCard(empty, mdfc)).map((g) => g.group), ["4"]);
+});
+
+test("groupByManaValue sorts each group like sortEntries", () => {
+    const a = card("Abrade", "Instant", { cmc: 2 });
+    const deck = addCard(addCard(empty, bear), a);
+    assert.deepEqual(groupByManaValue(deck)[0].entries.map((e) => e.card.name), ["Abrade", "Grizzly Bears"]);
+});
+
+test("groupByManaValue of an empty deck is empty", () => {
+    assert.deepEqual(groupByManaValue(empty), []);
+});
+
+const spell = (name: string, mana_cost: string) => card(name, "Creature — Test", { mana_cost });
+const deckOf = (...entries: [ScryfallCard, number][]): Deck => ({ main: entries.map(([c, count]) => ({ card: c, count })), side: [] });
+
+test("basicLandSplit: mono-red gives all Mountains", () => {
+    const deck = deckOf([spell("Red Guy", "{2}{R}{R}"), 4], [spell("Red Two", "{R}"), 4]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "R", count: 17 }]);
+});
+
+test("basicLandSplit: a tie goes to the earlier color in WUBRG order", () => {
+    const deck = deckOf([spell("Red Ten", "{R}"), 10], [spell("Blue Ten", "{U}"), 10]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "U", count: 9 }, { color: "R", count: 8 }]);
+});
+
+test("basicLandSplit: hybrid counts half for each color", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}{W/U}"), 1]), 10), [{ color: "W", count: 5 }, { color: "U", count: 5 }]);
+    // {W/U} is half W, half U; plus one {W} makes W 1.5 : U 0.5
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}"), 1], [spell("Plain", "{W}"), 1]), 8), [{ color: "W", count: 6 }, { color: "U", count: 2 }]);
+});
+
+test("basicLandSplit: card counts weight the symbols; generic and X don't count", () => {
+    const deck = deckOf([spell("Three Green", "{X}{2}{G}"), 3], [spell("One Black", "{1}{B}"), 1]);
+    assert.deepEqual(basicLandSplit(deck, 8), [{ color: "B", count: 2 }, { color: "G", count: 6 }]);
+});
+
+test("basicLandSplit counts the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: spell("Boss", "{W}{W}"), count: 1 } };
+    assert.deepEqual(basicLandSplit(deck, 5), [{ color: "W", count: 5 }]);
+});
+
+test("basicLandSplit: a colorless deck gives []", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Golem", "{6}"), 4], [spell("X", "{X}"), 2]), 17), []);
+    assert.deepEqual(basicLandSplit({ main: [], side: [] }, 17), []);
+});
+
+test("basicLandSplit: the parts always sum to count", () => {
+    const deck = deckOf([spell("A", "{W}{U}{B}"), 3], [spell("B", "{R}{G/W}"), 7], [spell("C", "{B}{B}{U}"), 5]);
+    for (let n = 0; n <= 60; n++) {
+        const parts = basicLandSplit(deck, n);
+        assert.equal(parts.reduce((s, p) => s + p.count, 0), n);
+        assert.ok(parts.every(p => p.count > 0));
+    }
+});
+
+test("identityTerm writes colors in WUBRG order, lower case", () => {
+    assert.equal(identityTerm(["U", "B"]), "id<=ub");
+    assert.equal(identityTerm(["G", "W"]), "id<=wg");
+    assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
+    assert.equal(identityTerm([]), "id<=c");
 });
