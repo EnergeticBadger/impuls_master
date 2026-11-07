@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -502,4 +502,11 @@ test("basicLandSplit: the parts always sum to count", () => {
         assert.equal(parts.reduce((s, p) => s + p.count, 0), n);
         assert.ok(parts.every(p => p.count > 0));
     }
+});
+
+test("identityTerm writes colors in WUBRG order, lower case", () => {
+    assert.equal(identityTerm(["U", "B"]), "id<=ub");
+    assert.equal(identityTerm(["G", "W"]), "id<=wg");
+    assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
+    assert.equal(identityTerm([]), "id<=c");
 });
