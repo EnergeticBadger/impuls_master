@@ -40,9 +40,11 @@ const sameCard = (a: ScryfallCard, b: ScryfallCard) => {
     return x && y ? x === y : a.name === b.name
 }
 
-// takes `count` copies out (default one) of the first matching entry; an entry with none left disappears
+// takes `count` copies out (default one) of the entry with the card's name, else of the first entry with
+// the same oracle id; an entry with none left disappears
 export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main", count = 1): Deck {
-    const i = deck[zone].findIndex(e => sameCard(e.card, card))
+    const byName = deck[zone].findIndex(e => e.card.name === card.name)
+    const i = byName >= 0 ? byName : deck[zone].findIndex(e => sameCard(e.card, card))
     if (i < 0) return deck
     const entries = deck[zone]
         .map((e, j) => (j === i ? { ...e, count: e.count - count } : e))
@@ -152,6 +154,15 @@ function copyLimit(card: ScryfallCard): number {
     const upTo = /A deck can have up to (\w+) cards named/i.exec(text)
     if (upTo && NUMBER_WORDS[upTo[1].toLowerCase()]) return NUMBER_WORDS[upTo[1].toLowerCase()]
     return 4
+}
+
+// legendary creatures, and anything whose text says it can be your commander
+export function canBeCommander(card: ScryfallCard): boolean {
+    const faces = card.card_faces ?? []
+    const type = frontType(card)
+    if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
+    const text = [card.oracle_text, ...faces.map(f => f.oracle_text)].join("\n")
+    return /can be your commander/i.test(text)
 }
 
 const SIDEBOARD_MAX = 15
