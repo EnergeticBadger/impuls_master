@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
+import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
@@ -337,6 +338,7 @@ export default function DeckPage() {
     <div>
       <SiteHeader />
       <main className={styles.page}>
+        <SaveWarning />
         <input
           className={styles.nameInput}
           value={name ?? saved.name}

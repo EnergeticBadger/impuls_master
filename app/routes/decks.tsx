@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
+import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { emptyDeck, type Deck } from "~/lib/deck";
@@ -165,6 +166,7 @@ export default function Decks() {
     <div>
       <SiteHeader />
       <main className={styles.page}>
+        <SaveWarning />
         <h1 className={styles.title}>My decks</h1>
         {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
         <div className={styles.actions}>{importing === undefined && newDeckForm}{importing === undefined && importForm}</div>

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { addCard, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
-import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -291,4 +291,18 @@ test("merging adds new ids and keeps the newer deck for a shared id", () => {
     const other = newDeck("Other", 1, "other")
     assert.deepEqual(mergeDecks([old], [newer, other]), [newer, other])
     assert.deepEqual(mergeDecks([newer], [old]), [newer])
+})
+
+test("saveErrorMessage says storage is full for a quota error", () => {
+    const full = "Your browser's storage is full, so the latest deck changes were not saved. Delete a deck or copy this one out with Export."
+    assert.equal(saveErrorMessage({ name: "QuotaExceededError" }), full)
+    assert.equal(saveErrorMessage({ name: "NS_ERROR_DOM_QUOTA_REACHED" }), full)
+})
+
+test("saveErrorMessage gives the general message for anything else", () => {
+    const other = "Your browser didn't let us save your decks, so the latest changes will be lost on reload."
+    assert.equal(saveErrorMessage(new Error("SecurityError")), other)
+    assert.equal(saveErrorMessage("nope"), other)
+    assert.equal(saveErrorMessage(null), other)
+    assert.equal(saveErrorMessage({ name: "SecurityError" }), other)
 })
