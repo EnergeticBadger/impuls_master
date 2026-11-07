@@ -71,3 +71,9 @@
 .none {
   opacity: 0.7;
 }
+
+/* "24 lands · 36 spells · average mana value 2.61": wraps on narrow screens */
+.summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
