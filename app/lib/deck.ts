@@ -124,6 +124,21 @@ export function colorCounts(deck: Deck): Record<"W" | "U" | "B" | "R" | "G" | "C
     return counts
 }
 
+// lands and spells in the main deck plus the commander (by the front face, like manaCurve), and the spells'
+// average mana value weighted by count, rounded to 2 decimals (0 with no spells)
+export function deckSummary(deck: Deck): { lands: number; spells: number; averageManaValue: number } {
+    let lands = 0, spells = 0, total = 0
+    for (const { card, count } of cardsOf(deck)) {
+        if (isLand(card)) {
+            lands += count
+        } else {
+            spells += count
+            total += (card.cmc ?? 0) * count
+        }
+    }
+    return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }
+}
+
 // a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {

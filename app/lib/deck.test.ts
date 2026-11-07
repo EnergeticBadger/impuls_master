@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -302,4 +302,32 @@ test("manaCostOf keeps a split card's own cost, and is empty for lands", () => {
 
 test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
     assert.equal(manaCostOf(delverApi), "{U}");
+});
+
+test("deckSummary counts lands and spells and averages the spells' mana value", () => {
+    let deck = addCard(empty, forest, "main", 24)
+    deck = addCard(deck, bolt, "main", 20)
+    deck = addCard(deck, bear, "main", 16)
+    // (20 * 1 + 16 * 2) / 36 = 1.444...
+    assert.deepEqual(deckSummary(deck), { lands: 24, spells: 36, averageManaValue: 1.44 })
+});
+
+test("deckSummary weights the average by count", () => {
+    const deck = addCard(addCard(empty, bolt, "main", 3), golem)
+    // (3 * 1 + 9) / 4 = 3
+    assert.deepEqual(deckSummary(deck), { lands: 0, spells: 4, averageManaValue: 3 })
+});
+
+test("deckSummary counts the commander but not the sideboard", () => {
+    const deck: Deck = { ...addCard(addCard(empty, forest), bear, "side", 5), commander: { card: golem, count: 1 } }
+    assert.deepEqual(deckSummary(deck), { lands: 1, spells: 1, averageManaValue: 9 })
+});
+
+test("deckSummary counts a modal DFC by its front face", () => {
+    // Valakut Awakening is an instant on the front, so a spell
+    assert.equal(deckSummary(addCard(empty, mdfc)).spells, 1)
+});
+
+test("deckSummary of an empty deck is all zeros", () => {
+    assert.deepEqual(deckSummary(empty), { lands: 0, spells: 0, averageManaValue: 0 })
 });

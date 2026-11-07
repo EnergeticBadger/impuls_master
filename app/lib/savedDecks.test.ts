@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { oracleOf } from "./carddata.ts";
+import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
 import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
@@ -291,4 +292,40 @@ test("merging adds new ids and keeps the newer deck for a shared id", () => {
     const other = newDeck("Other", 1, "other")
     assert.deepEqual(mergeDecks([old], [newer, other]), [newer, other])
     assert.deepEqual(mergeDecks([newer], [old]), [newer])
+})
+
+// a reversible card in Scryfall's real API shape: no top-level oracle id, it is only on the faces
+const IMAGES = { small: "s.jpg", normal: "n.jpg", large: "l.jpg", png: "p.png", art_crop: "a.jpg", border_crop: "b.jpg" }
+const propagandaFace = {
+    object: "card_face", name: "Propaganda", oracle_id: "prop-oracle", mana_cost: "{2}{U}", type_line: "Enchantment",
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    colors: ["U"], artist: "Someone", image_uris: IMAGES,
+}
+const reversible = {
+    id: "prop-sld", name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1",
+    card_faces: [propagandaFace, { ...propagandaFace, artist: "Someone Else" }],
+} as unknown as ScryfallCard
+const regular = { id: "prop-tmp", oracle_id: "prop-oracle", name: "Propaganda", layout: "normal", set: "tmp" } as unknown as ScryfallCard
+
+test("slimCard keeps the faces' oracle id of a reversible card", () => {
+    const slim = slimCard(reversible)
+    assert.equal(oracleOf(slim), "prop-oracle")
+    assert.equal(slim.oracle_id, undefined)
+})
+
+test("a slimmed reversible card counts toward its copies in the deck", () => {
+    let deck: Deck = { main: [], side: [] }
+    for (let i = 0; i < 3; i++) deck = addCard(deck, slimCard(reversible))
+    assert.equal(copiesIn(slimDeck(deck), "prop-oracle"), 3)
+
+    let mixed: Deck = addCard({ main: [], side: [] }, slimCard(regular), "main", 2)
+    mixed = addCard(mixed, slimCard(reversible))
+    assert.equal(copiesIn(slimDeck(mixed), "prop-oracle"), 3)
+})
+
+test("readSavedDecks keeps the faces' oracle id", () => {
+    const saved = [{ id: "d1", name: "Blue", updated: 1, deck: { main: [{ card: reversible, count: 1 }], side: [] } }]
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
+    assert.equal(oracleOf(read.deck.main[0].card), "prop-oracle")
+    assert.equal(copiesIn(read.deck, "prop-oracle"), 1)
 })
