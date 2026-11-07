@@ -9,6 +9,7 @@ import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
+import { DeckNotes } from "~/Components/Deck/DeckNotes";
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
@@ -492,6 +493,8 @@ export default function DeckPage() {
             <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
+
+        <DeckNotes key={saved.id} id={saved.id} notes={saved.notes} />
 
         <ExportSection deck={deck} name={saved.name} />
 

@@ -363,3 +363,18 @@ test("filterDecks with an empty query keeps the whole list in order", () => {
     assert.deepEqual(filterDecks(named, "   "), named)
     assert.notEqual(filterDecks(named, ""), named, "a new array")
 })
+
+test("readSavedDecks keeps notes that are a string and drops anything else", () => {
+    const base = { id: "d1", name: "Burn", updated: 1, deck: { main: [], side: [] } }
+    const [kept] = readSavedDecks([{ ...base, notes: "Side in Smash vs artifacts.\nBuy 2 more Rift Bolt." }])
+    assert.equal(kept.notes, "Side in Smash vs artifacts.\nBuy 2 more Rift Bolt.")
+    for (const bad of [42, null, { text: "x" }, ["a"]]) {
+        const [read] = readSavedDecks([{ ...base, notes: bad }])
+        assert.equal("notes" in read, false, `notes ${JSON.stringify(bad)} is dropped`)
+    }
+})
+
+test("notes survive a backup and restore", () => {
+    const deck: SavedDeck = { id: "d1", name: "Burn", updated: 1, deck: { main: [], side: [] }, notes: "Mulligan hands without a 1-drop." }
+    assert.equal(readBackup(backupJson([deck])).decks[0].notes, "Mulligan hands without a 1-drop.")
+})
