@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
 import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
-import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -342,4 +342,24 @@ test("saveErrorMessage gives the general message for anything else", () => {
     assert.equal(saveErrorMessage("nope"), other)
     assert.equal(saveErrorMessage(null), other)
     assert.equal(saveErrorMessage({ name: "SecurityError" }), other)
+})
+
+const named = ["Mono Red Burn", "Éowyn Tokens", "Izzet Phoenix", "Burn (old)", "Golgari Food"].map((name) => ({ name }))
+
+test("filterDecks matches any case and ignores accents", () => {
+    assert.deepEqual(filterDecks(named, "BURN").map((d) => d.name), ["Mono Red Burn", "Burn (old)"])
+    assert.deepEqual(filterDecks(named, "eowyn").map((d) => d.name), ["Éowyn Tokens"])
+    assert.deepEqual(filterDecks(named, "ÉOWYN").map((d) => d.name), ["Éowyn Tokens"])
+})
+
+test("filterDecks needs every word, in any order", () => {
+    assert.deepEqual(filterDecks(named, "burn red").map((d) => d.name), ["Mono Red Burn"])
+    assert.deepEqual(filterDecks(named, "  red   mono ").map((d) => d.name), ["Mono Red Burn"])
+    assert.deepEqual(filterDecks(named, "burn izzet"), [])
+})
+
+test("filterDecks with an empty query keeps the whole list in order", () => {
+    assert.deepEqual(filterDecks(named, ""), named)
+    assert.deepEqual(filterDecks(named, "   "), named)
+    assert.notEqual(filterDecks(named, ""), named, "a new array")
 })

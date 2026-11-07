@@ -26,6 +26,20 @@ export function deckToBuild<T extends { id: string; updated: number }>(list: rea
 export const decksByRecent = <T extends { updated: number }>(list: readonly T[]): T[] =>
     [...list].sort((a, b) => b.updated - a.updated)
 
+// lower case without accents, so "Éowyn" matches "eowyn"
+const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+
+// the decks whose name holds every word of `query` (any order, any case, accents ignored), in the list's order;
+// an empty query keeps them all
+export function filterDecks<T extends { name: string }>(list: readonly T[], query: string): T[] {
+    const words = folded(query).split(/\s+/).filter(Boolean)
+    if (words.length === 0) return [...list]
+    return list.filter((d) => {
+        const name = folded(d.name)
+        return words.every((w) => name.includes(w))
+    })
+}
+
 type Bag = Record<string, unknown>
 
 // a copy of `from` with only the listed keys that are present (never an `undefined` key)
