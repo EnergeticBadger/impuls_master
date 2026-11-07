@@ -25,3 +25,22 @@ export function drawHand<T>(library: readonly T[], size: number, random: () => n
     const n = Math.max(0, Math.min(size, shuffled.length))
     return { hand: shuffled.slice(0, n), rest: shuffled.slice(n) }
 }
+
+const whole = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0)
+
+// the chance that `seen` cards drawn without replacement from `deckSize` include at least one of `copies`:
+// 1 - C(deckSize - copies, seen) / C(deckSize, seen), as a running product so 100-card decks don't overflow.
+// Bad input (negative, NaN) counts as 0, and copies or seen beyond the deck size are capped at it.
+export function atLeastOneChance(deckSize: number, copies: number, seen: number): number {
+    const n = whole(deckSize)
+    const k = Math.min(whole(copies), n)
+    const s = Math.min(whole(seen), n)
+    if (k === 0 || s === 0) return 0
+    if (s > n - k) return 1
+    let none = 1
+    for (let i = 0; i < s; i++) none *= (n - k - i) / (n - i)
+    return 1 - none
+}
+
+// cards seen by the given turn: the opening 7, plus one draw a turn, skipping the first draw on the play
+export const cardsSeen = (turn: number, onThePlay: boolean): number => 7 + turn - (onThePlay ? 1 : 0)

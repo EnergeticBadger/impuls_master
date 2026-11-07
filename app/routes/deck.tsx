@@ -8,6 +8,7 @@ import { ManaText } from "~/Components/CardDetails/ManaText";
 import { DeckStats } from "~/Components/Deck/DeckStats";
 import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
+import { DrawOdds } from "~/Components/Deck/DrawOdds";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
@@ -466,6 +467,7 @@ export default function DeckPage() {
         ))}
 
         <SampleHand deck={deck} />
+        <DrawOdds deck={deck} />
 
         {deck.side.length > 0 && (
           <section>
