@@ -3,7 +3,7 @@
 import type { Deck, DeckEntry } from "./deck.ts";
 import type { ScryfallCard } from "~/types";
 
-export type SavedDeck = { id: string; name: string; updated: number; deck: Deck }
+export type SavedDeck = { id: string; name: string; updated: number; deck: Deck; format?: string }
 
 export const newDeck = (name: string, now: number, id: string): SavedDeck =>
     ({ id, name, updated: now, deck: { main: [], side: [] } })
@@ -41,7 +41,8 @@ const slimImages = (v: unknown) => (typeof v === "object" && v !== null ? pick(v
 
 const CARD_KEYS = ["id", "oracle_id", "name", "layout", "mana_cost", "cmc", "type_line", "oracle_text", "colors",
     "color_identity", "legalities", "set", "collector_number", "rarity"] as const
-const FACE_KEYS = ["name", "mana_cost", "type_line", "oracle_text", "colors"] as const
+// reversible cards carry their oracle id only on the faces, and oracleOf reads it from there
+const FACE_KEYS = ["name", "oracle_id", "mana_cost", "type_line", "oracle_text", "colors"] as const
 
 // the card with only the fields the deck code uses, so saved decks stay small in localStorage
 export function slimCard(card: ScryfallCard): ScryfallCard {
@@ -88,14 +89,58 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
         const deck = isRecord(item.deck) ? item.deck : {}
         const saved: Deck = { main: entriesOf(deck.main), side: entriesOf(deck.side) }
         if (isEntry(deck.commander)) saved.commander = deck.commander
-        decks.push({
+        const read: SavedDeck = {
             id: item.id,
             name: item.name,
             updated: typeof item.updated === "number" ? item.updated : 0,
             deck: slimDeck(saved),
-        })
+        }
+        if (typeof item.format === "string") read.format = item.format
+        decks.push(read)
     }
     return decks
+}
+
+// what to tell people when writing their decks to localStorage failed: a full storage, or anything else
+export function saveErrorMessage(error: unknown): string {
+    const name = typeof error === "object" && error !== null ? (error as { name?: unknown }).name : undefined
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
+        return "Your browser's storage is full, so the latest deck changes were not saved. Delete a deck or copy this one out with Export."
+    }
+    return "Your browser didn't let us save your decks, so the latest changes will be lost on reload."
+}
+
+const BACKUP_APP = "impulse-caster"
+
+// every deck as one file's text, cards slimmed
+export function backupJson(list: SavedDeck[]): string {
+    const decks = list.map((d) => ({ ...d, deck: slimDeck(d.deck) }))
+    return JSON.stringify({ app: BACKUP_APP, version: 1, decks })
+}
+
+// the decks in a backup file's text; a bad file gives no decks and a one-line error, bad entries are dropped
+export function readBackup(text: string): { decks: SavedDeck[]; error?: string } {
+    let json: unknown
+    try {
+        json = JSON.parse(text)
+    } catch {
+        return { decks: [], error: "That file isn't a deck backup (it isn't valid JSON)." }
+    }
+    if (!isRecord(json) || json.app !== BACKUP_APP) {
+        return { decks: [], error: "That file isn't an Impulse Caster deck backup." }
+    }
+    return { decks: readSavedDecks(json.decks) }
+}
+
+// existing decks plus the incoming ones: a new id is added; for an id already there the later `updated` wins
+export function mergeDecks(existing: SavedDeck[], incoming: SavedDeck[]): SavedDeck[] {
+    const merged = [...existing]
+    for (const deck of incoming) {
+        const at = merged.findIndex((d) => d.id === deck.id)
+        if (at < 0) merged.push(deck)
+        else if (deck.updated > merged[at].updated) merged[at] = deck
+    }
+    return merged
 }
 
 // what a tab holds after another tab saved: that tab's decks, keeping our `current` if that deck still exists

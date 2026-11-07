@@ -94,6 +94,32 @@ test("pickByName picks a token that shares a real card's name", () => {
     assert.equal(pickByName(bytes, header, "Soldier")?.oracle_id, "s1");
 });
 
+test("pickByName looks at every renamed token, emblem and the like", () => {
+    const { bytes, header } = makeBucket([
+        { name: "Soldier", slug: "soldier", oracle: "s1", prints: [print("xyz", "5")] },
+        { name: "Soldier", slug: "soldier-token", oracle: "s2", prints: [print("tm20", "3")] },
+        { name: "Soldier", slug: "soldier-token-2", oracle: "s3", prints: [print("tlrc", "7")] },
+        { name: "Soldier", slug: "soldier-token-3", oracle: "s4", prints: [print("tmh2", "2")] },
+        { name: "Soldier Of Fortune", slug: "soldier-of-fortune", oracle: "sof", prints: [print("tlrc", "7"), print("tmh2", "2")] },
+    ]);
+    assert.equal(pickByName(bytes, header, "Soldier", "TLRC", "7")?.oracle_id, "s3");
+    assert.equal(pickByName(bytes, header, "Soldier", "TMH2", "2")?.oracle_id, "s4");
+    assert.equal(pickByName(bytes, header, "Soldier")?.oracle_id, "s1");
+    assert.equal(pickByName(bytes, header, "Soldier", "TMH2")?.oracle_id, "s4");
+});
+
+test("pickByName looks at emblems, planes and art cards that share a name", () => {
+    const { bytes, header } = makeBucket([
+        { name: "Tamiyo", slug: "tamiyo", oracle: "t1", prints: [print("abc", "1")] },
+        { name: "Tamiyo", slug: "tamiyo-emblem", oracle: "t2", prints: [print("emb", "2")] },
+        { name: "Tamiyo", slug: "tamiyo-art-card", oracle: "t3", prints: [print("art", "3")] },
+        { name: "Tamiyo", slug: "tamiyo-plane-2", oracle: "t4", prints: [print("pln", "4")] },
+    ]);
+    assert.equal(pickByName(bytes, header, "Tamiyo", "EMB", "2")?.oracle_id, "t2");
+    assert.equal(pickByName(bytes, header, "Tamiyo", "ART", "3")?.oracle_id, "t3");
+    assert.equal(pickByName(bytes, header, "Tamiyo", "PLN", "4")?.oracle_id, "t4");
+});
+
 test("pickByName still matches full names and finds nothing for a front face alone", () => {
     const { bytes, header } = makeBucket([
         { name: "Fire // Ice", slug: "fire-ice", oracle: "f1", prints: [print("apc", "128")] },

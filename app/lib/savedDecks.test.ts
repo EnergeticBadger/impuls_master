@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
-import { addCard, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
-import { copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { oracleOf } from "./carddata.ts";
+import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { backupJson, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -43,6 +44,13 @@ test("a good deck round-trips through JSON", () => {
         },
     }
     assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
+})
+
+test("a format is kept when it is a string, dropped otherwise", () => {
+    const base = newDeck("Burn", 5, "b")
+    assert.equal(readSavedDecks([{ ...base, format: "modern" }])[0].format, "modern")
+    assert.equal("format" in readSavedDecks([{ ...base, format: 3 }])[0], false)
+    assert.equal("format" in readSavedDecks([base])[0], false)
 })
 
 test("a copy gets a new id, name and time, and equal cards", () => {
@@ -253,4 +261,85 @@ test("two tabs with different current decks do not ping-pong", () => {
     assert.equal(writes, 1)
     assert.equal(searchTab.list.length, 1)
     assert.equal(searchTab.current, undefined)
+})
+
+test("backup then read gives the same decks", () => {
+    const a = { ...newDeck("A", 5, "a"), deck: { main: [{ card: card("1", "Bolt"), count: 4 }], side: [] } }
+    const b = newDeck("B", 7, "b")
+    const read = readBackup(backupJson([a, b]))
+    assert.equal(read.error, undefined)
+    assert.deepEqual(read.decks, [a, b])
+})
+
+test("a bad backup file gives an error and no decks", () => {
+    for (const text of ["not json at all", "{}", "[]", "null", JSON.stringify({ app: "other-app", version: 1, decks: [newDeck("X", 1, "x")] })]) {
+        const read = readBackup(text)
+        assert.deepEqual(read.decks, [])
+        assert.equal(typeof read.error, "string")
+    }
+})
+
+test("a backup drops bad deck entries", () => {
+    const good = newDeck("Good", 1, "g")
+    const read = readBackup(JSON.stringify({ app: "impulse-caster", version: 1, decks: [null, { id: "x" }, good] }))
+    assert.equal(read.error, undefined)
+    assert.deepEqual(read.decks, [good])
+})
+
+test("merging adds new ids and keeps the newer deck for a shared id", () => {
+    const old = newDeck("Old", 1, "same")
+    const newer = newDeck("Newer", 2, "same")
+    const other = newDeck("Other", 1, "other")
+    assert.deepEqual(mergeDecks([old], [newer, other]), [newer, other])
+    assert.deepEqual(mergeDecks([newer], [old]), [newer])
+})
+
+// a reversible card in Scryfall's real API shape: no top-level oracle id, it is only on the faces
+const IMAGES = { small: "s.jpg", normal: "n.jpg", large: "l.jpg", png: "p.png", art_crop: "a.jpg", border_crop: "b.jpg" }
+const propagandaFace = {
+    object: "card_face", name: "Propaganda", oracle_id: "prop-oracle", mana_cost: "{2}{U}", type_line: "Enchantment",
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    colors: ["U"], artist: "Someone", image_uris: IMAGES,
+}
+const reversible = {
+    id: "prop-sld", name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1",
+    card_faces: [propagandaFace, { ...propagandaFace, artist: "Someone Else" }],
+} as unknown as ScryfallCard
+const regular = { id: "prop-tmp", oracle_id: "prop-oracle", name: "Propaganda", layout: "normal", set: "tmp" } as unknown as ScryfallCard
+
+test("slimCard keeps the faces' oracle id of a reversible card", () => {
+    const slim = slimCard(reversible)
+    assert.equal(oracleOf(slim), "prop-oracle")
+    assert.equal(slim.oracle_id, undefined)
+})
+
+test("a slimmed reversible card counts toward its copies in the deck", () => {
+    let deck: Deck = { main: [], side: [] }
+    for (let i = 0; i < 3; i++) deck = addCard(deck, slimCard(reversible))
+    assert.equal(copiesIn(slimDeck(deck), "prop-oracle"), 3)
+
+    let mixed: Deck = addCard({ main: [], side: [] }, slimCard(regular), "main", 2)
+    mixed = addCard(mixed, slimCard(reversible))
+    assert.equal(copiesIn(slimDeck(mixed), "prop-oracle"), 3)
+})
+
+test("readSavedDecks keeps the faces' oracle id", () => {
+    const saved = [{ id: "d1", name: "Blue", updated: 1, deck: { main: [{ card: reversible, count: 1 }], side: [] } }]
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
+    assert.equal(oracleOf(read.deck.main[0].card), "prop-oracle")
+    assert.equal(copiesIn(read.deck, "prop-oracle"), 1)
+})
+
+test("saveErrorMessage says storage is full for a quota error", () => {
+    const full = "Your browser's storage is full, so the latest deck changes were not saved. Delete a deck or copy this one out with Export."
+    assert.equal(saveErrorMessage({ name: "QuotaExceededError" }), full)
+    assert.equal(saveErrorMessage({ name: "NS_ERROR_DOM_QUOTA_REACHED" }), full)
+})
+
+test("saveErrorMessage gives the general message for anything else", () => {
+    const other = "Your browser didn't let us save your decks, so the latest changes will be lost on reload."
+    assert.equal(saveErrorMessage(new Error("SecurityError")), other)
+    assert.equal(saveErrorMessage("nope"), other)
+    assert.equal(saveErrorMessage(null), other)
+    assert.equal(saveErrorMessage({ name: "SecurityError" }), other)
 })

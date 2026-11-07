@@ -181,14 +181,18 @@ export function findEntryByName(entries: BucketEntry[], name: string): BucketEnt
     return entries.find((e) => e[0] === wanted);
 }
 
+// the words scripts/card-data.ts (NOT_CARDS) puts after a renamed non-card's slug
+const NOT_CARD_WORDS = ["token", "emblem", "art-card", "vanguard", "scheme", "plane"];
+const notCardWords = NOT_CARD_WORDS.join("|");
+
 // the card a deck line means. Cards sharing a name sit in one bucket (the first gets the plain slug, the others
-// "<slug>-2", "<slug>-token"...), so this looks at all of them: the one with the line's set and collector
+// "<slug>-2", "<slug>-token", "<slug>-token-2", "<slug>-emblem"...), so this looks at all of them: the one with the line's set and collector
 // number, else one with a printing in the set, else the plain-slug card
 export function pickByName(
     bytes: Uint8Array, header: { entries: BucketEntry[]; body: number }, name: string, set?: string, number?: string,
 ): CardRecord | undefined {
     const wanted = slug(name);
-    const sibling = new RegExp(`^${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+|token)$`);
+    const sibling = new RegExp(`^${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(?:\\d+|(?:${notCardWords})(?:-\\d+)?)$`);
     const candidates = header.entries
         .filter((e) => e[0] === wanted || sibling.test(e[0]))
         .map((e) => readRecord(bytes, header, e))

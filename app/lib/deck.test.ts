@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, setCommander, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -92,13 +92,24 @@ test("reversible cards (oracle id only on their faces) are counted and removed",
     assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
     assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
 
+    // copies come out of the entry with the card's own name; the other entry is left alone
     const less = removeCard(mixed, reversibleProp);
-    // one copy comes out of the first matching entry; the other entry is left alone
-    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.deepEqual(less.main.map(e => e.count), [2]);
     assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+    assert.deepEqual(removeCard(mixed, regularProp).main.map(e => e.count), [1, 1]);
 
     const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
-    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [2, 1]);
+
+    const three: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 3 }], side: [] };
+    const moved = removeCard(three, reversibleProp, "main", 3);
+    assert.deepEqual(moved.main.map(e => [e.card.name, e.count]), [["Propaganda", 2]]);
+});
+
+test("removeCard falls back to the oracle id when no entry has the card's name", () => {
+    const deck: Deck = { main: [{ card: regularProp, count: 2 }], side: [] };
+    const less = removeCard(deck, reversibleProp);
+    assert.deepEqual(less.main.map(e => e.count), [1]);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
@@ -233,6 +244,35 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
 });
 
+const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
+
+test("deckPrice multiplies by count, falls back to foil, lists unpriced cards once", () => {
+    const a = priced("A", { usd: "1.10", usd_foil: null });
+    const b = priced("B", { usd: null, usd_foil: "2.50" });
+    const c = priced("C", { usd: null, usd_foil: null });
+    let deck: Deck = addCard(addCard(addCard({ main: [], side: [] }, a, "main", 3), b), c);
+    deck = addCard(deck, c, "side", 2);
+    deck = addCard(deck, a, "side", 1);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 5.8, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: true, currency: "usd" }), { total: 6.9, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }).missing, ["A", "B", "C"]);
+});
+
+test("deckPrice counts the commander; an empty deck is free", () => {
+    const a = priced("A", { usd: "0.10" });
+    assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
+    assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
+    assert.equal(canBeCommander(card("Ghave", "Legendary Creature — Fungus")), true);
+    assert.equal(canBeCommander(card("Bear", "Creature — Bear")), false);
+    assert.equal(canBeCommander(card("Crown", "Legendary Artifact")), false);
+    assert.equal(canBeCommander(card("Teferi", "Legendary Planeswalker — Teferi", { oracle_text: "Teferi can be your commander." })), true);
+    const faces = [{ name: "Front", type_line: "Legendary Creature — Human" }, { name: "Back", type_line: "Legendary Enchantment" }];
+    assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
+});
+
 // ---- manaCostOf, on cards built the way the site builds them from its card data ----
 
 const printing: Printing = { id: "p1", set: "tst", set_name: "Test", number: "1", rarity: "common", released: "2020-01-01" };
@@ -264,7 +304,7 @@ test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
     assert.equal(manaCostOf(delverApi), "{U}");
 });
 
-const legend = card("Isamaru, Hound of Konda", "Legendary Creature — Dog", { cmc: 1 });
+const legend =card("Isamaru, Hound of Konda", "Legendary Creature — Dog", { cmc: 1 });
 const legend2 = card("Kenrith, the Returned King", "Legendary Creature — Human Noble", { cmc: 5 });
 const walker = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", { oracle_text: "Grist, the Hunger Tide can be your commander." });
 const legendDfc = card("Jace, Vryn's Prodigy // Jace, Telepath Unbound", "Legendary Creature — Human Wizard // Legendary Planeswalker — Jace", {
@@ -303,4 +343,76 @@ test("setCommander from a 2-of leaves one copy in main", () => {
     const next = setCommander(deck, legend);
     assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
     assert.deepEqual(next.commander, { card: legend, count: 1 });
+});
+
+test("deckSummary counts lands and spells and averages the spells' mana value", () => {
+    let deck = addCard(empty, forest, "main", 24)
+    deck = addCard(deck, bolt, "main", 20)
+    deck = addCard(deck, bear, "main", 16)
+    // (20 * 1 + 16 * 2) / 36 = 1.444...
+    assert.deepEqual(deckSummary(deck), { lands: 24, spells: 36, averageManaValue: 1.44 })
+});
+
+test("deckSummary weights the average by count", () => {
+    const deck = addCard(addCard(empty, bolt, "main", 3), golem)
+    // (3 * 1 + 9) / 4 = 3
+    assert.deepEqual(deckSummary(deck), { lands: 0, spells: 4, averageManaValue: 3 })
+});
+
+test("deckSummary counts the commander but not the sideboard", () => {
+    const deck: Deck = { ...addCard(addCard(empty, forest), bear, "side", 5), commander: { card: golem, count: 1 } }
+    assert.deepEqual(deckSummary(deck), { lands: 1, spells: 1, averageManaValue: 9 })
+});
+
+test("deckSummary counts a modal DFC by its front face", () => {
+    // Valakut Awakening is an instant on the front, so a spell
+    assert.equal(deckSummary(addCard(empty, mdfc)).spells, 1)
+});
+
+test("deckSummary of an empty deck is all zeros", () => {
+    assert.deepEqual(deckSummary(empty), { lands: 0, spells: 0, averageManaValue: 0 })
+});
+
+const boltM10 = card("Lightning Bolt", "Instant", { id: "bolt-m10", cmc: 1 });
+const boltA25 = card("Lightning Bolt", "Instant", { id: "bolt-a25", cmc: 1 });
+const bearPrint = card("Grizzly Bears", "Creature — Bear", { id: "bear-1", cmc: 2 });
+const elfPrint = card("Llanowar Elves", "Creature — Elf", { id: "elf-1", cmc: 1 });
+
+test("replacePrinting swaps a main-deck row's card, keeping its count and place", () => {
+    const deck: Deck = { main: [{ card: bearPrint, count: 2 }, { card: boltM10, count: 4 }, { card: elfPrint, count: 1 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bear-1", 2], ["bolt-a25", 4], ["elf-1", 1]]);
+    assert.equal(deck.main[1].card.id, "bolt-m10", "the input is not changed");
+});
+
+test("replacePrinting in the sideboard leaves the main deck alone", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [{ card: boltM10, count: 1 }] };
+    const next = replacePrinting(deck, "side", boltM10, boltA25);
+    assert.equal(next.side[0].card.id, "bolt-a25");
+    assert.equal(next.main[0].card.id, "bolt-m10");
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting swaps the commander", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 1 }], side: [], commander: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "commander", bearPrint, other);
+    assert.equal(next.commander?.card.id, "bear-2");
+    assert.equal(next.commander?.count, 1);
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting merges into a row that already holds the new printing", () => {
+    const deck: Deck = { main: [{ card: boltA25, count: 1 }, { card: elfPrint, count: 2 }, { card: boltM10, count: 3 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bolt-a25", 4], ["elf-1", 2]]);
+    const back = replacePrinting(deck, "main", boltA25, boltM10);
+    assert.deepEqual(back.main.map((e) => [e.card.id, e.count]), [["bolt-m10", 4], ["elf-1", 2]]);
+});
+
+test("replacePrinting of a card not in the zone changes nothing", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [] };
+    assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
+    assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
+    assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
 });

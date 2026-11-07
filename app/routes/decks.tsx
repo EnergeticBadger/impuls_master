@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { backupJson, readBackup } from "~/lib/savedDecks";
 import { Link, useNavigate } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
-import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
-import { cardsByName } from "~/lib/card";
+import { SaveWarning } from "~/Components/Deck/SaveWarning";
+import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
+import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { emptyDeck, type Deck } from "~/lib/deck";
 import { decksByRecent } from "~/lib/savedDecks";
-import { deckFromLines, parseDeckList, readDeckLinkHash, type Line, type Zone } from "~/lib/decklist";
+import { readDeckLinkHash } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
 
@@ -26,6 +28,7 @@ export default function Decks() {
   const [importing, setImporting] = useState<{ name: string, text: string }>()
   const [progress, setProgress] = useState<{ done: number, total: number }>()
   const [review, setReview] = useState<{ deck: Deck, notes: string[] }>()
+  const [backupNote, setBackupNote] = useState<string>()
   const navigate = useNavigate()
 
   // the decks are read from localStorage after the first render; don't flash the empty state before that
@@ -54,7 +57,32 @@ export default function Decks() {
     setRenaming(undefined)
   }
 
-  const closeImport = () => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
+  const backUp = () => {
+    const blob = new Blob([backupJson(decks.list)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `impulse-caster-decks-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const restore = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    try {
+      const read = readBackup(await file.text())
+      if (read.error) { setBackupNote(read.error); return }
+      restoreDecks(read.decks)
+      setBackupNote(`Restored ${read.decks.length} ${read.decks.length === 1 ? "deck" : "decks"}`)
+    } catch (err) {
+      console.error("Could not read the backup file", err)
+      setBackupNote("Could not read that file.")
+    }
+  }
+
+  const closeImport =() => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
 
   const saveImport = (name: string, deck: Deck) => {
     const made = createDeckWith(name.trim() || DEFAULT_NAME, deck)
@@ -63,19 +91,12 @@ export default function Decks() {
 
   const runImport = async () => {
     if (!importing || progress) return
-    const parsed = parseDeckList(importing.text)
-    const lines: (Line & { zone: Zone })[] = [
-      ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
-      ...parsed.main.map((l) => ({ ...l, zone: "main" as const })),
-      ...parsed.side.map((l) => ({ ...l, zone: "side" as const })),
-    ]
-    if (lines.length === 0 && parsed.problems.length === 0) return
-    setProgress({ done: 0, total: lines.length })
+    setProgress({ done: 0, total: 0 })
     try {
-      const { found, missing } = await cardsByName(lines, (done, total) => setProgress({ done, total }))
-      const deck = deckFromLines(found)
-      const notes = [...parsed.problems, ...missing.map((l) => `Card not found: ${l.count} ${l.name}`)]
-      if (notes.length === 0) saveImport(importing.name, deck)
+      const { deck, notes } = await lookUpDeckList(importing.text, (done, total) => setProgress({ done, total }))
+      const empty = deck.main.length === 0 && deck.side.length === 0 && !deck.commander
+      if (empty && notes.length === 0) { /* nothing to import */ }
+      else if (notes.length === 0) saveImport(importing.name, deck)
       else setReview({ deck, notes })
     } catch (e) {
       console.error("Could not import the deck", e)
@@ -145,6 +166,7 @@ export default function Decks() {
     <div>
       <SiteHeader />
       <main className={styles.page}>
+        <SaveWarning />
         <h1 className={styles.title}>My decks</h1>
         {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
         <div className={styles.actions}>{importing === undefined && newDeckForm}{importing === undefined && importForm}</div>
@@ -197,6 +219,16 @@ export default function Decks() {
             })}
           </ul>
         )}
+        <div className={styles.actions}>
+          {list.length > 0 && (
+            <button type="button" className={styles.button} onClick={backUp}>Back up decks</button>
+          )}
+          <label className={styles.button}>
+            Restore from file
+            <input type="file" accept=".json,application/json" onChange={restore} hidden />
+          </label>
+        </div>
+        {backupNote && <p className={styles.meta} role="status">{backupNote}</p>}
       </main>
     </div>
   )

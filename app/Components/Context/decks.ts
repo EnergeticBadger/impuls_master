@@ -1,13 +1,17 @@
 import { proxy, ref, subscribe } from "valtio";
 import { addCard, removeCard, type Deck } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
-import { copyDeck, deckToBuild, newDeck, readSavedDecks, reloadFromStorage, slimDeck, writeGate, type SavedDeck } from "~/lib/savedDecks";
+import { copyDeck, deckToBuild, mergeDecks, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimDeck, writeGate, type SavedDeck } from "~/lib/savedDecks";
 
 const STORAGE_KEY = 'decks'
 
 // the user's decks, kept in the browser like the compare drawer's cards; `current` is the id of the deck being built.
 // Each deck is stored with ref() so valtio doesn't wrap every Scryfall field in a proxy.
 export const decks = proxy<{ list: SavedDeck[], current?: string }>({ list: [] })
+
+// why the last write to localStorage failed, if it did (see SaveWarning). Not a field on `decks`, so setting it
+// doesn't trigger another deck write.
+export const deckSave = proxy<{ error?: string }>({})
 
 export function createDeck(name: string): SavedDeck {
     const made = newDeck(name, Date.now(), crypto.randomUUID())
@@ -38,9 +42,19 @@ export function renameDeck(id: string, name: string) {
     update(id, (d) => ({ ...d, name }))
 }
 
+// "" or undefined means no format
+export function setDeckFormat(id: string, format: string | undefined) {
+    update(id, (d) => ({ ...d, format: format || undefined }))
+}
+
 export function deleteDeck(id: string) {
     decks.list = decks.list.filter((d) => d.id !== id)
     if (decks.current === id) decks.current = undefined
+}
+
+// merges decks from a backup file into the list (see mergeDecks)
+export function restoreDecks(incoming: SavedDeck[]) {
+    decks.list = mergeDecks(decks.list, incoming).map((d) => ref(d))
 }
 
 export function setCurrentDeck(id: string) {
@@ -94,8 +108,10 @@ if (typeof window !== 'undefined') {
             const json = JSON.stringify({ list: decks.list, current: decks.current })
             // skip writes that match what's stored (e.g. just reloaded from another tab): no ping-pong
             if (localStorage.getItem(STORAGE_KEY) !== json) localStorage.setItem(STORAGE_KEY, json)
+            if (deckSave.error) deckSave.error = undefined
         } catch (e) {
             console.error('Could not save decks', e)
+            deckSave.error = saveErrorMessage(e)
         }
     })
 

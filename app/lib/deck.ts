@@ -40,22 +40,16 @@ const sameCard = (a: ScryfallCard, b: ScryfallCard) => {
     return x && y ? x === y : a.name === b.name
 }
 
-// takes `count` copies out (default one) of the first matching entry; an entry with none left disappears
+// takes `count` copies out (default one) of the entry with the card's name, else of the first entry with
+// the same oracle id; an entry with none left disappears
 export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "main", count = 1): Deck {
-    const i = deck[zone].findIndex(e => sameCard(e.card, card))
+    const byName = deck[zone].findIndex(e => e.card.name === card.name)
+    const i = byName >= 0 ? byName : deck[zone].findIndex(e => sameCard(e.card, card))
     if (i < 0) return deck
     const entries = deck[zone]
         .map((e, j) => (j === i ? { ...e, count: e.count - count } : e))
         .filter(e => e.count > 0)
     return { ...deck, [zone]: entries }
-}
-
-// a legendary creature (judged by the front face), or a card that says it can be your commander
-export function canBeCommander(card: ScryfallCard): boolean {
-    const type = frontType(card)
-    if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
-    const text = [card.oracle_text, ...(card.card_faces ?? []).map(f => f.oracle_text)].join("\n")
-    return /can be your commander/i.test(text)
 }
 
 // moves one copy of the card from the main deck to the commander slot; a commander already there goes
@@ -66,6 +60,27 @@ export function setCommander(deck: Deck, card: ScryfallCard): Deck {
     const taken = removeCard(deck, card, "main")
     const main = deck.commander ? addTo(taken.main, deck.commander.card, deck.commander.count) : taken.main
     return { ...taken, main, commander: { card: entry.card, count: 1 } }
+}
+
+// the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
+// entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
+// gives the deck back unchanged; the input is never changed.
+export function replacePrinting(deck: Deck, zone: DeckZone | "commander", from: ScryfallCard, to: ScryfallCard): Deck {
+    if (zone === "commander") {
+        if (deck.commander?.card.id !== from.id) return deck
+        return { ...deck, commander: { ...deck.commander, card: to } }
+    }
+    const entries = deck[zone]
+    const at = entries.findIndex(e => e.card.id === from.id)
+    if (at < 0) return deck
+    const other = entries.findIndex((e, i) => i !== at && e.card.id === to.id)
+    if (other < 0) return { ...deck, [zone]: entries.map((e, i) => (i === at ? { ...e, card: to } : e)) }
+    const first = Math.min(at, other)
+    const merged = { card: to, count: entries[at].count + entries[other].count }
+    return {
+        ...deck,
+        [zone]: entries.flatMap((e, i) => (i === first ? [merged] : i === at || i === other ? [] : [e])),
+    }
 }
 
 // copies of a card in the main deck, whatever the printing (counted by oracle id)
@@ -140,6 +155,40 @@ export function colorCounts(deck: Deck): Record<"W" | "U" | "B" | "R" | "G" | "C
     return counts
 }
 
+// lands and spells in the main deck plus the commander (by the front face, like manaCurve), and the spells'
+// average mana value weighted by count, rounded to 2 decimals (0 with no spells)
+export function deckSummary(deck: Deck): { lands: number; spells: number; averageManaValue: number } {
+    let lands = 0, spells = 0, total = 0
+    for (const { card, count } of cardsOf(deck)) {
+        if (isLand(card)) {
+            lands += count
+        } else {
+            spells += count
+            total += (card.cmc ?? 0) * count
+        }
+    }
+    return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }
+}
+
+// a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
+// no price are listed by name (once) and add nothing
+export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
+    const entries = [...cardsOf(deck), ...(opts.side ? deck.side : [])]
+    let cents = 0
+    const missing: string[] = []
+    for (const { card, count } of entries) {
+        const prices = card.prices as Partial<Record<string, string | null>> | undefined
+        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil : undefined)
+        const price = raw == null ? NaN : parseFloat(raw)
+        if (Number.isNaN(price)) {
+            if (!missing.includes(card.name)) missing.push(card.name)
+            continue
+        }
+        cents += Math.round(price * 100) * count
+    }
+    return { total: cents / 100, missing }
+}
+
 const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
 
 // most copies the rules let a deck hold: 4 normally, no limit for basic lands and "any number" cards,
@@ -151,6 +200,15 @@ function copyLimit(card: ScryfallCard): number {
     const upTo = /A deck can have up to (\w+) cards named/i.exec(text)
     if (upTo && NUMBER_WORDS[upTo[1].toLowerCase()]) return NUMBER_WORDS[upTo[1].toLowerCase()]
     return 4
+}
+
+// legendary creatures, and anything whose text says it can be your commander
+export function canBeCommander(card: ScryfallCard): boolean {
+    const faces = card.card_faces ?? []
+    const type = frontType(card)
+    if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
+    const text = [card.oracle_text, ...faces.map(f => f.oracle_text)].join("\n")
+    return /can be your commander/i.test(text)
 }
 
 const SIDEBOARD_MAX = 15

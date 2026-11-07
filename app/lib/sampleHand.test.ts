@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import type { Deck } from "./deck.ts";
-import { drawHand, libraryOf, shuffle } from "./sampleHand.ts";
+import { atLeastOneChance, cardsSeen, drawHand, libraryOf, shuffle } from "./sampleHand.ts";
 
 const lcg = (seed: number) => () => {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
@@ -49,4 +49,33 @@ test("a 5-card library gives a 5-card hand", () => {
   const { hand, rest } = drawHand([1, 2, 3, 4, 5], 7, lcg(3))
   assert.equal(hand.length, 5)
   assert.equal(rest.length, 0)
+})
+
+test("atLeastOneChance of a 4-of in the opening 7 of 60 cards", () => {
+  assert.equal(atLeastOneChance(60, 4, 7).toFixed(4), "0.3995")
+  // the deck page's example: by turn 3 on the draw
+  assert.equal((atLeastOneChance(60, 4, 10) * 100).toFixed(1), "52.8")
+})
+
+test("atLeastOneChance edge cases", () => {
+  assert.equal(atLeastOneChance(60, 0, 7), 0)
+  assert.equal(atLeastOneChance(60, 4, 0), 0)
+  assert.equal(atLeastOneChance(60, 60, 1), 1)
+  assert.equal(atLeastOneChance(60, 60, 7), 1)
+  assert.equal(atLeastOneChance(60, 4, 57), 1)
+  assert.ok(Math.abs(atLeastOneChance(100, 1, 10) - 0.1) < 1e-12)
+})
+
+test("atLeastOneChance clamps bad input to 0 rather than throwing", () => {
+  assert.equal(atLeastOneChance(-60, 4, 7), 0)
+  assert.equal(atLeastOneChance(60, -4, 7), 0)
+  assert.equal(atLeastOneChance(60, 4, -7), 0)
+  assert.equal(atLeastOneChance(Number.NaN, 4, 7), 0)
+})
+
+test("cardsSeen counts the opening hand and the draws", () => {
+  assert.equal(cardsSeen(1, true), 7)
+  assert.equal(cardsSeen(1, false), 8)
+  assert.equal(cardsSeen(3, false), 10)
+  assert.equal(cardsSeen(3, true), 9)
 })

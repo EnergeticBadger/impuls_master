@@ -3,15 +3,20 @@ import { Link, useParams } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./DeckPage.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
+import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { DeckStats } from "~/Components/Deck/DeckStats";
-import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
+import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
+import { DrawOdds } from "~/Components/Deck/DrawOdds";
+import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath, shareLink } from "~/lib/card";
+import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, groupByType, manaCostOf, removeCard, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import type { ScryfallCard } from "~/types";
 
 export function meta() {
   return [
@@ -32,6 +37,16 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
   return addCard(without, entry.card, to, entry.count)
 }
+
+const removeAsCommander = (deck: Deck): Deck => {
+  if (!deck.commander) return deck
+  return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
+}
+
+const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
+const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
+
+const anchorOf = (name: string) => `card-${name.replace(/[^a-z0-9]+/gi, "-")}`
 
 const EXPORT_BUTTONS: { style: DeckListStyle; label: string }[] = [
   { style: "text", label: "Copy as text" },
@@ -128,6 +143,8 @@ export default function DeckPage() {
   const [ready, setReady] = useState(false)
   const [name, setName] = useState<string>()
   const [preview, setPreview] = useState<string>()
+  // the row whose printing list is open: "<section>:<card id>"
+  const [printingsOf, setPrintingsOf] = useState<string>()
   const [withSide, setWithSide] = useState(false)
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
@@ -136,6 +153,8 @@ export default function DeckPage() {
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState<{ text: string; notes?: string[]; next?: Deck }>()
+  const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
   useEffect(() => { loadDecks(); setReady(true) }, [])
@@ -199,6 +218,17 @@ export default function DeckPage() {
     setName(undefined)
   }
 
+  const format = saved.format
+  const isCommander = format === "commander"
+  const problems = format ? legalityProblems(deck, format) : []
+  // a card's row is the first one it appears in (commander, then main, then sideboard)
+  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...deck.side]
+  const anchored = new Map<string, string>()
+  for (const e of rowOrder) if (!anchored.has(e.card.name)) anchored.set(e.card.name, anchorOf(e.card.name))
+  const cardNamed = (problem: string) =>
+    [...anchored.keys()].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
+  const rowSeen = new Set<string>()
+
   const quickAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     if (quickBusy) return
@@ -219,12 +249,29 @@ export default function DeckPage() {
     }
   }
 
+  const saveText = async () => {
+    if (!editing || editProgress) return
+    setEditProgress({ done: 0, total: 0 })
+    try {
+      const { deck: next, notes } = await lookUpDeckList(editing.text, (done, total) => setEditProgress({ done, total }), latest.current.deck)
+      if (notes.length === 0) { change(() => next); setEditing(undefined) }
+      else setEditing({ ...editing, next, notes })
+    } catch (e) {
+      console.error("Could not look up the deck list", e)
+      setEditing({ ...editing, next: undefined, notes: ["Something went wrong looking up the cards."] })
+    }
+    setEditProgress(undefined)
+  }
+
   const row = (entry: DeckEntry, section: Section) => {
     const key = `${section}:${entry.card.name}`
+    const pickerKey = `${section}:${entry.card.id}`
     const image = smallImage(entry)
     const cost = manaCostOf(entry.card)
+    const rowId = rowSeen.has(entry.card.name) ? undefined : anchorOf(entry.card.name)
+    rowSeen.add(entry.card.name)
     return (
-      <li key={key} className={styles.row}>
+      <li key={key} id={rowId} className={styles.row}>
         <div className={styles.line}>
           <span className={styles.count}>{entry.count}</span>
           <span className={styles.cardName}>
@@ -257,19 +304,37 @@ export default function DeckPage() {
                 onClick={() => change((d) => addCard(d, entry.card, section))}>+</button>
             </>
           )}
-          <button type="button" className={styles.button}
-            onClick={() => change((d) => move(d, entry, section))}>
-            {section === "main" ? "To sideboard" : "To main"}
-          </button>
-          {section === "main" && canBeCommander(entry.card) && (
+          {section === "commander" ? (
+            <button type="button" className={styles.button}
+              onClick={() => change(removeAsCommander)}>Remove as commander</button>
+          ) : (
+            <button type="button" className={styles.button}
+              onClick={() => change((d) => move(d, entry, section))}>
+              {section === "main" ? "To sideboard" : "To main"}
+            </button>
+          )}
+          {isCommander && section === "main" && canBeCommander(entry.card) && (
             <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
               onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
           )}
+          <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
+            aria-expanded={printingsOf === pickerKey}
+            onClick={() => setPrintingsOf((p) => (p === pickerKey ? undefined : pickerKey))}>Printing</button>
           {section !== "commander" && (
             <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
               onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
           )}
         </div>
+        {printingsOf === pickerKey && (
+          <PrintingPicker
+            card={entry.card}
+            onClose={() => setPrintingsOf(undefined)}
+            onChoose={(to) => {
+              change((d) => replacePrinting(d, section, entry.card, to))
+              setPrintingsOf(undefined)
+            }}
+          />
+        )}
         {preview === key && image && <img className={styles.preview} src={image} alt={entry.card.name} width={146} height={204} />}
       </li>
     )
@@ -279,10 +344,13 @@ export default function DeckPage() {
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
   const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
 
+  const price = deckPrice(deck, { side: withSide, currency: "usd" })
+
   return (
     <div>
       <SiteHeader />
       <main className={styles.page}>
+        <SaveWarning />
         <input
           className={styles.nameInput}
           value={name ?? saved.name}
@@ -316,11 +384,79 @@ export default function DeckPage() {
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
           <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
+          {!editing && (
+            <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
+          )}
           <Link to="/decks" className={styles.link}>All decks</Link>
         </p>
         <p role="status" className={styles.empty}>{status}</p>
 
+        {editing ? (
+          <section className={styles.editor}>
+            {editing.notes ? (
+              <>
+                <p>These need a look before the deck is saved:</p>
+                <ul>{editing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                <div className={styles.buttons}>
+                  {editing.next && (
+                    <button type="button" className={styles.button}
+                      onClick={() => { const next = editing.next as Deck; change(() => next); setEditing(undefined) }}>Save anyway</button>
+                  )}
+                  <button type="button" className={styles.button} onClick={() => setEditing({ text: editing.text })}>Back to the list</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <textarea
+                  className={styles.editText}
+                  value={editing.text}
+                  onChange={(e) => setEditing({ text: e.target.value })}
+                  aria-label="Deck list"
+                  rows={Math.min(24, editing.text.split("\n").length + 2)}
+                  disabled={!!editProgress}
+                  autoFocus
+                />
+                <div className={styles.buttons}>
+                  <button type="button" className={styles.button} onClick={saveText} disabled={!!editProgress}>Save</button>
+                  <button type="button" className={styles.button} onClick={() => setEditing(undefined)} disabled={!!editProgress}>Cancel</button>
+                  {editProgress && <span className={styles.empty} role="status">Finding cards… {editProgress.done} / {editProgress.total}</span>}
+                </div>
+              </>
+            )}
+          </section>
+        ) : (
+        <>
         <DeckStats deck={deck} />
+
+        <div className={styles.format}>
+          <label>
+            Format{" "}
+            <select
+              className={styles.select}
+              value={format ?? ""}
+              onChange={(e) => setDeckFormat(id, e.target.value)}
+            >
+              <option value="">No format</option>
+              {FORMATS.map((f) => <option key={f} value={f}>{formatLabel(f)}</option>)}
+            </select>
+          </label>
+          {format && (problems.length === 0
+            ? <p className={styles.legal}>Legal in {formatLabel(format)}</p>
+            : (
+              <ul className={styles.problems} aria-label={`Problems for ${formatLabel(format)}`}>
+                {problems.map((p) => {
+                  const name = cardNamed(p)
+                  return (
+                    <li key={p}>
+                      {name
+                        ? <><a href={`#${anchored.get(name)}`} className={styles.link}>{name}</a>{p.slice(name.length)}</>
+                        : p}
+                    </li>
+                  )
+                })}
+              </ul>
+            ))}
+        </div>
 
         {deck.commander && (
           <section>
@@ -342,6 +478,7 @@ export default function DeckPage() {
         ))}
 
         <SampleHand deck={deck} />
+        <DrawOdds deck={deck} />
 
         {deck.side.length > 0 && (
           <section>
@@ -368,8 +505,17 @@ export default function DeckPage() {
                 rel="noopener sponsored"
               >Buy this deck on TCGplayer</a>
             </p>
+            <p>
+              About ${price.total.toFixed(2)}
+              {price.missing.length > 0 && (
+                <>{" "}<span title={price.missing.join(", ")}>({price.missing.length} {price.missing.length === 1 ? "card has" : "cards have"} no price)</span></>
+              )}
+            </p>
+            <p className={styles.empty}>An estimate from the prices of the printings in your deck.</p>
             <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
           </section>
+        )}
+        </>
         )}
       </main>
     </div>
