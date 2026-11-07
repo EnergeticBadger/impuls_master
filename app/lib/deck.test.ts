@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -302,6 +302,47 @@ test("manaCostOf keeps a split card's own cost, and is empty for lands", () => {
 
 test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
     assert.equal(manaCostOf(delverApi), "{U}");
+});
+
+const legend =card("Isamaru, Hound of Konda", "Legendary Creature — Dog", { cmc: 1 });
+const legend2 = card("Kenrith, the Returned King", "Legendary Creature — Human Noble", { cmc: 5 });
+const walker = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", { oracle_text: "Grist, the Hunger Tide can be your commander." });
+const legendDfc = card("Jace, Vryn's Prodigy // Jace, Telepath Unbound", "Legendary Creature — Human Wizard // Legendary Planeswalker — Jace", {
+    card_faces: [
+        { name: "Jace, Vryn's Prodigy", mana_cost: "{1}{U}", type_line: "Legendary Creature — Human Wizard" },
+        { name: "Jace, Telepath Unbound", mana_cost: "", type_line: "Legendary Planeswalker — Jace" },
+    ],
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' cards", () => {
+    assert.equal(canBeCommander(legend), true);
+    assert.equal(canBeCommander(walker), true);
+    assert.equal(canBeCommander(legendDfc), true);
+    assert.equal(canBeCommander(bear), false);
+    assert.equal(canBeCommander(card("Jace Beleren", "Legendary Planeswalker — Jace")), false);
+});
+
+test("setCommander takes one copy from main and does not mutate", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }, { card: bear, count: 1 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
+    assert.deepEqual(next.main.map(e => e.card.name), ["Grizzly Bears"]);
+    assert.equal(deck.main.length, 2);
+    assert.equal(deck.commander, undefined);
+});
+
+test("setCommander sends the old commander back to main", () => {
+    const deck: Deck = { main: [{ card: legend2, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const next = setCommander(deck, legend2);
+    assert.equal(next.commander?.card.name, legend2.name);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+});
+
+test("setCommander from a 2-of leaves one copy in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 2 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
 });
 
 test("deckSummary counts lands and spells and averages the spells' mana value", () => {

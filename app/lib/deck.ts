@@ -52,6 +52,16 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
     return { ...deck, [zone]: entries }
 }
 
+// moves one copy of the card from the main deck to the commander slot; a commander already there goes
+// back to the main deck. A card that isn't in the main deck leaves the deck as it was.
+export function setCommander(deck: Deck, card: ScryfallCard): Deck {
+    const entry = deck.main.find(e => sameCard(e.card, card))
+    if (!entry) return deck
+    const taken = removeCard(deck, card, "main")
+    const main = deck.commander ? addTo(taken.main, deck.commander.card, deck.commander.count) : taken.main
+    return { ...taken, main, commander: { card: entry.card, count: 1 } }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.

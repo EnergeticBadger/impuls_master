@@ -17,7 +17,7 @@ import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, deckPrice, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, deckPrice, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -38,12 +38,6 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
   const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
   return addCard(without, entry.card, to, entry.count)
-}
-
-// one copy from the main deck becomes the commander; a commander already there goes back to the main deck
-const makeCommander = (deck: Deck, card: ScryfallCard): Deck => {
-  const back = deck.commander ? addCard(deck, deck.commander.card, "main", deck.commander.count) : deck
-  return { ...removeCard(back, card, "main"), commander: { card, count: 1 } }
 }
 
 const removeAsCommander = (deck: Deck): Deck => {
@@ -323,8 +317,8 @@ export default function DeckPage() {
             </button>
           )}
           {isCommander && section === "main" && canBeCommander(entry.card) && (
-            <button type="button" className={styles.button}
-              onClick={() => change((d) => makeCommander(d, entry.card))}>Make commander</button>
+            <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
+              onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
           )}
           <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
             aria-expanded={printingsOf === pickerKey}
