@@ -101,6 +101,15 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
     return decks
 }
 
+// what to tell people when writing their decks to localStorage failed: a full storage, or anything else
+export function saveErrorMessage(error: unknown): string {
+    const name = typeof error === "object" && error !== null ? (error as { name?: unknown }).name : undefined
+    if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
+        return "Your browser's storage is full, so the latest deck changes were not saved. Delete a deck or copy this one out with Export."
+    }
+    return "Your browser didn't let us save your decks, so the latest changes will be lost on reload."
+}
+
 const BACKUP_APP = "impulse-caster"
 
 // every deck as one file's text, cards slimmed
