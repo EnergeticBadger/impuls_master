@@ -52,6 +52,27 @@ export function removeCard(deck: Deck, card: ScryfallCard, zone: DeckZone = "mai
     return { ...deck, [zone]: entries }
 }
 
+// the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
+// entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
+// gives the deck back unchanged; the input is never changed.
+export function replacePrinting(deck: Deck, zone: DeckZone | "commander", from: ScryfallCard, to: ScryfallCard): Deck {
+    if (zone === "commander") {
+        if (deck.commander?.card.id !== from.id) return deck
+        return { ...deck, commander: { ...deck.commander, card: to } }
+    }
+    const entries = deck[zone]
+    const at = entries.findIndex(e => e.card.id === from.id)
+    if (at < 0) return deck
+    const other = entries.findIndex((e, i) => i !== at && e.card.id === to.id)
+    if (other < 0) return { ...deck, [zone]: entries.map((e, i) => (i === at ? { ...e, card: to } : e)) }
+    const first = Math.min(at, other)
+    const merged = { card: to, count: entries[at].count + entries[other].count }
+    return {
+        ...deck,
+        [zone]: entries.flatMap((e, i) => (i === first ? [merged] : i === at || i === other ? [] : [e])),
+    }
+}
+
 // copies of a card in the main deck, whatever the printing (counted by oracle id)
 export function copiesIn(deck: Deck, oracleId: string | undefined): number {
     if (!oracleId) return 0
