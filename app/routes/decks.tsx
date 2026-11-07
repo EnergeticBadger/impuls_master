@@ -5,10 +5,10 @@ import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
-import { cardsByName } from "~/lib/card";
+import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { emptyDeck, type Deck } from "~/lib/deck";
 import { decksByRecent } from "~/lib/savedDecks";
-import { deckFromLines, parseDeckList, readDeckLinkHash, type Line, type Zone } from "~/lib/decklist";
+import { readDeckLinkHash } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
 
@@ -90,19 +90,12 @@ export default function Decks() {
 
   const runImport = async () => {
     if (!importing || progress) return
-    const parsed = parseDeckList(importing.text)
-    const lines: (Line & { zone: Zone })[] = [
-      ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
-      ...parsed.main.map((l) => ({ ...l, zone: "main" as const })),
-      ...parsed.side.map((l) => ({ ...l, zone: "side" as const })),
-    ]
-    if (lines.length === 0 && parsed.problems.length === 0) return
-    setProgress({ done: 0, total: lines.length })
+    setProgress({ done: 0, total: 0 })
     try {
-      const { found, missing } = await cardsByName(lines, (done, total) => setProgress({ done, total }))
-      const deck = deckFromLines(found)
-      const notes = [...parsed.problems, ...missing.map((l) => `Card not found: ${l.count} ${l.name}`)]
-      if (notes.length === 0) saveImport(importing.name, deck)
+      const { deck, notes } = await lookUpDeckList(importing.text, (done, total) => setProgress({ done, total }))
+      const empty = deck.main.length === 0 && deck.side.length === 0 && !deck.commander
+      if (empty && notes.length === 0) { /* nothing to import */ }
+      else if (notes.length === 0) saveImport(importing.name, deck)
       else setReview({ deck, notes })
     } catch (e) {
       console.error("Could not import the deck", e)
