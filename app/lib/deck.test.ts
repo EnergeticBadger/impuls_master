@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -92,13 +92,24 @@ test("reversible cards (oracle id only on their faces) are counted and removed",
     assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
     assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
 
+    // copies come out of the entry with the card's own name; the other entry is left alone
     const less = removeCard(mixed, reversibleProp);
-    // one copy comes out of the first matching entry; the other entry is left alone
-    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.deepEqual(less.main.map(e => e.count), [2]);
     assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+    assert.deepEqual(removeCard(mixed, regularProp).main.map(e => e.count), [1, 1]);
 
     const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
-    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [2, 1]);
+
+    const three: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 3 }], side: [] };
+    const moved = removeCard(three, reversibleProp, "main", 3);
+    assert.deepEqual(moved.main.map(e => [e.card.name, e.count]), [["Propaganda", 2]]);
+});
+
+test("removeCard falls back to the oracle id when no entry has the card's name", () => {
+    const deck: Deck = { main: [{ card: regularProp, count: 2 }], side: [] };
+    const less = removeCard(deck, reversibleProp);
+    assert.deepEqual(less.main.map(e => e.count), [1]);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
@@ -231,6 +242,15 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
+    assert.equal(canBeCommander(card("Ghave", "Legendary Creature — Fungus")), true);
+    assert.equal(canBeCommander(card("Bear", "Creature — Bear")), false);
+    assert.equal(canBeCommander(card("Crown", "Legendary Artifact")), false);
+    assert.equal(canBeCommander(card("Teferi", "Legendary Planeswalker — Teferi", { oracle_text: "Teferi can be your commander." })), true);
+    const faces = [{ name: "Front", type_line: "Legendary Creature — Human" }, { name: "Back", type_line: "Legendary Enchantment" }];
+    assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
 });
 
 // ---- manaCostOf, on cards built the way the site builds them from its card data ----
