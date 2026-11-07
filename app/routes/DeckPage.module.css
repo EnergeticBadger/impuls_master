@@ -55,6 +55,32 @@
   color: var(--text);
 }
 
+.basics {
+  margin-bottom: var(--space-3);
+}
+
+.basicsForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.basicsInput {
+  box-sizing: border-box;
+  width: 5rem;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.basicsSplit {
+  min-width: 0;
+}
+
 .quickMessage {
   flex-basis: 100%;
   margin: 0;

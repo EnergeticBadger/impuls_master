@@ -201,6 +201,37 @@ export function deckColors(deck: Deck): string[] {
     return COLORS.filter(c => counts[c] > 0)
 }
 
+// shares `count` basic lands between the colors by the colored mana symbols in the main deck's and commander's
+// mana costs (front face), weighted by card count. A hybrid symbol counts half for each of its colors;
+// generic, colorless and X don't count. Largest-remainder rounding, ties in WUBRG order, so the parts add up
+// to `count`. Returned in WUBRG order without zeros; no colored symbols gives [].
+export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | "B" | "R" | "G"; count: number }[] {
+    // weights in half symbols
+    const weight: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 }
+    for (const { card, count: copies } of cardsOf(deck)) {
+        const front = manaCostOf(card).split(" // ")[0]
+        for (const [, code] of front.matchAll(/\{([^}]+)\}/g)) {
+            const colored = code.split("/").filter(p => COLORS.some(c => c === p))
+            for (const c of colored) weight[c] += (2 / colored.length) * copies
+        }
+    }
+    const sum = COLORS.reduce((n, c) => n + weight[c], 0)
+    const total = Math.max(0, Math.floor(count))
+    if (sum === 0 || total === 0) return []
+    const parts = COLORS.map((color, order) => ({
+        color, order,
+        count: Math.floor((total * weight[color]) / sum),
+        rest: (total * weight[color]) % sum,
+    }))
+    let left = total - parts.reduce((n, p) => n + p.count, 0)
+    const byRest = [...parts].sort((a, b) => b.rest - a.rest || a.order - b.order)
+    for (const p of byRest) {
+        if (left <= 0) break
+        if (p.rest > 0 || weight[p.color] > 0) { p.count++; left-- }
+    }
+    return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
+}
+
 // a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
