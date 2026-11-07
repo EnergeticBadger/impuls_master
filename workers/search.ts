@@ -12,7 +12,7 @@
 import { cardsSearch } from "../scripts/search-api";
 import { decodeIndexParts, indexLayout, START } from "../scripts/search-index-file";
 import { Unsupported, type Cards } from "../scripts/local-search";
-import { cardByOracle, dataVersion } from "../app/lib/carddata.server";
+import { cardByOracle, dataVersion, warmEdge, type EdgeWrites } from "../app/lib/carddata.server";
 import { printingCard, type CardRecord } from "../app/lib/carddata";
 import { SCRYFALL_PREFIX, handleScryfall } from "./scryfall";
 
@@ -21,6 +21,9 @@ const INDEX = "search-index.bin";
 // how long the browser and Cloudflare's cache keep an answer (the card data version is in the cache's key)
 const BROWSER_TTL = 60 * 60;
 const EDGE_TTL = 60 * 60 * 24;
+// bucket files put in this data centre's cache after each local answer (see warmEdge): a page's own reads and
+// writes are at most 350 of an invocation's 1,000 storage operations, and this adds at most 3 per file
+const WARM_PER_SEARCH = 48;
 // after a failed load, how long before trying again
 const RETRY_MS = 60_000;
 
@@ -64,6 +67,13 @@ function indexFor(env: Env, ctx: ExecutionContext, version: string): Cards | und
     return undefined;
 }
 
+// the queued edge-cache writes, a few at a time; a failed write only means a slower read next time
+async function writeEdge(edge: EdgeWrites) {
+    for (let i = 0; i < edge.length; i += 6) {
+        await Promise.all(edge.slice(i, i + 6).map((write) => write().catch((err) => console.error("Edge cache write failed", err))));
+    }
+}
+
 // a printing the card data doesn't have, so the answer can't be made here
 class MissingCard extends Error {}
 
@@ -105,6 +115,8 @@ export async function handleSearch(request: Request, env: Env, ctx: ExecutionCon
     const cards = indexFor(env, ctx, version);
     if (!cards) return fromScryfall(request, ctx, path, "loading the index");
     const started = Date.now();
+    // bucket files to keep in this data centre's cache, written after the answer so they don't hold up its reads
+    const edge: EdgeWrites = [];
     try {
         // each card's record once, however many of its printings are on the page
         const records = new Map<string, Promise<CardRecord | undefined>>();
@@ -113,7 +125,7 @@ export async function handleSearch(request: Request, env: Env, ctx: ExecutionCon
             card: async (i) => {
                 const p = cards.prints[i], c = cards.cards[p.card];
                 let record = records.get(c.oracleId);
-                if (!record) records.set(c.oracleId, record = cardByOracle(env, [c.name, p.name], c.oracleId));
+                if (!record) records.set(c.oracleId, record = cardByOracle(env, [c.name, p.name], c.oracleId, edge));
                 const r = await record;
                 const shown = r?.prints.find((x) => x.id === p.id);
                 if (!r || !shown) throw new MissingCard(`${c.name} (${p.set}/${p.cn}) isn't in the card data`);
@@ -125,10 +137,13 @@ export async function handleSearch(request: Request, env: Env, ctx: ExecutionCon
             headers: { "Cache-Control": `public, max-age=${EDGE_TTL}`, "X-Search": "local", "X-Search-Ms": String(Date.now() - started) },
         });
         ctx.waitUntil(cache.put(key, res.clone()));
+        // after this page's own files, a few more, so the next searches here find them cached
+        ctx.waitUntil(writeEdge(edge).then(() => warmEdge(env, WARM_PER_SEARCH)));
         res.headers.set("Cache-Control", `public, max-age=${BROWSER_TTL}`);
         res.headers.set("X-Cache", "MISS");
         return res;
     } catch (err) {
+        ctx.waitUntil(writeEdge(edge));
         if (err instanceof Unsupported) return fromScryfall(request, ctx, path, `unsupported: ${err.message}`);
         console.error(`Local search failed for ${url.search}`, err);
         return fromScryfall(request, ctx, path, err instanceof MissingCard ? err.message : "error");
