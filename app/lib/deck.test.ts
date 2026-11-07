@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -374,4 +374,47 @@ test("replacePrinting of a card not in the zone changes nothing", () => {
     assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
     assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
     assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
+});
+
+const spell = (name: string, mana_cost: string) => card(name, "Creature — Test", { mana_cost });
+const deckOf = (...entries: [ScryfallCard, number][]): Deck => ({ main: entries.map(([c, count]) => ({ card: c, count })), side: [] });
+
+test("basicLandSplit: mono-red gives all Mountains", () => {
+    const deck = deckOf([spell("Red Guy", "{2}{R}{R}"), 4], [spell("Red Two", "{R}"), 4]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "R", count: 17 }]);
+});
+
+test("basicLandSplit: a tie goes to the earlier color in WUBRG order", () => {
+    const deck = deckOf([spell("Red Ten", "{R}"), 10], [spell("Blue Ten", "{U}"), 10]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "U", count: 9 }, { color: "R", count: 8 }]);
+});
+
+test("basicLandSplit: hybrid counts half for each color", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}{W/U}"), 1]), 10), [{ color: "W", count: 5 }, { color: "U", count: 5 }]);
+    // {W/U} is half W, half U; plus one {W} makes W 1.5 : U 0.5
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}"), 1], [spell("Plain", "{W}"), 1]), 8), [{ color: "W", count: 6 }, { color: "U", count: 2 }]);
+});
+
+test("basicLandSplit: card counts weight the symbols; generic and X don't count", () => {
+    const deck = deckOf([spell("Three Green", "{X}{2}{G}"), 3], [spell("One Black", "{1}{B}"), 1]);
+    assert.deepEqual(basicLandSplit(deck, 8), [{ color: "B", count: 2 }, { color: "G", count: 6 }]);
+});
+
+test("basicLandSplit counts the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: spell("Boss", "{W}{W}"), count: 1 } };
+    assert.deepEqual(basicLandSplit(deck, 5), [{ color: "W", count: 5 }]);
+});
+
+test("basicLandSplit: a colorless deck gives []", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Golem", "{6}"), 4], [spell("X", "{X}"), 2]), 17), []);
+    assert.deepEqual(basicLandSplit({ main: [], side: [] }, 17), []);
+});
+
+test("basicLandSplit: the parts always sum to count", () => {
+    const deck = deckOf([spell("A", "{W}{U}{B}"), 3], [spell("B", "{R}{G/W}"), 7], [spell("C", "{B}{B}{U}"), 5]);
+    for (let n = 0; n <= 60; n++) {
+        const parts = basicLandSplit(deck, n);
+        assert.equal(parts.reduce((s, p) => s + p.count, 0), n);
+        assert.ok(parts.every(p => p.count > 0));
+    }
 });

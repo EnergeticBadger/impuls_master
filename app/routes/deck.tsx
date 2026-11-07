@@ -15,7 +15,7 @@ import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckLinkHash, formatDeckList, quickAddLine, type DeckListStyle } from "~/lib/decklist";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, deckPrice, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, basicLandSplit, canBeCommander, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -48,6 +48,8 @@ const removeAsCommander = (deck: Deck): Deck => {
   if (!deck.commander) return deck
   return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
 }
+
+const BASIC_NAMES = { W: "Plains", U: "Island", B: "Swamp", R: "Mountain", G: "Forest" } as const
 
 const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
 const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
@@ -159,6 +161,10 @@ export default function DeckPage() {
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickMessage, setQuickMessage] = useState<string>()
   const quickInput = useRef<HTMLInputElement>(null)
+  const [basicsOpen, setBasicsOpen] = useState(false)
+  const [basicsText, setBasicsText] = useState<string>() // undefined: show the suggested number
+  const [basicsBusy, setBasicsBusy] = useState(false)
+  const [basicsMessage, setBasicsMessage] = useState<string>()
   const [editing, setEditing] = useState<{ text: string; notes?: string[]; next?: Deck }>()
   const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
@@ -252,6 +258,29 @@ export default function DeckPage() {
     } finally {
       setQuickBusy(false)
       setTimeout(() => quickInput.current?.focus(), 0)
+    }
+  }
+
+  // basic lands: 40% of the deck's size by default, less the lands it already has
+  const suggestedBasics = Math.max(0, Math.round((isCommander ? 100 : 60) * 0.4) - deckSummary(deck).lands)
+  const basicsCount = Math.max(0, Math.floor(Number(basicsText ?? suggestedBasics)) || 0)
+  const basicsSplit = basicLandSplit(deck, basicsCount)
+
+  const addBasics = async () => {
+    if (basicsBusy || basicsSplit.length === 0) return
+    setBasicsBusy(true)
+    setBasicsMessage(undefined)
+    try {
+      const found = await Promise.all(basicsSplit.map(async (p) => ({ count: p.count, card: await cardByName({ name: BASIC_NAMES[p.color] }) })))
+      const missing = found.find((f) => !f.card)
+      if (missing) { setBasicsMessage("Couldn't look up the basic lands. Nothing was added."); return }
+      change((d) => found.reduce((acc, f) => (f.card ? addCard(acc, f.card, "main", f.count) : acc), d))
+      setBasicsOpen(false)
+      setBasicsText(undefined)
+    } catch {
+      setBasicsMessage("Couldn't look up the basic lands. Nothing was added.")
+    } finally {
+      setBasicsBusy(false)
     }
   }
 
@@ -386,6 +415,31 @@ export default function DeckPage() {
           <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
           {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
         </form>
+        <div className={styles.basics}>
+          <button type="button" className={styles.button} aria-expanded={basicsOpen} onClick={() => setBasicsOpen(!basicsOpen)}>Add basic lands</button>
+          {basicsOpen && (
+            <form className={styles.basicsForm} onSubmit={(e) => { e.preventDefault(); addBasics() }}>
+              <input
+                className={styles.basicsInput}
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={basicsText ?? String(suggestedBasics)}
+                onChange={(e) => setBasicsText(e.target.value)}
+                aria-label="Number of basic lands"
+              />
+              <span className={styles.basicsSplit}>
+                {basicsSplit.length === 0
+                  ? "No colored mana symbols in the deck yet."
+                  : basicsSplit.map((p, i) => (
+                    <span key={p.color}>{i > 0 && " · "}<ManaText text={`{${p.color}}`} /> {p.count}</span>
+                  ))}
+              </span>
+              <button type="submit" className={styles.button} disabled={basicsBusy || basicsSplit.length === 0}>{basicsBusy ? "Adding…" : "Add"}</button>
+              {basicsMessage && <p className={styles.quickMessage} role="status">{basicsMessage}</p>}
+            </form>
+          )}
+        </div>
         <p className={styles.totals}>
           <span>Main deck: {mainCount}</span>
           <span>Sideboard: {total(deck.side)}</span>
