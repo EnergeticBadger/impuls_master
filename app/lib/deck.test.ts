@@ -92,13 +92,24 @@ test("reversible cards (oracle id only on their faces) are counted and removed",
     assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
     assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
 
+    // copies come out of the entry with the card's own name; the other entry is left alone
     const less = removeCard(mixed, reversibleProp);
-    // one copy comes out of the first matching entry; the other entry is left alone
-    assert.deepEqual(less.main.map(e => e.count), [1, 1]);
+    assert.deepEqual(less.main.map(e => e.count), [2]);
     assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+    assert.deepEqual(removeCard(mixed, regularProp).main.map(e => e.count), [1, 1]);
 
     const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
-    assert.deepEqual(lessRegular.main.map(e => e.count), [1, 2]);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [2, 1]);
+
+    const three: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 3 }], side: [] };
+    const moved = removeCard(three, reversibleProp, "main", 3);
+    assert.deepEqual(moved.main.map(e => [e.card.name, e.count]), [["Propaganda", 2]]);
+});
+
+test("removeCard falls back to the oracle id when no entry has the card's name", () => {
+    const deck: Deck = { main: [{ card: regularProp, count: 2 }], side: [] };
+    const less = removeCard(deck, reversibleProp);
+    assert.deepEqual(less.main.map(e => e.count), [1]);
 });
 
 test("removeCard lowers the count and drops an entry at zero", () => {
