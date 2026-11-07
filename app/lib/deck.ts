@@ -160,6 +160,17 @@ export function deckSummary(deck: Deck): { lands: number; spells: number; averag
     return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }
 }
 
+// the deck's colors in WUBRG order: its commander's color identity when it has one, else every color its spells
+// use (colorCounts); [] for an empty or colorless deck
+export function deckColors(deck: Deck): string[] {
+    if (deck.commander) {
+        const identity = deck.commander.card.color_identity ?? []
+        return COLORS.filter(c => identity.includes(c))
+    }
+    const counts = colorCounts(deck)
+    return COLORS.filter(c => counts[c] > 0)
+}
+
 // a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {

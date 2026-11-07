@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, canBeCommander, colorCounts, copiesIn, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByType, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -374,4 +374,20 @@ test("replacePrinting of a card not in the zone changes nothing", () => {
     assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
     assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
     assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
+});
+
+test("deckColors of a commander deck is the commander's color identity", () => {
+    const atraxa = card("Atraxa, Praetors' Voice", "Legendary Creature — Phyrexian Angel Horror", { color_identity: ["G", "W", "U", "B"] });
+    const deck: Deck = { ...addCard(empty, bolt), commander: { card: atraxa, count: 1 } };
+    assert.deepEqual(deckColors(deck), ["W", "U", "B", "G"]);
+});
+
+test("deckColors of a 60-card deck is the colors its spells use, in WUBRG order", () => {
+    const deck = addCard(addCard(addCard(empty, bear, "main", 20), bolt, "main", 16), forest, "main", 24);
+    assert.deepEqual(deckColors(deck), ["R", "G"]);
+});
+
+test("deckColors of an empty or colorless deck is empty", () => {
+    assert.deepEqual(deckColors(empty), []);
+    assert.deepEqual(deckColors(addCard(addCard(empty, golem, "main", 4), forest)), []);
 });

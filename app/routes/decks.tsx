@@ -7,11 +7,15 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
-import { emptyDeck, type Deck } from "~/lib/deck";
+import { deckColors, emptyDeck, type Deck } from "~/lib/deck";
+import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decksByRecent } from "~/lib/savedDecks";
 import { readDeckLinkHash } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
+
+// "commander" -> "Commander", as the deck page's format picker shows it
+const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1);
 
 export function meta() {
   return [
@@ -45,7 +49,8 @@ export default function Decks() {
     history.replaceState(null, "", window.location.pathname + window.location.search)
   }, [ready])
 
-  const list = decksByRecent(snap.list)
+  // re-rendered by the snapshot above; the decks themselves are ref()s, so they are read unwrapped (as on the deck page)
+  const list = decksByRecent(decks.list)
 
   const create = () => {
     createDeck(naming?.trim() || DEFAULT_NAME)
@@ -174,7 +179,8 @@ export default function Decks() {
         {list.length > 0 && (
           <ul className={styles.list}>
             {list.map((d) => {
-              const cards = d.deck.main.reduce((n, e) => n + e.count, 0)
+              const cards = d.deck.main.reduce((n, e) => n + e.count, 0) + (d.deck.commander?.count ?? 0)
+              const colors = deckColors(d.deck)
               return (
                 <li key={d.id} className={styles.deck}>
                   {renaming?.id === d.id ? (
@@ -192,9 +198,13 @@ export default function Decks() {
                   ) : (
                     <>
                       <div className={styles.info}>
-                        <Link to={`/decks/${d.id}`} className={styles.name}>{d.name}</Link>
+                        <Link to={`/decks/${d.id}`} className={styles.name} title={d.name}>{d.name}</Link>
                         <span className={styles.meta}>
                           {cards} {cards === 1 ? "card" : "cards"}
+                          <span className={styles.colors} aria-label={colors.length ? `Colors: ${colors.join("")}` : "Colorless"}>
+                            <ManaText text={colors.length ? colors.map((c) => `{${c}}`).join("") : "{C}"} />
+                          </span>
+                          {d.format && <span>{formatLabel(d.format)}</span>}
                           {snap.current === d.id && <span className={styles.current}>Current deck</span>}
                         </span>
                       </div>
