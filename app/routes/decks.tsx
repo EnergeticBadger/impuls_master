@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { backupJson, readBackup } from "~/lib/savedDecks";
 import { Link, useNavigate } from "react-router";
 import { useSnapshot } from "valtio";
 import styles from "./Decks.module.css";
 import { SiteHeader } from "~/Components/Site/SiteHeader";
-import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck } from "~/Components/Context/decks";
+import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
 import { cardsByName } from "~/lib/card";
 import { emptyDeck, type Deck } from "~/lib/deck";
 import { decksByRecent } from "~/lib/savedDecks";
@@ -26,6 +27,7 @@ export default function Decks() {
   const [importing, setImporting] = useState<{ name: string, text: string }>()
   const [progress, setProgress] = useState<{ done: number, total: number }>()
   const [review, setReview] = useState<{ deck: Deck, notes: string[] }>()
+  const [backupNote, setBackupNote] = useState<string>()
   const navigate = useNavigate()
 
   // the decks are read from localStorage after the first render; don't flash the empty state before that
@@ -54,7 +56,32 @@ export default function Decks() {
     setRenaming(undefined)
   }
 
-  const closeImport = () => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
+  const backUp = () => {
+    const blob = new Blob([backupJson(decks.list)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `impulse-caster-decks-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const restore = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    try {
+      const read = readBackup(await file.text())
+      if (read.error) { setBackupNote(read.error); return }
+      restoreDecks(read.decks)
+      setBackupNote(`Restored ${read.decks.length} ${read.decks.length === 1 ? "deck" : "decks"}`)
+    } catch (err) {
+      console.error("Could not read the backup file", err)
+      setBackupNote("Could not read that file.")
+    }
+  }
+
+  const closeImport =() => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
 
   const saveImport = (name: string, deck: Deck) => {
     const made = createDeckWith(name.trim() || DEFAULT_NAME, deck)
@@ -197,6 +224,16 @@ export default function Decks() {
             })}
           </ul>
         )}
+        <div className={styles.actions}>
+          {list.length > 0 && (
+            <button type="button" className={styles.button} onClick={backUp}>Back up decks</button>
+          )}
+          <label className={styles.button}>
+            Restore from file
+            <input type="file" accept=".json,application/json" onChange={restore} hidden />
+          </label>
+        </div>
+        {backupNote && <p className={styles.meta} role="status">{backupNote}</p>}
       </main>
     </div>
   )
