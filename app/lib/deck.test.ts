@@ -380,5 +380,5 @@ test("identityTerm writes colors in WUBRG order, lower case", () => {
     assert.equal(identityTerm(["U", "B"]), "id<=ub");
     assert.equal(identityTerm(["G", "W"]), "id<=wg");
     assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
-    assert.equal(identityTerm([]), "id:c");
+    assert.equal(identityTerm([]), "id<=c");
 });
