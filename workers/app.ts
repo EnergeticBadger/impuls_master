@@ -1,6 +1,6 @@
 import { createRequestHandler } from "react-router";
 import { SCRYFALL_PREFIX, handleScryfall } from "./scryfall";
-import { SEARCH_PREFIX, handleSearch } from "./search";
+import { SEARCH_PREFIX, handleSearch, preloadIndex } from "./search";
 import { dataFileResponse, dataVersion } from "../app/lib/carddata.server";
 
 declare module "react-router" {
@@ -66,6 +66,8 @@ export default {
 			return Response.redirect(url.toString(), 301);
 		}
 		const { pathname } = url;
+		// the search page: start loading the search index now, so it's ready by the first search
+		if (pathname === "/" && request.method === "GET") ctx.waitUntil(preloadIndex(env, ctx));
 		if (pathname.startsWith(SEARCH_PREFIX)) {
 			return handleSearch(request, env, ctx);
 		}

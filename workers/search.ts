@@ -24,6 +24,10 @@ const EDGE_TTL = 60 * 60 * 24;
 // bucket files put in this data centre's cache after each local answer (see warmEdge): a page's own reads and
 // writes are at most 350 of an invocation's 1,000 storage operations, and this adds at most 3 per file
 const WARM_PER_SEARCH = 48;
+// how long a search waits for this Worker copy's index to finish loading before asking Scryfall instead. A load
+// takes about half a second; without the wait, a fresh copy's first searches all went to Scryfall, and right
+// after a deploy (many fresh copies at once) that overflowed our Scryfall queue into 503s
+const LOAD_WAIT_MS = 5_000;
 // after a failed load, how long before trying again
 const RETRY_MS = 60_000;
 
@@ -74,6 +78,26 @@ async function writeEdge(edge: EdgeWrites) {
     }
 }
 
+// the index, waiting up to LOAD_WAIT_MS for a load in progress (starting one if need be); undefined when it isn't
+// there in time, or a load failed recently
+async function indexReady(env: Env, ctx: ExecutionContext, version: string): Promise<Cards | undefined> {
+    const cards = indexFor(env, ctx, version);
+    if (cards) return cards;
+    const loading = index?.version === version ? index.loading : undefined;
+    if (!loading) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([loading, new Promise<void>((r) => { timer = setTimeout(r, LOAD_WAIT_MS); })]);
+    clearTimeout(timer);
+    return index?.version === version ? index.cards : undefined;
+}
+
+// starts loading the index in the background (the search page calls this), so it's usually ready by the first search
+export async function preloadIndex(env: Env, ctx: ExecutionContext): Promise<void> {
+    if (String(env.LOCAL_SEARCH) === "off") return;
+    const version = await dataVersion(env);
+    if (version) indexFor(env, ctx, version);
+}
+
 // a printing the card data doesn't have, so the answer can't be made here
 class MissingCard extends Error {}
 
@@ -112,7 +136,7 @@ export async function handleSearch(request: Request, env: Env, ctx: ExecutionCon
         return res;
     }
 
-    const cards = indexFor(env, ctx, version);
+    const cards = await indexReady(env, ctx, version);
     if (!cards) return fromScryfall(request, ctx, path, "loading the index");
     const started = Date.now();
     // bucket files to keep in this data centre's cache, written after the answer so they don't hold up its reads
