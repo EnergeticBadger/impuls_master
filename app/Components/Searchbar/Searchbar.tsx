@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } 
 import { useSnapshot } from 'valtio';
 import { useLocation, useNavigate } from 'react-router';
 import { cardsearch, getPage, hidePages, pageKey, showPage } from '../Context/cards';
-import { scryfallGet } from '~/lib/scryfall';
+import { searchCards } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
 import { QueryInput } from './QueryInput';
 import { RowSize } from '../CardGrid/RowSize';
@@ -35,7 +35,7 @@ async function searchCard(page: number, query: string, by: Sort) {
         dir: by.dir,
         unique: "cards",
     })
-    return scryfallGet(`cards/search?${params}`)
+    return searchCards(params)
 }
 
 type KeptChip = Omit<Chip, 'id'>
