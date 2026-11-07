@@ -2,7 +2,7 @@
 // deploying never takes them away. Each answer is undefined when the files don't have it: the bucket has no
 // card data (local dev) or can't be read, or the card is newer than the last refresh. Callers then ask Scryfall.
 import {
-    bucketHeader, bucketOf, paths, readRecord, slug,
+    BUCKETS, bucketHeader, bucketOf, paths, readRecord, slug,
     type Browse, type BucketEntry, type CardRecord, type Renamed, type SetFile, type SetSummary,
 } from "./carddata";
 
@@ -34,12 +34,14 @@ type Bucket = { bytes: Uint8Array, header: ReturnType<typeof bucketHeader> };
 const files = new Map<string, Promise<Uint8Array<ArrayBuffer> | undefined>>();
 const buckets = new Map<number, Bucket>();
 
-function readObject(env: Env, key: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+type Load = () => Promise<Uint8Array<ArrayBuffer> | undefined>;
+
+function readObject(env: Env, key: string, load?: Load): Promise<Uint8Array<ArrayBuffer> | undefined> {
     let hit = files.get(key);
     if (hit) {
         files.delete(key);
     } else {
-        hit = env.CARD_DATA.get(key).then(async (obj) => obj ? new Uint8Array(await obj.arrayBuffer()) : undefined);
+        hit = load ? load() : env.CARD_DATA.get(key).then(async (obj) => obj ? new Uint8Array(await obj.arrayBuffer()) : undefined);
         // a failure isn't kept, so the next request tries again
         hit.catch(() => files.delete(key));
     }
@@ -106,8 +108,8 @@ export async function dataFileResponse(env: Env, path: string): Promise<Response
     });
 }
 
-async function bucket(env: Env, n: number): Promise<Bucket | undefined> {
-    const bytes = await quietly(readFile(env, paths.bucket(n)));
+async function bucket(env: Env, n: number, edge?: EdgeWrites): Promise<Bucket | undefined> {
+    const bytes = await quietly(edge ? edgeFile(env, paths.bucket(n), edge) : readFile(env, paths.bucket(n)));
     if (!bytes) return undefined;
     let b = buckets.get(n);
     if (b?.bytes !== bytes) {
@@ -157,11 +159,70 @@ export async function findSet(env: Env, code: string): Promise<SetFile | null | 
     return bytes && JSON.parse(new TextDecoder().decode(bytes));
 }
 
+// ---- the search Worker's reads ----
+// A results page needs up to 175 records from as many bucket files, and an invocation has only 6 reads in flight
+// at once, so a page took 29 rounds of R2 reads (about 80 ms each, whatever the size). A bucket file never changes
+// within a version, so search keeps them in this data centre's cache, a few ms a read. The copies it writes are
+// queued in `edge` and written once the answer is made (see workers/search.ts), so they don't take read slots.
+export type EdgeWrites = (() => Promise<void>)[];
+
+const EDGE_CACHE = "card-data";
+// any URL works as a cache key; the version is in the key, so a new version never meets an old file
+const edgeKey = (key: string) => new Request(`https://card-data.invalid/${key}`);
+const EDGE_TTL = 2 * 24 * 60 * 60;
+
+async function edgeFile(env: Env, path: string, edge: EdgeWrites): Promise<Uint8Array<ArrayBuffer> | undefined> {
+    const v = await dataVersion(env);
+    if (v === undefined) return undefined;
+    const key = keyOf(v, path);
+    return readObject(env, key, async () => {
+        const cache = await caches.open(EDGE_CACHE);
+        const cached = await cache.match(edgeKey(key));
+        if (cached) return new Uint8Array(await cached.arrayBuffer());
+        const obj = await env.CARD_DATA.get(key);
+        if (!obj) return undefined;
+        const bytes = new Uint8Array(await obj.arrayBuffer());
+        edge.push(() => cache.put(edgeKey(key), new Response(bytes, { headers: { "Cache-Control": `public, max-age=${EDGE_TTL}` } })));
+        return bytes;
+    });
+}
+
+// Fills this data centre's cache ahead of searches, `count` bucket files at a time (run after an answer is sent):
+// each new version starts with an empty cache, so this keeps the slow first searches after a refresh few. Each
+// isolate walks the buckets once per version from a random start, so isolates mostly warm different ones. The
+// file goes from R2 to the cache as a stream, never parsed or copied here.
+let warming: { version: string, next: number, left: number } | undefined;
+
+export async function warmEdge(env: Env, count: number): Promise<void> {
+    const v = await dataVersion(env);
+    if (v === undefined) return;
+    if (warming?.version !== v) warming = { version: v, next: Math.floor(Math.random() * BUCKETS), left: BUCKETS };
+    const w = warming;
+    const cache = await caches.open(EDGE_CACHE);
+    const warmOne = async (n: number) => {
+        const key = keyOf(v, paths.bucket(n));
+        const cached = await cache.match(edgeKey(key));
+        if (cached) { await cached.body?.cancel(); return; }
+        const obj = await env.CARD_DATA.get(key);
+        if (obj) await cache.put(edgeKey(key), new Response(obj.body, { headers: { "Cache-Control": `public, max-age=${EDGE_TTL}` } }));
+    };
+    while (count > 0 && w.left > 0) {
+        const batch: number[] = [];
+        while (batch.length < 6 && count > 0 && w.left > 0) {
+            batch.push(w.next);
+            w.next = (w.next + 1) % BUCKETS;
+            w.left--;
+            count--;
+        }
+        await Promise.all(batch.map((n) => warmOne(n).catch((err) => console.error("Edge cache warm failed", err))));
+    }
+}
+
 // a card's record by its oracle id, for the search Worker's results (workers/search.ts): the file it's in goes by
 // its name, so each of `names` (the card's, a reversible printing's own) is tried. undefined when it isn't there
-export async function cardByOracle(env: Env, names: string[], oracleId: string): Promise<CardRecord | undefined> {
+export async function cardByOracle(env: Env, names: string[], oracleId: string, edge: EdgeWrites): Promise<CardRecord | undefined> {
     for (const name of new Set(names.map(slug))) {
-        const b = await bucket(env, bucketOf(name));
+        const b = await bucket(env, bucketOf(name), edge);
         const entry = b?.header.entries.find((e) => e[1] === oracleId);
         if (b && entry) return readRecord(b.bytes, b.header, entry);
     }
