@@ -72,6 +72,7 @@ export function setCommander(deck: Deck, card: ScryfallCard): Deck {
 
 // like setCommander, for the second commander slot; a partner already there goes back to the main deck
 export function setPartner(deck: Deck, card: ScryfallCard): Deck {
+    if (!deck.commander) return deck
     const entry = deck.main.find(e => sameCard(e.card, card))
     if (!entry) return deck
     const taken = removeCard(deck, card, "main")

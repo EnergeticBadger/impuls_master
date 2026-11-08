@@ -332,6 +332,11 @@ test("setPartner moves one copy out of main and returns an old partner", () => {
     assert.equal(setPartner(deck, golem), deck);
 });
 
+test("setPartner does nothing without a commander", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [] };
+    assert.equal(setPartner(deck, legend), deck);
+});
+
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
 
 test("deckPrice multiplies by count, falls back to foil, lists unpriced cards once", () => {
