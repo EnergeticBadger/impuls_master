@@ -96,6 +96,11 @@ export function copiesIn(deck: Deck, oracleId: string | undefined): number {
     return deck.main.reduce((n, e) => (oracleOf(e.card) === oracleId ? n + e.count : n), 0)
 }
 
+// the format an imported deck most likely is: a deck with a commander is a Commander deck, anything else is unknown
+export function guessFormat(deck: Deck): string | undefined {
+    return deck.commander ? "commander" : undefined
+}
+
 const cardsOf =(deck: Deck): DeckEntry[] => (deck.commander ? [...deck.main, deck.commander] : deck.main)
 
 const frontType = (card: ScryfallCard) => (card.card_faces?.[0]?.type_line ?? card.type_line ?? "").split(" // ")[0]

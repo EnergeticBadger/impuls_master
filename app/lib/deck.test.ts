@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, guessFormat, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -320,6 +320,11 @@ test("canBeCommander: legendary creatures and 'can be your commander' cards", ()
     assert.equal(canBeCommander(legendDfc), true);
     assert.equal(canBeCommander(bear), false);
     assert.equal(canBeCommander(card("Jace Beleren", "Legendary Planeswalker — Jace")), false);
+});
+
+test("guessFormat says commander for a deck with a commander, else nothing", () => {
+    assert.equal(guessFormat({ main: [{ card: bear, count: 1 }], side: [], commander: { card: legend, count: 1 } }), "commander");
+    assert.equal(guessFormat({ main: [{ card: bear, count: 60 }], side: [] }), undefined);
 });
 
 test("setCommander takes one copy from main and does not mutate", () => {

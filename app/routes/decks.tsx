@@ -7,7 +7,7 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks, renameDeck, restoreDecks } from "~/Components/Context/decks";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
-import { deckColors, emptyDeck, type Deck } from "~/lib/deck";
+import { deckColors, emptyDeck, guessFormat, type Deck } from "~/lib/deck";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { decksByRecent, filterDecks } from "~/lib/savedDecks";
 import { readDeckLinkHash } from "~/lib/decklist";
@@ -95,7 +95,7 @@ export default function Decks() {
   const closeImport =() => { setImporting(undefined); setReview(undefined); setProgress(undefined) }
 
   const saveImport = (name: string, deck: Deck) => {
-    const made = createDeckWith(name.trim() || DEFAULT_NAME, deck)
+    const made = createDeckWith(name.trim() || DEFAULT_NAME, deck, guessFormat(deck))
     navigate(`/decks/${made.id}`)
   }
 
