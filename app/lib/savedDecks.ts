@@ -15,6 +15,7 @@ export function copyDeck(saved: SavedDeck, now: number, id: string): SavedDeck {
     const copyEntries = (entries: DeckEntry[]): DeckEntry[] => entries.map((e) => ({ ...e }))
     const deck: Deck = { main: copyEntries(saved.deck.main), side: copyEntries(saved.deck.side) }
     if (saved.deck.commander) deck.commander = { ...saved.deck.commander }
+    if (saved.deck.partner) deck.partner = { ...saved.deck.partner }
     return { id, name: `${saved.name} (copy)`, updated: now, deck }
 }
 
@@ -82,6 +83,7 @@ const slimEntry = (e: DeckEntry): DeckEntry => ({ ...e, card: slimCard(e.card) }
 export function slimDeck(deck: Deck): Deck {
     const slim: Deck = { main: deck.main.map(slimEntry), side: deck.side.map(slimEntry) }
     if (deck.commander) slim.commander = slimEntry(deck.commander)
+    if (deck.partner) slim.partner = slimEntry(deck.partner)
     return slim
 }
 
@@ -104,6 +106,7 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
         const deck = isRecord(item.deck) ? item.deck : {}
         const saved: Deck = { main: entriesOf(deck.main), side: entriesOf(deck.side) }
         if (isEntry(deck.commander)) saved.commander = deck.commander
+        if (isEntry(deck.partner)) saved.partner = deck.partner
         const read: SavedDeck = {
             id: item.id,
             name: item.name,
