@@ -270,3 +270,56 @@ test("unchangedEntries: a card moved to the sideboard is looked up again", () =>
     assert.deepEqual(r.lookups, [{ count: 4, name: "Opt", zone: "side" }]);
     assert.equal(r.reused.length, 4);
 });
+
+// ---- partner commanders ----
+
+const partnerDeck: Deck = {
+    ...deck,
+    commander: { card: card("Thrasios, Triton Hero", "cmr", "1"), count: 1 },
+    partner: { card: card("Tymna the Weaver", "cmr", "2"), count: 1 },
+};
+
+test("parse: two commanders become commander and partner", () => {
+    const parsed = parseDeckList("Commander\n1 Thrasios, Triton Hero\n1 Tymna the Weaver\n\nDeck\n4 Opt\n");
+    assert.deepEqual(parsed.problems, []);
+    assert.equal(parsed.commander?.name, "Thrasios, Triton Hero");
+    assert.equal(parsed.partner?.name, "Tymna the Weaver");
+    assert.deepEqual(names(parsed.main), ["4 Opt"]);
+});
+
+test("parse: a third commander is a problem", () => {
+    const parsed = parseDeckList("Commander\n1 A\n1 B\n1 C\n");
+    assert.equal(parsed.problems.length, 1);
+    assert.match(parsed.problems[0], /already two commanders/);
+    assert.equal(parsed.partner?.name, "B");
+});
+
+test("parse: a one-commander list has no partner", () => {
+    const parsed = parseDeckList(formatDeckList(deck, "text"));
+    assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+    assert.equal(parsed.partner, undefined);
+    assert.deepEqual(parsed.problems, []);
+});
+
+for (const style of ["text", "arena", "mtgo"] as const) {
+    test(`${style}: round trips commander and partner`, () => {
+        const parsed = parseDeckList(formatDeckList(partnerDeck, style));
+        assert.deepEqual(parsed.problems, []);
+        assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
+        if (style === "mtgo") {
+            assert.deepEqual(names(parsed.side), ["1 Thrasios, Triton Hero", "1 Tymna the Weaver", "3 Negate"]);
+        } else {
+            assert.equal(parsed.commander?.name, "Thrasios, Triton Hero");
+            assert.equal(parsed.partner?.name, "Tymna the Weaver");
+            assert.deepEqual(names(parsed.side), ["3 Negate"]);
+        }
+    });
+}
+
+test("deckFromLines and unchangedEntries carry the partner", () => {
+    const built = deckFromLines([{ line: { count: 1, zone: "partner" }, card: card("Tymna the Weaver", "cmr", "2") }]);
+    assert.equal(built.partner?.card.name, "Tymna the Weaver");
+    const r = unchangedEntries(partnerDeck, formatDeckList(partnerDeck, "text"));
+    assert.deepEqual(r.lookups, []);
+    assert.ok(r.reused.some(f => f.line.zone === "partner" && f.card.name === "Tymna the Weaver"));
+});
