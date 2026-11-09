@@ -173,6 +173,20 @@
   align-items: center;
 }
 
+/* "Sort: Recent | Name" above the list */
+.sorting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.sorting [aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background-color: var(--accent-tint);
+}
+
 .filter {
   box-sizing: border-box;
   width: 100%;
