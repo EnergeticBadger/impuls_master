@@ -4,7 +4,8 @@ import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
 
 export type DeckEntry = { card: ScryfallCard; count: number }
-export type Deck = { main: DeckEntry[]; side: DeckEntry[]; commander?: DeckEntry }
+// partner: the second commander (partners, backgrounds, ...), count 1; only with a commander
+export type Deck = { main: DeckEntry[]; side: DeckEntry[]; commander?: DeckEntry; partner?: DeckEntry }
 export type DeckZone = "main" | "side"
 
 export const TYPE_GROUPS = ["Creature", "Planeswalker", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Land"] as const
@@ -69,6 +70,16 @@ export function setCommander(deck: Deck, card: ScryfallCard): Deck {
     return { ...taken, main, commander: { card: entry.card, count: 1 } }
 }
 
+// like setCommander, for the second commander slot; a partner already there goes back to the main deck
+export function setPartner(deck: Deck, card: ScryfallCard): Deck {
+    if (!deck.commander) return deck
+    const entry = deck.main.find(e => sameCard(e.card, card))
+    if (!entry) return deck
+    const taken = removeCard(deck, card, "main")
+    const main = deck.partner ? addTo(taken.main, deck.partner.card, deck.partner.count) : taken.main
+    return { ...taken, main, partner: { card: entry.card, count: 1 } }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
@@ -101,7 +112,43 @@ export function guessFormat(deck: Deck): string | undefined {
     return deck.commander ? "commander" : undefined
 }
 
-const cardsOf =(deck: Deck): DeckEntry[] => (deck.commander ? [...deck.main, deck.commander] : deck.main)
+const cardsOf = (deck: Deck): DeckEntry[] =>
+    [...deck.main, ...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : [])]
+
+// the commander's and partner's color identities together, in WUBRG order
+export function commanderIdentity(deck: Deck): string[] {
+    const identity = [...(deck.commander?.card.color_identity ?? []), ...(deck.partner?.card.color_identity ?? [])]
+    return COLORS.filter(c => identity.includes(c))
+}
+
+const oracleLines = (card: ScryfallCard): string[] =>
+    [card.oracle_text, ...(card.card_faces ?? []).map(f => f.oracle_text)]
+        .flatMap(t => (t ?? "").split("\n").map(l => l.trim()))
+
+const typeLines = (card: ScryfallCard): string[] =>
+    [card.type_line, ...(card.card_faces ?? []).map(f => f.type_line)].flatMap(t => (t ?? "").split(" // "))
+
+const hasLine = (card: ScryfallCard, re: RegExp) => oracleLines(card).some(l => re.test(l))
+
+const partnersWith = (a: ScryfallCard, b: ScryfallCard) => {
+    const want = `partner with ${b.name}`.toLowerCase()
+    return oracleLines(a).some(l => l.toLowerCase().startsWith(want))
+}
+
+// whether two cards can be a deck's two commanders, by their oracle text on any face
+export function canPartner(a: ScryfallCard, b: ScryfallCard): boolean {
+    const plainPartner = /^Partner(\s*\(.*)?$/i
+    if (hasLine(a, plainPartner) && hasLine(b, plainPartner)) return true
+    if (partnersWith(a, b) || partnersWith(b, a)) return true
+    const friends = /^Friends forever\b/i
+    if (hasLine(a, friends) && hasLine(b, friends)) return true
+    const background = (c: ScryfallCard) => typeLines(c).some(t => /\bBackground\b/.test(t))
+    const chooses = /^Choose a Background\b/i
+    if ((hasLine(a, chooses) && background(b)) || (hasLine(b, chooses) && background(a))) return true
+    const doctor = (c: ScryfallCard) => typeLines(c).some(t => /\bCreature\b/.test(t) && /\bTime Lord\b/.test(t) && /\bDoctor\b/.test(t))
+    const companion = /^Doctor's companion\b/i
+    return (hasLine(a, companion) && doctor(b)) || (hasLine(b, companion) && doctor(a))
+}
 
 const frontType = (card: ScryfallCard) => (card.card_faces?.[0]?.type_line ?? card.type_line ?? "").split(" // ")[0]
 
@@ -205,10 +252,7 @@ export function deckSummary(deck: Deck): { lands: number; spells: number; averag
 // the deck's colors in WUBRG order: its commander's color identity when it has one, else every color its spells
 // use (colorCounts); [] for an empty or colorless deck
 export function deckColors(deck: Deck): string[] {
-    if (deck.commander) {
-        const identity = deck.commander.card.color_identity ?? []
-        return COLORS.filter(c => identity.includes(c))
-    }
+    if (deck.commander) return commanderIdentity(deck)
     const counts = colorCounts(deck)
     return COLORS.filter(c => counts[c] > 0)
 }
@@ -325,10 +369,13 @@ export function legalityProblems(deck: Deck, format: string): string[] {
         if (!deck.commander) {
             problems.push("There is no commander.")
         }
-        const size = mainCount + (deck.commander?.count ?? 0)
+        const size = mainCount + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
         if (size !== 100) problems.push(`A Commander deck has exactly 100 cards (this has ${size}).`)
+        if (deck.commander && deck.partner && !canPartner(deck.commander.card, deck.partner.card)) {
+            problems.push(`${deck.commander.card.name} and ${deck.partner.card.name} can't both be commanders.`)
+        }
         if (deck.commander) {
-            const identity = new Set(deck.commander.card.color_identity ?? [])
+            const identity = new Set(commanderIdentity(deck))
             for (const { card } of deck.main) {
                 const outside = (card.color_identity ?? []).filter(c => !identity.has(c))
                 if (outside.length > 0) {
