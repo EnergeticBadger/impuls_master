@@ -366,6 +366,18 @@ test("canBeCommander: legendary creatures and 'can be your commander' text", () 
     assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
 });
 
+test("canBeCommander: Grist, powered legendary Vehicles, not Backgrounds", () => {
+    const grist = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", {
+        loyalty: "3",
+        oracle_text: "As long as Grist, the Hunger Tide isn't on the battlefield, it's a 1/1 Insect creature in addition to its other types.\n+1: Create a 1/1 black and green Insect creature token.",
+    } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(grist), true);
+    const falcon = card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle", { power: "4", toughness: "4" } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(falcon), true);
+    assert.equal(canBeCommander(card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle")), false);
+    assert.equal(canBeCommander(card("Bg", "Legendary Enchantment — Background")), false);
+});
+
 // ---- manaCostOf, on cards built the way the site builds them from its card data ----
 
 const printing: Printing = { id: "p1", set: "tst", set_name: "Test", number: "1", rarity: "common", released: "2020-01-01" };
