@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
 import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
-import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -86,6 +86,20 @@ test("deckToBuild prefers the current deck, else the most recently updated", () 
     assert.equal(deckToBuild([old, recent], undefined), recent)
     assert.equal(deckToBuild([old, recent], "gone"), recent)
     assert.equal(deckToBuild([], "a"), undefined)
+})
+
+test("decksByName ignores case, orders numbers, and sorts accents with their letter", () => {
+  const names = (l: { name: string }[]) => l.map((d) => d.name)
+  assert.deepEqual(names(decksByName([{ name: "banana" }, { name: "Apple" }, { name: "cherry" }])), ["Apple", "banana", "cherry"])
+  assert.deepEqual(names(decksByName([{ name: "Deck 10" }, { name: "Deck 2" }, { name: "Deck 1" }])), ["Deck 1", "Deck 2", "Deck 10"])
+  assert.deepEqual(names(decksByName([{ name: "Fog" }, { name: "Éowyn" }, { name: "Dune" }, { name: "Eagle" }, { name: "Ezo" }])), ["Dune", "Eagle", "Éowyn", "Ezo", "Fog"])
+})
+
+test("decksByName leaves its input alone", () => {
+  const input = [{ name: "b" }, { name: "a" }]
+  const out = decksByName(input)
+  assert.deepEqual(input.map((d) => d.name), ["b", "a"])
+  assert.notEqual(out, input)
 })
 
 test("decksByRecent puts the most recently updated first without changing the input", () => {
