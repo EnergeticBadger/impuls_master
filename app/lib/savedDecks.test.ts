@@ -46,6 +46,23 @@ test("a good deck round-trips through JSON", () => {
     assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
 })
 
+test("a partner survives slim, read and copy", () => {
+    const deck = {
+        ...newDeck("Pair", 5, "p"),
+        deck: {
+            main: [{ card: card("1", "Bolt"), count: 4 }],
+            side: [],
+            commander: { card: card("4", "Boss"), count: 1 },
+            partner: { card: card("5", "Sidekick"), count: 1 },
+        },
+    }
+    assert.deepEqual(slimDeck(deck.deck).partner, deck.deck.partner)
+    assert.deepEqual(readSavedDecks(JSON.parse(JSON.stringify([deck]))), [deck])
+    const copy = copyDeck(deck, 9, "q")
+    assert.deepEqual(copy.deck.partner, deck.deck.partner)
+    assert.notEqual(copy.deck.partner, deck.deck.partner)
+})
+
 test("a format is kept when it is a string, dropped otherwise", () => {
     const base = newDeck("Burn", 5, "b")
     assert.equal(readSavedDecks([{ ...base, format: "modern" }])[0].format, "modern")

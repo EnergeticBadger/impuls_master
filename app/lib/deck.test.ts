@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, colorCounts, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -242,6 +242,99 @@ test("commander: singleton, size and color identity", () => {
     assert.ok(problems.some(p => p.includes("exactly 100")));
 
     assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+const partnerCard = (name: string, identity: string[], text = "Partner", type = "Legendary Creature — Human") =>
+    card(name, type, { color_identity: identity, oracle_text: text });
+
+// a 100-card commander deck: filler lands plus the given commanders
+function pairDeck(commander: ScryfallCard, partner: ScryfallCard, fill = 98): Deck {
+    let deck: Deck = addCard({ main: [], side: [], commander: { card: commander, count: 1 }, partner: { card: partner, count: 1 } }, forest, "main", fill);
+    deck = { ...deck, main: deck.main.map(e => ({ ...e, card: { ...e.card, color_identity: [] } })) };
+    return deck;
+}
+
+test("two Partner cards: legal, identity is the union, size counts both", () => {
+    const a = partnerCard("Pako", ["R"], "Partner (You can have two commanders if both have partner.)");
+    const b = partnerCard("Ishai", ["W", "U"]);
+    const deck = pairDeck(a, b);
+    assert.deepEqual(commanderIdentity(deck), ["W", "U", "R"]);
+    assert.deepEqual(deckColors(deck), ["W", "U", "R"]);
+    assert.deepEqual(legalityProblems(deck, "commander"), []);
+    assert.ok(legalityProblems(pairDeck(a, b, 97), "commander").some(p => p.includes("this has 99")));
+    assert.equal(deckSummary(pairDeck(a, b)).spells, 2);
+});
+
+test("a partner's colors count for the identity check", () => {
+    const a = partnerCard("Pako", ["R"]);
+    const b = partnerCard("Ishai", ["W"]);
+    const deck = addCard(pairDeck(a, b, 97), bear);
+    assert.ok(legalityProblems(deck, "commander").some(p => p.includes("Grizzly Bears has color identity outside")));
+    const ok = addCard(pairDeck(a, b, 97), card("Wrath", "Sorcery", { color_identity: ["W"] }));
+    assert.deepEqual(legalityProblems(ok, "commander"), []);
+});
+
+test("'Partner with' pairs only with the named card", () => {
+    const a = partnerCard("Toothy", ["U"], "Partner with Pir, Imaginative Rascal (When this creature enters, target player may put Pir into their hand.)");
+    const b = partnerCard("Pir, Imaginative Rascal", ["G"], "Partner with Toothy, Imaginative Friend");
+    assert.equal(canPartner(a, b), true);
+    assert.equal(canPartner(b, a), true);
+    assert.deepEqual(legalityProblems(pairDeck(a, b), "commander"), []);
+    const plain = partnerCard("Pako", ["R"]);
+    assert.equal(canPartner(a, plain), false);
+    assert.equal(canPartner(plain, a), false);
+});
+
+test("Friends forever, Background and Doctor's companion pairs", () => {
+    const f1 = partnerCard("Jolene", ["R"], "Friends forever");
+    const f2 = partnerCard("Rick", ["G"], "Friends forever");
+    assert.equal(canPartner(f1, f2), true);
+    const hero = partnerCard("Wilson", ["G"], "Choose a Background");
+    const bg = partnerCard("Raised by Giants", ["G"], "Gifts", "Legendary Enchantment — Background");
+    assert.equal(canPartner(hero, bg), true);
+    assert.equal(canPartner(bg, hero), true);
+    assert.equal(canPartner(hero, f1), false);
+    assert.deepEqual(legalityProblems(pairDeck(hero, bg), "commander"), []);
+    const rose = partnerCard("Rose Tyler", ["W"], "Doctor's companion");
+    const doctor = partnerCard("The Tenth Doctor", ["U"], "", "Legendary Creature — Time Lord Doctor");
+    assert.equal(canPartner(rose, doctor), true);
+    assert.equal(canPartner(doctor, rose), true);
+    assert.equal(canPartner(rose, f1), false);
+    // text on the back face counts
+    const dfc = card("Front // Back", "Legendary Creature — Human // Legendary Creature — Human", {
+        card_faces: [{ name: "Front", type_line: "Legendary Creature — Human", oracle_text: "" }, { name: "Back", type_line: "Legendary Creature — Human", oracle_text: "Partner" }],
+    } as unknown as Partial<ScryfallCard>);
+    assert.equal(canPartner(dfc, f1), false);
+    assert.equal(canPartner(dfc, partnerCard("Pako", ["R"])), true);
+});
+
+test("a pair that can't partner gives one problem", () => {
+    const a = partnerCard("Pako", ["R"]);
+    const b = partnerCard("Ghave", ["G"], "");
+    const problems = legalityProblems(pairDeck(a, b), "commander");
+    assert.deepEqual(problems, ["Pako and Ghave can't both be commanders."]);
+});
+
+test("setPartner moves one copy out of main and returns an old partner", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
+    const first = setPartner(deck, legend);
+    assert.equal(first.partner?.card.name, legend.name);
+    assert.deepEqual(first.main.map(e => e.card.name), [legend2.name]);
+    assert.equal(first.commander?.card.name, bear.name);
+    const second = setPartner(first, legend2);
+    assert.equal(second.partner?.card.name, legend2.name);
+    assert.deepEqual(second.main.map(e => e.card.name), [legend.name]);
+    // setCommander keeps the partner; the input isn't changed
+    const swapped = setCommander(first, legend2);
+    assert.equal(swapped.partner?.card.name, legend.name);
+    assert.equal(deck.partner, undefined);
+    assert.equal(deck.main.length, 2);
+    assert.equal(setPartner(deck, golem), deck);
+});
+
+test("setPartner does nothing without a commander", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [] };
+    assert.equal(setPartner(deck, legend), deck);
 });
 
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
