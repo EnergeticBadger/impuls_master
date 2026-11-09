@@ -16,9 +16,9 @@ import { cardByName, cardPath } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { formatDeckList, quickAddLine } from "~/lib/decklist";
 import { ExportSection } from "~/Components/Deck/ExportSection";
-import { tcgplayerDeckLink } from "~/lib/affiliate";
+import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, basicLandSplit, canBeCommander, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, basicLandSplit, canBeCommander, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 import type { ScryfallCard } from "~/types";
 
 export function meta() {
@@ -61,7 +61,6 @@ export default function DeckPage() {
   const [preview, setPreview] = useState<string>()
   // the row whose printing list is open: "<section>:<card id>"
   const [printingsOf, setPrintingsOf] = useState<string>()
-  const [withSide, setWithSide] = useState(false)
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
   const [quickText, setQuickText] = useState("")
@@ -289,9 +288,6 @@ export default function DeckPage() {
     ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
     : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
-  const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
-
-  const price = deckPrice(deck, { side: withSide, currency: "usd" })
 
   return (
     <div>
@@ -472,32 +468,7 @@ export default function DeckPage() {
 
         <ExportSection deck={deck} name={saved.name} />
 
-        {buyEntries.length > 0 && (
-          <section>
-            {deck.side.length > 0 && (
-              <label className={styles.checkLabel}>
-                <input type="checkbox" className={styles.checkbox} checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
-                Include the sideboard
-              </label>
-            )}
-            <p>
-              <a
-                className={styles.link}
-                href={tcgplayerDeckLink(buyEntries.map((e) => ({ count: e.count, name: e.card.name })))}
-                target="_blank"
-                rel="noopener sponsored"
-              >Buy this deck on TCGplayer</a>
-            </p>
-            <p>
-              About ${price.total.toFixed(2)}
-              {price.missing.length > 0 && (
-                <>{" "}<span title={price.missing.join(", ")}>({price.missing.length} {price.missing.length === 1 ? "card has" : "cards have"} no price)</span></>
-              )}
-            </p>
-            <p className={styles.empty}>An estimate from the prices of the printings in your deck.</p>
-            <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
-          </section>
-        )}
+        <BuyDeck deck={deck} />
         </>
         )}
       </main>
