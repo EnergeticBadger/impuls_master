@@ -28,6 +28,10 @@ export function deckToBuild<T extends { id: string; updated: number }>(list: rea
 export const decksByRecent = <T extends { updated: number }>(list: readonly T[]): T[] =>
     [...list].sort((a, b) => b.updated - a.updated)
 
+// by name, ignoring case and accents, with numbers in order ("Deck 2" before "Deck 10"); a new array
+export const decksByName = <T extends { name: string }>(list: readonly T[]): T[] =>
+    [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+
 // lower case without accents, so "Éowyn" matches "eowyn"
 const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
 

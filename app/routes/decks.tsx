@@ -9,7 +9,7 @@ import { createDeck, createDeckWith, decks, deleteDeck, duplicateDeck, loadDecks
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { deckColors, emptyDeck, type Deck } from "~/lib/deck";
 import { ManaText } from "~/Components/CardDetails/ManaText";
-import { decksByRecent, filterDecks } from "~/lib/savedDecks";
+import { decksByName, decksByRecent, filterDecks } from "~/lib/savedDecks";
 import { readDeckLinkHash } from "~/lib/decklist";
 
 const DEFAULT_NAME = "Untitled deck";
@@ -35,6 +35,7 @@ export default function Decks() {
   const [review, setReview] = useState<{ deck: Deck, notes: string[] }>()
   const [backupNote, setBackupNote] = useState<string>()
   const [filter, setFilter] = useState("")
+  const [sortBy, setSortBy] = useState<"recent" | "name">("recent")
   const navigate = useNavigate()
 
   // the decks are read from localStorage after the first render; don't flash the empty state before that
@@ -53,9 +54,10 @@ export default function Decks() {
 
   // re-rendered by the snapshot above; the decks themselves are ref()s, so they are read unwrapped (as on the deck page)
   const list = decksByRecent(decks.list)
+  const sorted = sortBy === "name" ? decksByName(list) : list
   // a name filter once the list is long enough to scroll on a phone
   const filtering = list.length >= FILTER_FROM
-  const shown = filtering ? filterDecks(list, filter) : list
+  const shown = filtering ? filterDecks(sorted, filter) : sorted
 
   const create = () => {
     createDeck(naming?.trim() || DEFAULT_NAME)
@@ -181,6 +183,15 @@ export default function Decks() {
         {ready && list.length === 0 && <p className={styles.intro}>Decks are saved in this browser.</p>}
         <div className={styles.actions}>{importing === undefined && newDeckForm}{importing === undefined && importForm}</div>
         {importing !== undefined && importForm}
+        {list.length >= 2 && (
+          <div className={styles.sorting} role="group" aria-label="Sort decks by">
+            <span>Sort:</span>
+            <button type="button" className={styles.button} aria-pressed={sortBy === "recent"}
+              onClick={() => setSortBy("recent")}>Recent</button>
+            <button type="button" className={styles.button} aria-pressed={sortBy === "name"}
+              onClick={() => setSortBy("name")}>Name</button>
+          </div>
+        )}
         {filtering && (
           <input
             type="search"
