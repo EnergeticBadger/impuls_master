@@ -18,7 +18,9 @@ const HEADERS: Record<string, ParseZone> = {
     commander: "commander",
 };
 
-export function parseDeckList(text: string): { main: Line[]; side: Line[]; commander?: Line; partner?: Line; problems: string[] } {
+export type ParseOptions = { blankLineStartsSideboard?: boolean }
+
+export function parseDeckList(text: string, options: ParseOptions = {}): { main: Line[]; side: Line[]; commander?: Line; partner?: Line; problems: string[] } {
     const main: Line[] = [];
     const side: Line[] = [];
     let commander: Line | undefined;
@@ -26,13 +28,14 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
     const companions: Line[] = [];
     const problems: string[] = [];
     let zone: ParseZone = "main";
+    const blankLineStartsSideboard = options.blankLineStartsSideboard ?? true;
 
     text.split(/\r?\n/).forEach((raw, i) => {
         let line = raw.trim();
         if (line === "") {
             // a blank line ends the commander section, and (MTGO) splits the sideboard off the main deck
             if (zone === "commander") zone = "main";
-            else if (zone === "main" && main.length > 0) zone = "side";
+            else if (blankLineStartsSideboard && zone === "main" && main.length > 0) zone = "side";
             return;
         }
         const header = HEADERS[line.replace(/:$/, "").toLowerCase()];
@@ -119,7 +122,8 @@ export function zoneLines(parsed: ReturnType<typeof parseDeckList>): ZoneLine[] 
 }
 
 export function unchangedEntries(deck: Deck, text: string): { reused: FoundLine[]; lookups: ZoneLine[]; problems: string[] } {
-    const parsed = parseDeckList(text);
+    // in the editor a blank line is just an edit, not MTGO's sideboard divider
+    const parsed = parseDeckList(text, { blankLineStartsSideboard: false });
     const lines: ZoneLine[] = [
         ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
         ...(parsed.partner ? [{ ...parsed.partner, zone: "partner" as const }] : []),
