@@ -264,6 +264,29 @@ test("unchangedEntries: a removed card just leaves the list", () => {
     assert.ok(!r.reused.some(x => x.card.name === "Island"));
 });
 
+test("unchangedEntries: a blanked-out line in a main-only deck keeps the rest in main", () => {
+    const mainOnly: Deck = { main: deck.main, side: [] };
+    const text = formatDeckList(mainOnly, "text").replace("2 Fire // Ice", "");
+    assert.equal(text, "4 Opt\n\n20 Island\n");
+    const r = unchangedEntries(mainOnly, text);
+    assert.deepEqual(r.lookups, []);
+    assert.deepEqual(reusedNames(r.reused), ["main:4 Opt", "main:20 Island"]);
+});
+
+test("unchangedEntries: an extra blank line in the main deck changes no zone", () => {
+    const r = unchangedEntries(deck, base.replace("4 Opt\n", "4 Opt\n\n"));
+    assert.deepEqual(r.lookups, []);
+    assert.deepEqual(reusedNames(r.reused).sort(), [
+        "commander:1 Atraxa, Praetors' Voice", "main:2 Fire // Ice", "main:20 Island", "main:4 Opt", "side:3 Negate",
+    ]);
+});
+
+test("parseDeckList: without the option a blank line still starts the sideboard", () => {
+    const parsed = parseDeckList("4 Opt\n\n20 Island\n");
+    assert.deepEqual(names(parsed.main), ["4 Opt"]);
+    assert.deepEqual(names(parsed.side), ["20 Island"]);
+});
+
 test("unchangedEntries: a card moved to the sideboard is looked up again", () => {
     const text = base.replace("4 Opt\n", "").replace("3 Negate", "3 Negate\n4 Opt");
     const r = unchangedEntries(deck, text);
