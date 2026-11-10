@@ -6,8 +6,8 @@ import { addCard, emptyDeck, type Deck, type DeckEntry } from "./deck.ts";
 export type Line = { count: number; name: string; set?: string; number?: string }
 export type DeckListStyle = "text" | "arena" | "mtgo"
 
-export type Zone = "main" | "side" | "commander"
-type ParseZone = Zone | "companion"
+export type Zone = "main" | "side" | "commander" | "partner"
+type ParseZone = "main" | "side" | "commander" | "companion"
 
 // "4 Opt", "4x Opt", "4 Opt (XLN) 65"; an "SB:" prefix (MTGO) is dealt with before this
 const LINE = /^(\d+)\s*[xX]?\s+(.+?)(?:\s+\(([A-Za-z0-9]+)\)(?:\s+(\S+))?)?$/;
@@ -18,10 +18,11 @@ const HEADERS: Record<string, ParseZone> = {
     commander: "commander",
 };
 
-export function parseDeckList(text: string): { main: Line[]; side: Line[]; commander?: Line; problems: string[] } {
+export function parseDeckList(text: string): { main: Line[]; side: Line[]; commander?: Line; partner?: Line; problems: string[] } {
     const main: Line[] = [];
     const side: Line[] = [];
     let commander: Line | undefined;
+    let partner: Line | undefined;
     const companions: Line[] = [];
     const problems: string[] = [];
     let zone: ParseZone = "main";
@@ -59,8 +60,9 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
         if (m[4]) entry.number = m[4];
 
         if (target === "commander") {
-            if (commander) problems.push(`Line ${i + 1}: there is already a commander, "${raw.trim()}" is extra.`);
-            else commander = entry;
+            if (!commander) commander = entry;
+            else if (!partner) partner = entry;
+            else problems.push(`Line ${i + 1}: there are already two commanders, "${raw.trim()}" is extra.`);
         } else if (target === "companion") {
             companions.push(entry);
         } else {
@@ -73,7 +75,12 @@ export function parseDeckList(text: string): { main: Line[]; side: Line[]; comma
         if (!side.some(s => s.name.toLowerCase() === c.name.toLowerCase())) side.push(c);
     }
 
-    return commander ? { main, side, commander, problems } : { main, side, problems };
+    return {
+        main, side,
+        ...(commander ? { commander } : {}),
+        ...(commander && partner ? { partner } : {}),
+        problems,
+    };
 }
 
 // one typed line ("4 Opt", "Opt", "1 Opt (M19) 65") as a Line; no count means 1
@@ -92,6 +99,7 @@ export function deckFromLines(found: FoundLine[]): Deck {
     let deck = emptyDeck();
     for (const { line, card } of found) {
         if (line.zone === "commander") deck = { ...deck, commander: { card, count: line.count } };
+        else if (line.zone === "partner") deck = { ...deck, partner: { card, count: line.count } };
         else deck = addCard(deck, card, line.zone, line.count);
     }
     return deck;
@@ -101,15 +109,27 @@ export type ZoneLine = Line & { zone: Zone }
 
 // the lines of an edited list, split into those whose card the deck already has (the card object is kept,
 // only the count comes from the text) and those that need a lookup
+export function zoneLines(parsed: ReturnType<typeof parseDeckList>): ZoneLine[] {
+    return [
+        ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
+        ...(parsed.partner ? [{ ...parsed.partner, zone: "partner" as const }] : []),
+        ...parsed.main.map(l => ({ ...l, zone: "main" as const })),
+        ...parsed.side.map(l => ({ ...l, zone: "side" as const })),
+    ];
+}
+
 export function unchangedEntries(deck: Deck, text: string): { reused: FoundLine[]; lookups: ZoneLine[]; problems: string[] } {
     const parsed = parseDeckList(text);
     const lines: ZoneLine[] = [
         ...(parsed.commander ? [{ ...parsed.commander, zone: "commander" as const }] : []),
+        ...(parsed.partner ? [{ ...parsed.partner, zone: "partner" as const }] : []),
         ...parsed.main.map(l => ({ ...l, zone: "main" as const })),
         ...parsed.side.map(l => ({ ...l, zone: "side" as const })),
     ];
     const known = (zone: Zone): DeckEntry[] =>
-        zone === "commander" ? (deck.commander ? [deck.commander] : []) : deck[zone];
+        zone === "commander" ? (deck.commander ? [deck.commander] : [])
+            : zone === "partner" ? (deck.partner ? [deck.partner] : [])
+            : deck[zone];
     const reused: FoundLine[] = [];
     const lookups: ZoneLine[] = [];
     for (const line of lines) {
@@ -144,14 +164,16 @@ export function formatDeckList(deck: Deck, style: DeckListStyle): string {
     const blocks: string[][] = [];
     const lines = (entries: DeckEntry[]) => entries.map(e => write(e, style));
 
+    const commanders = [...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : [])];
+
     if (style === "mtgo" && deck.main.length > 0) {
         // MTGO has no section headers: a blank line starts the sideboard, and the commander lives there
-        const sideLines = lines([...(deck.commander ? [deck.commander] : []), ...deck.side]);
+        const sideLines = lines([...commanders, ...deck.side]);
         const out = [lines(deck.main).join("\n"), ...(sideLines.length > 0 ? [sideLines.join("\n")] : [])];
         return out.join("\n\n") + "\n";
     }
 
-    if (deck.commander) blocks.push(["Commander", ...lines([deck.commander])]);
+    if (commanders.length > 0) blocks.push(["Commander", ...lines(commanders)]);
     if (deck.main.length > 0 || (style === "arena" && deck.commander)) {
         // Arena names the main deck when something else comes before it; MTGO and plain text don't
         const head = style === "arena" || (deck.commander && deck.main.length > 0) ? ["Deck"] : [];
