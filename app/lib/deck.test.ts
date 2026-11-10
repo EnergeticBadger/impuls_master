@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries,canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -364,6 +364,13 @@ test("deckPrice counts the commander; an empty deck is free", () => {
     const a = priced("A", { usd: "0.10" });
     assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
     assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
+});
+
+test("buyEntries lists commander, partner, main, then side only when asked", () => {
+    const entry = (name: string): DeckEntry => ({ card: card(name, "Creature"), count: 1 });
+    const deck: Deck = { commander: entry("Cmd"), partner: entry("Part"), main: [entry("Main")], side: [entry("Side")] };
+    assert.deepEqual(buyEntries(deck, { side: true }).map(e => e.card.name), ["Cmd", "Part", "Main", "Side"]);
+    assert.deepEqual(buyEntries(deck, { side: false }).map(e => e.card.name), ["Cmd", "Part", "Main"]);
 });
 
 test("canBeCommander: legendary creatures and 'can be your commander' text", () => {

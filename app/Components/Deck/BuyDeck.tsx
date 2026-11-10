@@ -3,15 +3,15 @@ import styles from "~/routes/DeckPage.module.css";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { useSnapshot } from "valtio";
 import { priceCurrency, type PriceCurrency } from "~/Components/Context/priceCurrency";
-import { deckPrice, formatPrice, type Deck } from "~/lib/deck";
+import { buyEntries, deckPrice, formatPrice, type Deck } from "~/lib/deck";
 
 export function BuyDeck({ deck }: { deck: Deck }) {
   const [withSide, setWithSide] = useState(false)
-  const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
+  const entries = buyEntries(deck, { side: withSide })
   const currency = useSnapshot(priceCurrency).currency
   const price = deckPrice(deck, { side: withSide, currency })
 
-  if (buyEntries.length === 0) return null
+  if (entries.length === 0) return null
 
   return (
     <section>
@@ -24,7 +24,7 @@ export function BuyDeck({ deck }: { deck: Deck }) {
       <p>
         <a
           className={styles.link}
-          href={tcgplayerDeckLink(buyEntries.map((e) => ({ count: e.count, name: e.card.name })))}
+          href={tcgplayerDeckLink(entries.map((e) => ({ count: e.count, name: e.card.name })))}
           target="_blank"
           rel="noopener sponsored"
         >Buy this deck on TCGplayer</a>

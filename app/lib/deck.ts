@@ -283,10 +283,20 @@ export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | 
     return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
+// the cards to buy, in order: commander, partner, main, then the sideboard when asked
+export function buyEntries(deck: Deck, opts: { side: boolean }): DeckEntry[] {
+    return [
+        ...(deck.commander ? [deck.commander] : []),
+        ...(deck.partner ? [deck.partner] : []),
+        ...deck.main,
+        ...(opts.side ? deck.side : []),
+    ]
+}
+
 // a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
-    const entries = [...cardsOf(deck), ...(opts.side ? deck.side : [])]
+    const entries = buyEntries(deck, opts)
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
