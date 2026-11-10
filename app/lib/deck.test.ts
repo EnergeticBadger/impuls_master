@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -614,4 +614,11 @@ test("identityTerm writes colors in WUBRG order, lower case", () => {
     assert.equal(identityTerm(["G", "W"]), "id<=wg");
     assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
     assert.equal(identityTerm([]), "id<=c");
+});
+
+test("formatPrice uses the currency's symbol and always two decimals", () => {
+    assert.equal(formatPrice(12.34, "usd"), "$12.34");
+    assert.equal(formatPrice(12.3, "eur"), "€12.30");
+    assert.equal(formatPrice(0, "tix"), "0.00 tix");
+    assert.equal(formatPrice(5, "tix"), "5.00 tix");
 });
