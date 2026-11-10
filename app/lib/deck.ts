@@ -283,7 +283,7 @@ export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | 
     return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
-// a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
+// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
     const entries = [...cardsOf(deck), ...(opts.side ? deck.side : [])]
@@ -291,7 +291,7 @@ export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "
     const missing: string[] = []
     for (const { card, count } of entries) {
         const prices = card.prices as Partial<Record<string, string | null>> | undefined
-        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil : undefined)
+        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched : undefined)
         const price = raw == null ? NaN : parseFloat(raw)
         if (Number.isNaN(price)) {
             if (!missing.includes(card.name)) missing.push(card.name)

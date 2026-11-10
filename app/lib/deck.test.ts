@@ -351,6 +351,15 @@ test("deckPrice multiplies by count, falls back to foil, lists unpriced cards on
     assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }).missing, ["A", "B", "C"]);
 });
 
+test("deckPrice falls back to the etched price; a card with every price null is missing", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const etched = priced("Etched", { ...nulls, usd_etched: "12.34" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, etched, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 24.68, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
+});
+
 test("deckPrice counts the commander; an empty deck is free", () => {
     const a = priced("A", { usd: "0.10" });
     assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);

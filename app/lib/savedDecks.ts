@@ -68,7 +68,7 @@ const FACE_KEYS = ["name", "oracle_id", "mana_cost", "type_line", "oracle_text",
 export function slimCard(card: ScryfallCard): ScryfallCard {
     const src: Bag = { ...card }
     const out = pick(src, CARD_KEYS)
-    if (src.prices) out.prices = pick(src.prices, ["usd", "usd_foil", "eur", "tix"])
+    if (src.prices) out.prices = pick(src.prices, ["usd", "usd_foil", "usd_etched", "eur", "tix"])
     const images = slimImages(src.image_uris)
     if (images) out.image_uris = images
     if (Array.isArray(src.card_faces)) {

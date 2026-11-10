@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
-import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { addCard, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
 import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
@@ -158,11 +158,19 @@ test("slimCard drops extra fields and keeps the used ones equal", () => {
     const s = slim as unknown as Record<string, unknown>
     for (const k of ["purchase_uris", "related_uris", "all_parts", "flavor_text", "artist", "uri"]) assert.equal(k in s, false, k)
     assert.deepEqual(slim.image_uris, { small: full.image_uris!.small, normal: full.image_uris!.normal })
-    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", eur: "0.90", tix: "0.02" })
+    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", usd_etched: null, eur: "0.90", tix: "0.02" })
     for (const k of ["id", "oracle_id", "name", "layout", "mana_cost", "cmc", "type_line", "oracle_text", "colors",
         "color_identity", "legalities", "set", "collector_number", "rarity"] as const) {
         assert.deepEqual(slim[k], full[k], k)
     }
+})
+
+test("an etched-only price survives slimming and a JSON round trip", () => {
+    const etched = fullCard({ id: "e", name: "Jeweled Lotus", prices: { usd: null, usd_foil: null, usd_etched: "12.34", eur: null, eur_foil: null, tix: null } })
+    assert.equal(slimCard(etched).prices?.usd_etched, "12.34")
+    const saved = { ...newDeck("Etched", 1, "e"), deck: { main: [{ card: slimCard(etched), count: 2 }], side: [] } }
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify([saved])))
+    assert.deepEqual(deckPrice(read.deck, { side: false, currency: "usd" }), { total: 24.68, missing: [] })
 })
 
 test("slimCard leaves missing fields missing", () => {
