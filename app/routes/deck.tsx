@@ -11,6 +11,7 @@ import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
 import { DeckNotes } from "~/Components/Deck/DeckNotes";
 import { deckGrouping, loadDeckGrouping } from "~/Components/Context/deckGrouping";
+import { loadPriceCurrency } from "~/Components/Context/priceCurrency";
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
@@ -71,7 +72,7 @@ export default function DeckPage() {
   const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
-  useEffect(() => { loadDecks(); loadDeckGrouping(); setReady(true) }, [])
+  useEffect(() => { loadDecks(); loadDeckGrouping(); loadPriceCurrency(); setReady(true) }, [])
   const grouping = useSnapshot(deckGrouping).by
   useEffect(() => { setStatus("") }, [id])
 

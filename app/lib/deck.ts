@@ -302,7 +302,15 @@ export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "
     return { total: cents / 100, missing }
 }
 
-const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
+// "$12.34", "€12.34" or "12.34 tix": always two decimals
+export function formatPrice(total: number, currency: "usd" | "eur" | "tix"): string {
+    const n = total.toFixed(2)
+    if (currency === "usd") return `$${n}`
+    if (currency === "eur") return `€${n}`
+    return `${n} tix`
+}
+
+const NUMBER_WORDS:Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
 
 // most copies the rules let a deck hold: 4 normally, no limit for basic lands and "any number" cards,
 // a stated number for cards like Seven Dwarves
