@@ -20,7 +20,7 @@ import { ExportSection } from "~/Components/Deck/ExportSection";
 import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, basicLandSplit, canBeCommander, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, basicLandSplit, canBeCommander, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, removeCommander, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -38,14 +38,11 @@ const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.c
 // out of one zone and into the other
 const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
-  const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
-  return addCard(without, entry.card, to, entry.count)
+  if (from === "commander") return removeCommander(deck, to)
+  return addCard(removeCard(deck, entry.card, from, entry.count), entry.card, to, entry.count)
 }
 
-const removeAsCommander = (deck: Deck): Deck => {
-  if (!deck.commander) return deck
-  return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
-}
+const removeAsCommander = (deck: Deck): Deck => removeCommander(deck, "main")
 
 const BASIC_NAMES = { W: "Plains", U: "Island", B: "Swamp", R: "Mountain", G: "Forest" } as const
 
