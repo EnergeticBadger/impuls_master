@@ -14,12 +14,12 @@ import { deckGrouping, loadDeckGrouping } from "~/Components/Context/deckGroupin
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
-import { formatDeckList, quickAddLine } from "~/lib/decklist";
+import { formatDeckList } from "~/lib/decklist";
 import { ExportSection } from "~/Components/Deck/ExportSection";
 import { BuyDeck } from "~/Components/Deck/BuyDeck";
+import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { canUndo, record, undo, type History } from "~/lib/history";
 import { addCard, basicLandSplit, canBeCommander, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
-import type { ScryfallCard } from "~/types";
 
 export function meta() {
   return [
@@ -63,11 +63,6 @@ export default function DeckPage() {
   const [printingsOf, setPrintingsOf] = useState<string>()
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
-  const [quickText, setQuickText] = useState("")
-  const [quickZone, setQuickZone] = useState<DeckZone>("main")
-  const [quickBusy, setQuickBusy] = useState(false)
-  const [quickMessage, setQuickMessage] = useState<string>()
-  const quickInput = useRef<HTMLInputElement>(null)
   const [basicsOpen, setBasicsOpen] = useState(false)
   const [basicsText, setBasicsText] = useState<string>() // undefined: show the suggested number
   const [basicsBusy, setBasicsBusy] = useState(false)
@@ -148,26 +143,6 @@ export default function DeckPage() {
   const cardNamed = (problem: string) =>
     [...anchored.keys()].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
   const rowSeen = new Set<string>()
-
-  const quickAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (quickBusy) return
-    const line = quickAddLine(quickText)
-    if (!line) { setQuickMessage("Type a card name, like 4 Lightning Bolt."); return }
-    setQuickBusy(true)
-    setQuickMessage(undefined)
-    try {
-      const card = await cardByName(line)
-      if (!card) { setQuickMessage(`No card named ${line.name}.`); return }
-      change((d) => addCard(d, card, quickZone, line.count))
-      setQuickText("")
-    } catch {
-      setQuickMessage(`No card named ${line.name}.`)
-    } finally {
-      setQuickBusy(false)
-      setTimeout(() => quickInput.current?.focus(), 0)
-    }
-  }
 
   // basic lands: 40% of the deck's size by default, less the lands it already has
   const suggestedBasics = Math.max(0, Math.round((isCommander ? 100 : 60) * 0.4) - deckSummary(deck).lands)
@@ -302,27 +277,7 @@ export default function DeckPage() {
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
           aria-label="Deck name"
         />
-        <form className={styles.quickAdd} onSubmit={quickAdd}>
-          <input
-            ref={quickInput}
-            className={styles.quickInput}
-            value={quickText}
-            onChange={(e) => setQuickText(e.target.value)}
-            placeholder="4 Lightning Bolt"
-            aria-label="Add a card"
-          />
-          <select
-            className={styles.quickZone}
-            value={quickZone}
-            onChange={(e) => setQuickZone(e.target.value as DeckZone)}
-            aria-label="Add to"
-          >
-            <option value="main">Main</option>
-            <option value="side">Sideboard</option>
-          </select>
-          <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
-          {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
-        </form>
+        <QuickAdd onAdd={(card, zone, count) => change((d) => addCard(d, card, zone, count))} />
         <div className={styles.basics}>
           <button type="button" className={styles.button} aria-expanded={basicsOpen} onClick={() => setBasicsOpen(!basicsOpen)}>Add basic lands</button>
           {basicsOpen && (
