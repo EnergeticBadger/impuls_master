@@ -321,7 +321,10 @@ export function canBeCommander(card: ScryfallCard): boolean {
     const type = frontType(card)
     if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
     const text = [card.oracle_text, ...faces.map(f => f.oracle_text)].join("\n")
-    return /can be your commander/i.test(text)
+    if (/can be your commander/i.test(text)) return true
+    if (/isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(text)) return true
+    const power = card.power ?? faces[0]?.power
+    return /\bLegendary\b/.test(type) && /\b(Vehicle|Spacecraft)\b/.test(type) && power != null && power !== ""
 }
 
 const SIDEBOARD_MAX = 15
