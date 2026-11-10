@@ -63,6 +63,14 @@ test("a partner survives slim, read and copy", () => {
     assert.notEqual(copy.deck.partner, deck.deck.partner)
 })
 
+test("a saved partner with no commander goes to the main deck", () => {
+    const entry = { card: card("p1", "Tymna"), count: 1 }
+    const [read] = readSavedDecks([{ id: "a", name: "Odd", deck: { main: [], side: [], partner: entry } }])
+    assert.deepEqual(read.deck.main.map((e) => [e.card.name, e.count]), [["Tymna", 1]])
+    assert.equal(read.deck.partner, undefined)
+    assert.equal(read.deck.commander, undefined)
+})
+
 test("a format is kept when it is a string, dropped otherwise", () => {
     const base = newDeck("Burn", 5, "b")
     assert.equal(readSavedDecks([{ ...base, format: "modern" }])[0].format, "modern")

@@ -80,6 +80,23 @@ export function setPartner(deck: Deck, card: ScryfallCard): Deck {
     return { ...taken, main, partner: { card: entry.card, count: 1 } }
 }
 
+// the commander goes back to the main deck (merging with copies there) and a partner, if any, moves up to the
+// commander slot. No commander: the deck comes back unchanged. The input is never changed.
+export function removeCommander(deck: Deck): Deck {
+    if (!deck.commander) return deck
+    const { commander, partner, ...rest } = deck
+    const next: Deck = { ...rest, main: addTo(deck.main, commander.card, commander.count) }
+    if (partner) next.commander = partner
+    return next
+}
+
+// the partner goes back to the main deck; the commander stays. No partner: unchanged.
+export function removePartner(deck: Deck): Deck {
+    if (!deck.partner) return deck
+    const { partner, ...rest } = deck
+    return { ...rest, main: addTo(deck.main, partner.card, partner.count) }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
