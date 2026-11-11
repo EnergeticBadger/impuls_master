@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -351,6 +351,36 @@ test("deckPrice multiplies by count, falls back to foil, lists unpriced cards on
     assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }).missing, ["A", "B", "C"]);
 });
 
+test("deckPrice falls back to the etched price; a card with every price null is missing", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const etched = priced("Etched", { ...nulls, usd_etched: "12.34" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, etched, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 24.68, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
+});
+
+test("buyEntries includes the partner once, and deckPrice sums the same entries", () => {
+    const thrasios = priced("Thrasios, Triton Hero", { usd: "1.00" });
+    const tymna = priced("Tymna the Weaver", { usd: "2.00" });
+    const island = priced("Island", { usd: "0.25" });
+    const side = priced("Side Card", { usd: "0.50" });
+    const deck: Deck = {
+        main: [{ card: island, count: 98 }],
+        side: [{ card: side, count: 2 }],
+        commander: { card: thrasios, count: 1 },
+        partner: { card: tymna, count: 1 },
+    };
+    for (const withSide of [false, true]) {
+        const entries = buyEntries(deck, withSide);
+        assert.equal(entries.filter((e) => e.card.name === "Tymna the Weaver").length, 1);
+        assert.deepEqual(entries.map((e) => e.card.name).slice(0, 3), ["Thrasios, Triton Hero", "Tymna the Weaver", "Island"]);
+        assert.equal(entries.some((e) => e.card.name === "Side Card"), withSide);
+        const sum = entries.reduce((t, e) => t + parseFloat((e.card.prices as { usd: string }).usd) * e.count, 0);
+        assert.equal(deckPrice(deck, { side: withSide, currency: "usd" }).total, Math.round(sum * 100) / 100);
+    }
+});
+
 test("deckPrice counts the commander; an empty deck is free", () => {
     const a = priced("A", { usd: "0.10" });
     assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
@@ -364,6 +394,18 @@ test("canBeCommander: legendary creatures and 'can be your commander' text", () 
     assert.equal(canBeCommander(card("Teferi", "Legendary Planeswalker — Teferi", { oracle_text: "Teferi can be your commander." })), true);
     const faces = [{ name: "Front", type_line: "Legendary Creature — Human" }, { name: "Back", type_line: "Legendary Enchantment" }];
     assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
+});
+
+test("canBeCommander: Grist, powered legendary Vehicles, not Backgrounds", () => {
+    const grist = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", {
+        loyalty: "3",
+        oracle_text: "As long as Grist, the Hunger Tide isn't on the battlefield, it's a 1/1 Insect creature in addition to its other types.\n+1: Create a 1/1 black and green Insect creature token.",
+    } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(grist), true);
+    const falcon = card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle", { power: "4", toughness: "4" } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(falcon), true);
+    assert.equal(canBeCommander(card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle")), false);
+    assert.equal(canBeCommander(card("Bg", "Legendary Enchantment — Background")), false);
 });
 
 // ---- manaCostOf, on cards built the way the site builds them from its card data ----
@@ -632,4 +674,11 @@ test("identityTerm writes colors in WUBRG order, lower case", () => {
     assert.equal(identityTerm(["G", "W"]), "id<=wg");
     assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
     assert.equal(identityTerm([]), "id<=c");
+});
+
+test("formatPrice uses the currency's symbol and always two decimals", () => {
+    assert.equal(formatPrice(12.34, "usd"), "$12.34");
+    assert.equal(formatPrice(12.3, "eur"), "€12.30");
+    assert.equal(formatPrice(0, "tix"), "0.00 tix");
+    assert.equal(formatPrice(5, "tix"), "5.00 tix");
 });
