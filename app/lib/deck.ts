@@ -283,7 +283,7 @@ export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | 
     return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
-// the cards to buy, in order: commander, partner, main, then the sideboard when asked
+// the cards to buy, in order: commander, partner, main, then the sideboard when asked. the buy link and the price both use this
 export function buyEntries(deck: Deck, opts: { side: boolean }): DeckEntry[] {
     return [
         ...(deck.commander ? [deck.commander] : []),

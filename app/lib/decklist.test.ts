@@ -339,9 +339,30 @@ for (const style of ["text", "arena", "mtgo"] as const) {
     });
 }
 
+const tymna = card("Tymna the Weaver", "cmr", "2");
+const thrasios = card("Thrasios, Triton Hero", "cmr", "1");
+
+test("deckFromLines: a found partner line alone becomes the commander", () => {
+    const built = deckFromLines([
+        { line: { count: 1, zone: "partner" }, card: tymna },
+        { line: { count: 98, zone: "main" }, card: card("Island", "cmr", "9") },
+    ]);
+    assert.equal(built.commander?.card.name, "Tymna the Weaver");
+    assert.equal(built.partner, undefined);
+    assert.equal(built.main.length, 1);
+});
+
+test("deckFromLines: both commander lines keep both, in either order", () => {
+    const a = { line: { count: 1, zone: "commander" as const }, card: thrasios };
+    const b = { line: { count: 1, zone: "partner" as const }, card: tymna };
+    for (const found of [[a, b], [b, a]]) {
+        const built = deckFromLines(found);
+        assert.equal(built.commander?.card.name, "Thrasios, Triton Hero");
+        assert.equal(built.partner?.card.name, "Tymna the Weaver");
+    }
+});
+
 test("deckFromLines and unchangedEntries carry the partner", () => {
-    const built = deckFromLines([{ line: { count: 1, zone: "partner" }, card: card("Tymna the Weaver", "cmr", "2") }]);
-    assert.equal(built.partner?.card.name, "Tymna the Weaver");
     const r = unchangedEntries(partnerDeck, formatDeckList(partnerDeck, "text"));
     assert.deepEqual(r.lookups, []);
     assert.ok(r.reused.some(f => f.line.zone === "partner" && f.card.name === "Tymna the Weaver"));
