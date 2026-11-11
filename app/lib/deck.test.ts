@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -371,6 +371,27 @@ test("deckPrice falls back to the etched price; a card with every price null is 
     const deck = addCard(addCard({ main: [], side: [] }, etched, "main", 2), none);
     assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 24.68, missing: ["None"] });
     assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
+});
+
+test("buyEntries includes the partner once, and deckPrice sums the same entries", () => {
+    const thrasios = priced("Thrasios, Triton Hero", { usd: "1.00" });
+    const tymna = priced("Tymna the Weaver", { usd: "2.00" });
+    const island = priced("Island", { usd: "0.25" });
+    const side = priced("Side Card", { usd: "0.50" });
+    const deck: Deck = {
+        main: [{ card: island, count: 98 }],
+        side: [{ card: side, count: 2 }],
+        commander: { card: thrasios, count: 1 },
+        partner: { card: tymna, count: 1 },
+    };
+    for (const withSide of [false, true]) {
+        const entries = buyEntries(deck, withSide);
+        assert.equal(entries.filter((e) => e.card.name === "Tymna the Weaver").length, 1);
+        assert.deepEqual(entries.map((e) => e.card.name).slice(0, 3), ["Thrasios, Triton Hero", "Tymna the Weaver", "Island"]);
+        assert.equal(entries.some((e) => e.card.name === "Side Card"), withSide);
+        const sum = entries.reduce((t, e) => t + parseFloat((e.card.prices as { usd: string }).usd) * e.count, 0);
+        assert.equal(deckPrice(deck, { side: withSide, currency: "usd" }).total, Math.round(sum * 100) / 100);
+    }
 });
 
 test("deckPrice counts the commander; an empty deck is free", () => {
