@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
-import { addCard, copiesIn, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
 import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
@@ -158,11 +158,19 @@ test("slimCard drops extra fields and keeps the used ones equal", () => {
     const s = slim as unknown as Record<string, unknown>
     for (const k of ["purchase_uris", "related_uris", "all_parts", "flavor_text", "artist", "uri"]) assert.equal(k in s, false, k)
     assert.deepEqual(slim.image_uris, { small: full.image_uris!.small, normal: full.image_uris!.normal })
-    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", eur: "0.90", tix: "0.02" })
+    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", usd_etched: null, eur: "0.90", tix: "0.02" })
     for (const k of ["id", "oracle_id", "name", "layout", "mana_cost", "cmc", "type_line", "oracle_text", "colors",
         "color_identity", "legalities", "set", "collector_number", "rarity"] as const) {
         assert.deepEqual(slim[k], full[k], k)
     }
+})
+
+test("an etched-only price survives slimming and a JSON round trip", () => {
+    const etched = fullCard({ id: "e", name: "Jeweled Lotus", prices: { usd: null, usd_foil: null, usd_etched: "12.34", eur: null, eur_foil: null, tix: null } })
+    assert.equal(slimCard(etched).prices?.usd_etched, "12.34")
+    const saved = { ...newDeck("Etched", 1, "e"), deck: { main: [{ card: slimCard(etched), count: 2 }], side: [] } }
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify([saved])))
+    assert.deepEqual(deckPrice(read.deck, { side: false, currency: "usd" }), { total: 24.68, missing: [] })
 })
 
 test("slimCard leaves missing fields missing", () => {
@@ -408,4 +416,35 @@ test("readSavedDecks keeps notes that are a string and drops anything else", () 
 test("notes survive a backup and restore", () => {
     const deck: SavedDeck = { id: "d1", name: "Burn", updated: 1, deck: { main: [], side: [] }, notes: "Mulligan hands without a 1-drop." }
     assert.equal(readBackup(backupJson([deck])).decks[0].notes, "Mulligan hands without a 1-drop.")
+})
+
+const falcon = {
+    id: "f1", name: "The Falcon, Airship Restored", type_line: "Legendary Artifact — Vehicle",
+    power: "4", toughness: "4", artist: "Someone",
+    image_uris: { small: "s", normal: "n", large: "l" },
+} as unknown as ScryfallCard
+
+test("a slimmed legendary Vehicle can still be a commander", () => {
+    const slim = slimCard(falcon)
+    assert.equal(slim.power, "4")
+    assert.equal(slim.toughness, "4")
+    assert.equal(canBeCommander(slim), true)
+})
+
+test("a legendary Vehicle can be a commander after a JSON round trip", () => {
+    const saved: SavedDeck = { ...newDeck("Cmd", 1, "c"), deck: { main: [{ card: slimCard(falcon), count: 1 }], side: [] } }
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify([saved])))
+    assert.equal(canBeCommander(read.deck.main[0].card), true)
+})
+
+test("slimmed faces keep power and toughness", () => {
+    const flip = {
+        id: "t1", name: "Front // Back", layout: "transform",
+        card_faces: [
+            { name: "Front", power: "1", toughness: "2", artist: "A" },
+            { name: "Back", power: "3", toughness: "4", artist: "B" },
+        ],
+    } as unknown as ScryfallCard
+    const faces = slimCard(flip).card_faces as unknown as { power?: string; toughness?: string; artist?: string }[]
+    assert.deepEqual(faces.map((f) => [f.power, f.toughness, f.artist]), [["1", "2", undefined], ["3", "4", undefined]])
 })

@@ -264,9 +264,106 @@ test("unchangedEntries: a removed card just leaves the list", () => {
     assert.ok(!r.reused.some(x => x.card.name === "Island"));
 });
 
+test("unchangedEntries: a blanked-out line in a main-only deck keeps the rest in main", () => {
+    const mainOnly: Deck = { main: deck.main, side: [] };
+    const text = formatDeckList(mainOnly, "text").replace("2 Fire // Ice", "");
+    assert.equal(text, "4 Opt\n\n20 Island\n");
+    const r = unchangedEntries(mainOnly, text);
+    assert.deepEqual(r.lookups, []);
+    assert.deepEqual(reusedNames(r.reused), ["main:4 Opt", "main:20 Island"]);
+});
+
+test("unchangedEntries: an extra blank line in the main deck changes no zone", () => {
+    const r = unchangedEntries(deck, base.replace("4 Opt\n", "4 Opt\n\n"));
+    assert.deepEqual(r.lookups, []);
+    assert.deepEqual(reusedNames(r.reused).sort(), [
+        "commander:1 Atraxa, Praetors' Voice", "main:2 Fire // Ice", "main:20 Island", "main:4 Opt", "side:3 Negate",
+    ]);
+});
+
+test("parseDeckList: without the option a blank line still starts the sideboard", () => {
+    const parsed = parseDeckList("4 Opt\n\n20 Island\n");
+    assert.deepEqual(names(parsed.main), ["4 Opt"]);
+    assert.deepEqual(names(parsed.side), ["20 Island"]);
+});
+
 test("unchangedEntries: a card moved to the sideboard is looked up again", () => {
     const text = base.replace("4 Opt\n", "").replace("3 Negate", "3 Negate\n4 Opt");
     const r = unchangedEntries(deck, text);
     assert.deepEqual(r.lookups, [{ count: 4, name: "Opt", zone: "side" }]);
     assert.equal(r.reused.length, 4);
+});
+
+// ---- partner commanders ----
+
+const partnerDeck: Deck = {
+    ...deck,
+    commander: { card: card("Thrasios, Triton Hero", "cmr", "1"), count: 1 },
+    partner: { card: card("Tymna the Weaver", "cmr", "2"), count: 1 },
+};
+
+test("parse: two commanders become commander and partner", () => {
+    const parsed = parseDeckList("Commander\n1 Thrasios, Triton Hero\n1 Tymna the Weaver\n\nDeck\n4 Opt\n");
+    assert.deepEqual(parsed.problems, []);
+    assert.equal(parsed.commander?.name, "Thrasios, Triton Hero");
+    assert.equal(parsed.partner?.name, "Tymna the Weaver");
+    assert.deepEqual(names(parsed.main), ["4 Opt"]);
+});
+
+test("parse: a third commander is a problem", () => {
+    const parsed = parseDeckList("Commander\n1 A\n1 B\n1 C\n");
+    assert.equal(parsed.problems.length, 1);
+    assert.match(parsed.problems[0], /already two commanders/);
+    assert.equal(parsed.partner?.name, "B");
+});
+
+test("parse: a one-commander list has no partner", () => {
+    const parsed = parseDeckList(formatDeckList(deck, "text"));
+    assert.equal(parsed.commander?.name, "Atraxa, Praetors' Voice");
+    assert.equal(parsed.partner, undefined);
+    assert.deepEqual(parsed.problems, []);
+});
+
+for (const style of ["text", "arena", "mtgo"] as const) {
+    test(`${style}: round trips commander and partner`, () => {
+        const parsed = parseDeckList(formatDeckList(partnerDeck, style));
+        assert.deepEqual(parsed.problems, []);
+        assert.deepEqual(names(parsed.main), ["4 Opt", "2 Fire // Ice", "20 Island"]);
+        if (style === "mtgo") {
+            assert.deepEqual(names(parsed.side), ["1 Thrasios, Triton Hero", "1 Tymna the Weaver", "3 Negate"]);
+        } else {
+            assert.equal(parsed.commander?.name, "Thrasios, Triton Hero");
+            assert.equal(parsed.partner?.name, "Tymna the Weaver");
+            assert.deepEqual(names(parsed.side), ["3 Negate"]);
+        }
+    });
+}
+
+const tymna = card("Tymna the Weaver", "cmr", "2");
+const thrasios = card("Thrasios, Triton Hero", "cmr", "1");
+
+test("deckFromLines: a found partner line alone becomes the commander", () => {
+    const built = deckFromLines([
+        { line: { count: 1, zone: "partner" }, card: tymna },
+        { line: { count: 98, zone: "main" }, card: card("Island", "cmr", "9") },
+    ]);
+    assert.equal(built.commander?.card.name, "Tymna the Weaver");
+    assert.equal(built.partner, undefined);
+    assert.equal(built.main.length, 1);
+});
+
+test("deckFromLines: both commander lines keep both, in either order", () => {
+    const a = { line: { count: 1, zone: "commander" as const }, card: thrasios };
+    const b = { line: { count: 1, zone: "partner" as const }, card: tymna };
+    for (const found of [[a, b], [b, a]]) {
+        const built = deckFromLines(found);
+        assert.equal(built.commander?.card.name, "Thrasios, Triton Hero");
+        assert.equal(built.partner?.card.name, "Tymna the Weaver");
+    }
+});
+
+test("deckFromLines and unchangedEntries carry the partner", () => {
+    const r = unchangedEntries(partnerDeck, formatDeckList(partnerDeck, "text"));
+    assert.deepEqual(r.lookups, []);
+    assert.ok(r.reused.some(f => f.line.zone === "partner" && f.card.name === "Tymna the Weaver"));
 });

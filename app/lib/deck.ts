@@ -288,15 +288,23 @@ export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | 
     return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
-// a rough total from the prices on the cards' printings. usd falls back to the foil price; cards with
+// the cards to buy: commander, partner, main, then the sideboard when asked. the buy link and the price both use this
+export const buyEntries = (deck: Deck, side: boolean): DeckEntry[] => [
+    ...(deck.commander ? [deck.commander] : []),
+    ...(deck.partner ? [deck.partner] : []),
+    ...deck.main,
+    ...(side ? deck.side : []),
+]
+
+// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; cards with
 // no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
-    const entries = [...cardsOf(deck), ...(opts.side ? deck.side : [])]
+    const entries = buyEntries(deck, opts.side)
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
         const prices = card.prices as Partial<Record<string, string | null>> | undefined
-        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil : undefined)
+        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched : undefined)
         const price = raw == null ? NaN : parseFloat(raw)
         if (Number.isNaN(price)) {
             if (!missing.includes(card.name)) missing.push(card.name)
@@ -307,7 +315,15 @@ export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "
     return { total: cents / 100, missing }
 }
 
-const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
+// "$12.34", "€12.34" or "12.34 tix": always two decimals
+export function formatPrice(total: number, currency: "usd" | "eur" | "tix"): string {
+    const n = total.toFixed(2)
+    if (currency === "usd") return `$${n}`
+    if (currency === "eur") return `€${n}`
+    return `${n} tix`
+}
+
+const NUMBER_WORDS:Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 }
 
 // most copies the rules let a deck hold: 4 normally, no limit for basic lands and "any number" cards,
 // a stated number for cards like Seven Dwarves
@@ -326,7 +342,10 @@ export function canBeCommander(card: ScryfallCard): boolean {
     const type = frontType(card)
     if (/\bLegendary\b/.test(type) && /\bCreature\b/.test(type)) return true
     const text = [card.oracle_text, ...faces.map(f => f.oracle_text)].join("\n")
-    return /can be your commander/i.test(text)
+    if (/can be your commander/i.test(text)) return true
+    if (/isn't on the battlefield, it's a [^.]*\bcreature\b/i.test(text)) return true
+    const power = card.power ?? faces[0]?.power
+    return /\bLegendary\b/.test(type) && /\b(Vehicle|Spacecraft)\b/.test(type) && power != null && power !== ""
 }
 
 const SIDEBOARD_MAX = 15

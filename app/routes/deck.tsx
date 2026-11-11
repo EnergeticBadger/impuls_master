@@ -11,15 +11,16 @@ import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
 import { DeckNotes } from "~/Components/Deck/DeckNotes";
 import { deckGrouping, loadDeckGrouping } from "~/Components/Context/deckGrouping";
+import { loadPriceCurrency } from "~/Components/Context/priceCurrency";
 import { PrintingPicker } from "~/Components/Deck/PrintingPicker";
 import { cardByName, cardPath } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
-import { formatDeckList, quickAddLine } from "~/lib/decklist";
+import { formatDeckList } from "~/lib/decklist";
 import { ExportSection } from "~/Components/Deck/ExportSection";
-import { tcgplayerDeckLink } from "~/lib/affiliate";
+import { BuyDeck } from "~/Components/Deck/BuyDeck";
+import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, basicLandSplit, canBeCommander, deckPrice, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
-import type { ScryfallCard } from "~/types";
+import { addCard, basicLandSplit, canBeCommander, deckSummary, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -61,14 +62,8 @@ export default function DeckPage() {
   const [preview, setPreview] = useState<string>()
   // the row whose printing list is open: "<section>:<card id>"
   const [printingsOf, setPrintingsOf] = useState<string>()
-  const [withSide, setWithSide] = useState(false)
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
-  const [quickText, setQuickText] = useState("")
-  const [quickZone, setQuickZone] = useState<DeckZone>("main")
-  const [quickBusy, setQuickBusy] = useState(false)
-  const [quickMessage, setQuickMessage] = useState<string>()
-  const quickInput = useRef<HTMLInputElement>(null)
   const [basicsOpen, setBasicsOpen] = useState(false)
   const [basicsText, setBasicsText] = useState<string>() // undefined: show the suggested number
   const [basicsBusy, setBasicsBusy] = useState(false)
@@ -77,7 +72,7 @@ export default function DeckPage() {
   const [editProgress, setEditProgress] = useState<{ done: number; total: number }>()
   const latest = useRef<{ id: string; deck: Deck; past: Deck[] }>({ id, deck: undefined as unknown as Deck, past: [] })
 
-  useEffect(() => { loadDecks(); loadDeckGrouping(); setReady(true) }, [])
+  useEffect(() => { loadDecks(); loadDeckGrouping(); loadPriceCurrency(); setReady(true) }, [])
   const grouping = useSnapshot(deckGrouping).by
   useEffect(() => { setStatus("") }, [id])
 
@@ -149,26 +144,6 @@ export default function DeckPage() {
   const cardNamed = (problem: string) =>
     [...anchored.keys()].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
   const rowSeen = new Set<string>()
-
-  const quickAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (quickBusy) return
-    const line = quickAddLine(quickText)
-    if (!line) { setQuickMessage("Type a card name, like 4 Lightning Bolt."); return }
-    setQuickBusy(true)
-    setQuickMessage(undefined)
-    try {
-      const card = await cardByName(line)
-      if (!card) { setQuickMessage(`No card named ${line.name}.`); return }
-      change((d) => addCard(d, card, quickZone, line.count))
-      setQuickText("")
-    } catch {
-      setQuickMessage(`No card named ${line.name}.`)
-    } finally {
-      setQuickBusy(false)
-      setTimeout(() => quickInput.current?.focus(), 0)
-    }
-  }
 
   // basic lands: 40% of the deck's size by default, less the lands it already has
   const suggestedBasics = Math.max(0, Math.round((isCommander ? 100 : 60) * 0.4) - deckSummary(deck).lands)
@@ -289,9 +264,6 @@ export default function DeckPage() {
     ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
     : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
   const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
-  const buyEntries = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...(withSide ? deck.side : [])]
-
-  const price = deckPrice(deck, { side: withSide, currency: "usd" })
 
   return (
     <div>
@@ -306,27 +278,7 @@ export default function DeckPage() {
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
           aria-label="Deck name"
         />
-        <form className={styles.quickAdd} onSubmit={quickAdd}>
-          <input
-            ref={quickInput}
-            className={styles.quickInput}
-            value={quickText}
-            onChange={(e) => setQuickText(e.target.value)}
-            placeholder="4 Lightning Bolt"
-            aria-label="Add a card"
-          />
-          <select
-            className={styles.quickZone}
-            value={quickZone}
-            onChange={(e) => setQuickZone(e.target.value as DeckZone)}
-            aria-label="Add to"
-          >
-            <option value="main">Main</option>
-            <option value="side">Sideboard</option>
-          </select>
-          <button type="submit" className={styles.button} disabled={quickBusy}>{quickBusy ? "Adding…" : "Add"}</button>
-          {quickMessage && <p className={styles.quickMessage} role="status">{quickMessage}</p>}
-        </form>
+        <QuickAdd onAdd={(card, zone, count) => change((d) => addCard(d, card, zone, count))} />
         <div className={styles.basics}>
           <button type="button" className={styles.button} aria-expanded={basicsOpen} onClick={() => setBasicsOpen(!basicsOpen)}>Add basic lands</button>
           {basicsOpen && (
@@ -472,32 +424,7 @@ export default function DeckPage() {
 
         <ExportSection deck={deck} name={saved.name} />
 
-        {buyEntries.length > 0 && (
-          <section>
-            {deck.side.length > 0 && (
-              <label className={styles.checkLabel}>
-                <input type="checkbox" className={styles.checkbox} checked={withSide} onChange={(e) => setWithSide(e.target.checked)} />
-                Include the sideboard
-              </label>
-            )}
-            <p>
-              <a
-                className={styles.link}
-                href={tcgplayerDeckLink(buyEntries.map((e) => ({ count: e.count, name: e.card.name })))}
-                target="_blank"
-                rel="noopener sponsored"
-              >Buy this deck on TCGplayer</a>
-            </p>
-            <p>
-              About ${price.total.toFixed(2)}
-              {price.missing.length > 0 && (
-                <>{" "}<span title={price.missing.join(", ")}>({price.missing.length} {price.missing.length === 1 ? "card has" : "cards have"} no price)</span></>
-              )}
-            </p>
-            <p className={styles.empty}>An estimate from the prices of the printings in your deck.</p>
-            <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
-          </section>
-        )}
+        <BuyDeck deck={deck} />
         </>
         )}
       </main>
