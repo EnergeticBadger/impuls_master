@@ -291,15 +291,18 @@ export const buyEntries = (deck: Deck, side: boolean): DeckEntry[] => [
     ...(side ? deck.side : []),
 ]
 
-// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; cards with
-// no price are listed by name (once) and add nothing
+// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; eur falls
+// back to the foil price; cards with no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
     const entries = buyEntries(deck, opts.side)
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
         const prices = card.prices as Partial<Record<string, string | null>> | undefined
-        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched : undefined)
+        const raw = prices?.[opts.currency] ?? (
+            opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched
+                : opts.currency === "eur" ? prices?.eur_foil
+                    : undefined)
         const price = raw == null ? NaN : parseFloat(raw)
         if (Number.isNaN(price)) {
             if (!missing.includes(card.name)) missing.push(card.name)
