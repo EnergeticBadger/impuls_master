@@ -105,6 +105,11 @@ export function deckFromLines(found: FoundLine[]): Deck {
         else if (line.zone === "partner") deck = { ...deck, partner: { card, count: line.count } };
         else deck = addCard(deck, card, line.zone, line.count);
     }
+    // a partner without a commander (its commander line wasn't found) becomes the commander
+    if (deck.partner && !deck.commander) {
+        const { partner, ...rest } = deck;
+        deck = { ...rest, commander: partner };
+    }
     return deck;
 }
 
