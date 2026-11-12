@@ -315,6 +315,19 @@ test("a pair that can't partner gives one problem", () => {
     assert.deepEqual(problems, ["Pako and Ghave can't both be commanders."]);
 });
 
+test("a commander or partner that can't be a commander is flagged", () => {
+    const cant = (deck: Deck) => legalityProblems(deck, "commander").filter(p => p.includes("be your commander"));
+    const withBolt: Deck = { main: [], side: [], commander: { card: bolt, count: 1 } };
+    assert.deepEqual(cant(withBolt), [`${bolt.name} can't be your commander.`]);
+    assert.deepEqual(cant(pairDeck(partnerCard("Pako", ["R"]), partnerCard("Ishai", ["W"]))), []);
+    const hero = partnerCard("Wilson", ["G"], "Choose a Background");
+    const bg = partnerCard("Raised by Giants", ["G"], "Gifts", "Legendary Enchantment — Background");
+    assert.deepEqual(cant(pairDeck(hero, bg)), []);
+    const instant = card("Shock", "Instant", { oracle_text: "Deal 2 damage." });
+    assert.deepEqual(cant(pairDeck(hero, instant)), ["Shock can't be your commander."]);
+    assert.deepEqual(legalityProblems({ main: [], side: [], commander: { card: bolt, count: 1 } }, "modern").filter(p => p.includes("be your commander")), []);
+});
+
 test("setPartner moves one copy out of main and returns an old partner", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
     const first = setPartner(deck, legend);

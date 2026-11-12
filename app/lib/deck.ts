@@ -393,6 +393,13 @@ export function legalityProblems(deck: Deck, format: string): string[] {
         }
         const size = mainCount + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
         if (size !== 100) problems.push(`A Commander deck has exactly 100 cards (this has ${size}).`)
+        if (deck.commander && !canBeCommander(deck.commander.card)) {
+            problems.push(`${deck.commander.card.name} can't be your commander.`)
+        }
+        if (deck.partner && !canBeCommander(deck.partner.card)
+            && !typeLines(deck.partner.card).some(t => /\bBackground\b/.test(t))) {
+            problems.push(`${deck.partner.card.name} can't be your commander.`)
+        }
         if (deck.commander && deck.partner && !canPartner(deck.commander.card, deck.partner.card)) {
             problems.push(`${deck.commander.card.name} and ${deck.partner.card.name} can't both be commanders.`)
         }
