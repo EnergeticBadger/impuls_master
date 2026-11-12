@@ -27,6 +27,11 @@ export function manaCostOf(card: ScryfallCard): string {
   return (card.card_faces ?? []).map((f) => f.mana_cost).filter(Boolean).join(" // ")
 }
 
+// Reversible cards have no top-level cmc in Scryfall's API; it sits on each face.
+export function manaValueOf(card: ScryfallCard): number {
+  return card.cmc ?? card.card_faces?.[0]?.cmc ?? 0
+}
+
 export const emptyDeck =(): Deck => ({ main: [], side: [] })
 
 // copies are told apart by name, so any printing of a card counts as the same card
@@ -175,7 +180,7 @@ export function typeGroupOf(card: ScryfallCard): TypeGroup | "Other" {
 // a new array of the entries by mana value (missing counts as 0), then by name; the input is not changed
 export function sortEntries(entries: readonly DeckEntry[]): DeckEntry[] {
     return [...entries].sort((a, b) =>
-        (a.card.cmc ?? 0) - (b.card.cmc ?? 0) || a.card.name.localeCompare(b.card.name))
+        manaValueOf(a.card) - manaValueOf(b.card) || a.card.name.localeCompare(b.card.name))
 }
 
 // the main deck's entries by type, in TYPE_GROUPS order; empty groups are left out, and anything
@@ -188,7 +193,7 @@ export function groupByType(deck: Deck): { group: TypeGroup | "Other"; entries: 
 }
 
 // a non-land card's place on the curve: its mana value, 0 up to 7 ("7 or more"), as manaCurve counts it
-const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))
+const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(manaValueOf(card))))
 
 // the main deck (no commander) by mana value: non-land cards in "0" ... "6", "7+", then every land under "Lands";
 // empty groups are left out, and each group is sorted by sortEntries. Lands go by the front face, like manaCurve.
@@ -250,7 +255,7 @@ export function deckSummary(deck: Deck): { lands: number; spells: number; averag
             lands += count
         } else {
             spells += count
-            total += (card.cmc ?? 0) * count
+            total += manaValueOf(card) * count
         }
     }
     return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }
@@ -303,15 +308,18 @@ export const buyEntries = (deck: Deck, side: boolean): DeckEntry[] => [
     ...(side ? deck.side : []),
 ]
 
-// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; cards with
-// no price are listed by name (once) and add nothing
+// a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; eur falls
+// back to the foil price; cards with no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
     const entries = buyEntries(deck, opts.side)
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
         const prices = card.prices as Partial<Record<string, string | null>> | undefined
-        const raw = prices?.[opts.currency] ?? (opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched : undefined)
+        const raw = prices?.[opts.currency] ?? (
+            opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched
+                : opts.currency === "eur" ? prices?.eur_foil
+                    : undefined)
         const price = raw == null ? NaN : parseFloat(raw)
         if (Number.isNaN(price)) {
             if (!missing.includes(card.name)) missing.push(card.name)
@@ -397,6 +405,13 @@ export function legalityProblems(deck: Deck, format: string): string[] {
         }
         const size = mainCount + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
         if (size !== 100) problems.push(`A Commander deck has exactly 100 cards (this has ${size}).`)
+        if (deck.commander && !canBeCommander(deck.commander.card)) {
+            problems.push(`${deck.commander.card.name} can't be your commander.`)
+        }
+        if (deck.partner && !canBeCommander(deck.partner.card)
+            && !typeLines(deck.partner.card).some(t => /\bBackground\b/.test(t))) {
+            problems.push(`${deck.partner.card.name} can't be your commander.`)
+        }
         if (deck.commander && deck.partner && !canPartner(deck.commander.card, deck.partner.card)) {
             problems.push(`${deck.commander.card.name} and ${deck.partner.card.name} can't both be commanders.`)
         }
