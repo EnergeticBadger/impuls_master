@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
-import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, manaValueOf, type Deck } from "./deck.ts";
 import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
@@ -166,7 +166,7 @@ test("slimCard drops extra fields and keeps the used ones equal", () => {
     const s = slim as unknown as Record<string, unknown>
     for (const k of ["purchase_uris", "related_uris", "all_parts", "flavor_text", "artist", "uri"]) assert.equal(k in s, false, k)
     assert.deepEqual(slim.image_uris, { small: full.image_uris!.small, normal: full.image_uris!.normal })
-    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", usd_etched: null, eur: "0.90", tix: "0.02" })
+    assert.deepEqual(slim.prices, { usd: "1.00", usd_foil: "3.00", usd_etched: null, eur: "0.90", eur_foil: null, tix: "0.02" })
     for (const k of ["id", "oracle_id", "name", "layout", "mana_cost", "cmc", "type_line", "oracle_text", "colors",
         "color_identity", "legalities", "set", "collector_number", "rarity"] as const) {
         assert.deepEqual(slim[k], full[k], k)
@@ -179,6 +179,14 @@ test("an etched-only price survives slimming and a JSON round trip", () => {
     const saved = { ...newDeck("Etched", 1, "e"), deck: { main: [{ card: slimCard(etched), count: 2 }], side: [] } }
     const [read] = readSavedDecks(JSON.parse(JSON.stringify([saved])))
     assert.deepEqual(deckPrice(read.deck, { side: false, currency: "usd" }), { total: 24.68, missing: [] })
+})
+
+test("a foil-only euro price survives slimming and a JSON round trip", () => {
+    const foil = fullCard({ id: "f", name: "Foil Only", prices: { usd: null, usd_foil: "8.00", usd_etched: null, eur: null, eur_foil: "7.50", tix: null } })
+    assert.equal(slimCard(foil).prices?.eur_foil, "7.50")
+    const saved = { ...newDeck("Foil", 1, "f"), deck: { main: [{ card: slimCard(foil), count: 2 }], side: [] } }
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify([saved])))
+    assert.deepEqual(deckPrice(read.deck, { side: false, currency: "eur" }), { total: 15, missing: [] })
 })
 
 test("slimCard leaves missing fields missing", () => {
@@ -375,6 +383,17 @@ test("readSavedDecks keeps the faces' oracle id", () => {
     const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
     assert.equal(oracleOf(read.deck.main[0].card), "prop-oracle")
     assert.equal(copiesIn(read.deck, "prop-oracle"), 1)
+})
+
+test("a reversible card keeps its mana value through slimCard and readSavedDecks", () => {
+    const withCmc = {
+        ...reversible,
+        card_faces: [0, 1].map(() => ({ ...propagandaFace, cmc: 3 })),
+    } as unknown as ScryfallCard
+    assert.equal(manaValueOf(slimCard(withCmc)), 3)
+    const saved = [{ id: "d1", name: "Blue", updated: 1, deck: { main: [{ card: withCmc, count: 1 }], side: [] } }]
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
+    assert.equal(manaValueOf(read.deck.main[0].card), 3)
 })
 
 test("saveErrorMessage says storage is full for a quota error", () => {

@@ -124,6 +124,7 @@ export type CardFace = {
     name: string;
     image_uris?: ImageUris;
     mana_cost?: string;
+    cmc?: number;
     colors?: string[];
     type_line?: string;
     oracle_text?: string;

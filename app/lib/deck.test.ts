@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -315,6 +315,19 @@ test("a pair that can't partner gives one problem", () => {
     assert.deepEqual(problems, ["Pako and Ghave can't both be commanders."]);
 });
 
+test("a commander or partner that can't be a commander is flagged", () => {
+    const cant = (deck: Deck) => legalityProblems(deck, "commander").filter(p => p.includes("be your commander"));
+    const withBolt: Deck = { main: [], side: [], commander: { card: bolt, count: 1 } };
+    assert.deepEqual(cant(withBolt), [`${bolt.name} can't be your commander.`]);
+    assert.deepEqual(cant(pairDeck(partnerCard("Pako", ["R"]), partnerCard("Ishai", ["W"]))), []);
+    const hero = partnerCard("Wilson", ["G"], "Choose a Background");
+    const bg = partnerCard("Raised by Giants", ["G"], "Gifts", "Legendary Enchantment — Background");
+    assert.deepEqual(cant(pairDeck(hero, bg)), []);
+    const instant = card("Shock", "Instant", { oracle_text: "Deal 2 damage." });
+    assert.deepEqual(cant(pairDeck(hero, instant)), ["Shock can't be your commander."]);
+    assert.deepEqual(legalityProblems({ main: [], side: [], commander: { card: bolt, count: 1 } }, "modern").filter(p => p.includes("be your commander")), []);
+});
+
 test("setPartner moves one copy out of main and returns an old partner", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
     const first = setPartner(deck, legend);
@@ -403,6 +416,16 @@ test("deckPrice falls back to the etched price; a card with every price null is 
     const deck = addCard(addCard({ main: [], side: [] }, etched, "main", 2), none);
     assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 24.68, missing: ["None"] });
     assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
+});
+
+test("deckPrice falls back to the euro foil price; all-null stays missing in euros", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const foil = priced("Foil Only", { ...nulls, usd_foil: "8.00", eur_foil: "7.50" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, foil, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }), { total: 15, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "eur" }), { total: 15, missing: [] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "usd" }), { total: 16, missing: [] });
 });
 
 test("buyEntries includes the partner once, and deckPrice sums the same entries", () => {
@@ -635,6 +658,36 @@ test("groupByManaValue sorts each group like sortEntries", () => {
     const a = card("Abrade", "Instant", { cmc: 2 });
     const deck = addCard(addCard(empty, bear), a);
     assert.deepEqual(groupByManaValue(deck)[0].entries.map((e) => e.card.name), ["Abrade", "Grizzly Bears"]);
+});
+
+// a reversible card in Scryfall's real API shape: no top-level cmc, oracle_id, mana_cost or type_line
+const propFace = {
+    object: "card_face", name: "Propaganda", oracle_id: "prop-oracle", mana_cost: "{2}{U}", cmc: 3, type_line: "Enchantment",
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    colors: ["U"],
+};
+const reversibleSld = {
+    id: "prop-sld", name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1",
+    legalities: { modern: "legal" }, card_faces: [propFace, { ...propFace }],
+} as unknown as ScryfallCard;
+
+test("manaValueOf reads a reversible card's mana value from its faces", () => {
+    assert.equal(manaValueOf(reversibleSld), 3);
+    assert.equal(manaValueOf(bolt), 1);
+    assert.equal(manaValueOf({ name: "Bare" } as unknown as ScryfallCard), 0);
+});
+
+test("a reversible card counts at its faces' mana value in the curve, sort, groups and average", () => {
+    const one = card("Aura of One", "Enchantment", { cmc: 1 });
+    const four = card("Zone of Four", "Enchantment", { cmc: 4 });
+    const deck = addCard(addCard(addCard(empty, one), reversibleSld), four);
+    const curve = manaCurve(deck);
+    assert.equal(curve[0], 0);
+    assert.equal(curve[3], 1);
+    assert.deepEqual(sortEntries(deck.main).map((e) => e.card.name), ["Aura of One", "Propaganda // Propaganda", "Zone of Four"]);
+    assert.deepEqual(groupByManaValue(deck).map((g) => g.group), ["1", "3", "4"]);
+    assert.deepEqual(groupByManaValue(deck)[1].entries.map((e) => e.card.name), ["Propaganda // Propaganda"]);
+    assert.equal(deckSummary(deck).averageManaValue, 2.67);
 });
 
 test("groupByManaValue of an empty deck is empty", () => {
