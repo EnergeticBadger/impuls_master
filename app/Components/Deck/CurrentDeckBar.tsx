@@ -7,7 +7,7 @@ import { querybox } from "../Context/query";
 import { buildQuery } from "../Searchbar/filters";
 import { hasTerm, toggleTerm } from "../Searchbar/queryTerms";
 import { readSearchUrl, searchUrl } from "../Searchbar/searchUrl";
-import { identityTerm } from "~/lib/deck";
+import { commanderIdentity, identityTerm } from "~/lib/deck";
 import { decksByRecent } from "~/lib/savedDecks";
 
 // says which deck the add-to-deck buttons on search results add to, and lets people switch it.
@@ -26,7 +26,8 @@ export function CurrentDeckBar() {
 
     const cards = chosen.deck.main.reduce((n, e) => n + e.count, 0)
     const commander = chosen.deck.commander
-    const term = commander ? identityTerm(commander.card.color_identity ?? []) : ""
+    const partner = chosen.deck.partner
+    const term = commander ? identityTerm(commanderIdentity(chosen.deck)) : ""
     const query = buildQuery(chips)
     const pressed = !!commander && hasTerm(query, term)
 
@@ -53,7 +54,7 @@ export function CurrentDeckBar() {
             <Link to={`/decks/${chosen.id}`} className={styles.open}>Open</Link>
             {commander && (
                 <button type="button" className={styles.identity} aria-pressed={pressed} onClick={toggle}>
-                    In {commander.card.name}'s colors
+                    In {commander.card.name}{partner ? ` and ${partner.card.name}` : ""}'s colors
                 </button>
             )}
         </div>
