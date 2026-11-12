@@ -360,6 +360,16 @@ test("deckPrice falls back to the etched price; a card with every price null is 
     assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
 });
 
+test("deckPrice falls back to the euro foil price; all-null stays missing in euros", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const foil = priced("Foil Only", { ...nulls, usd_foil: "8.00", eur_foil: "7.50" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, foil, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }), { total: 15, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "eur" }), { total: 15, missing: [] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "usd" }), { total: 16, missing: [] });
+});
+
 test("buyEntries includes the partner once, and deckPrice sums the same entries", () => {
     const thrasios = priced("Thrasios, Triton Hero", { usd: "1.00" });
     const tymna = priced("Tymna the Weaver", { usd: "2.00" });
