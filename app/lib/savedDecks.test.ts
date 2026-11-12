@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
-import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, type Deck } from "./deck.ts";
+import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, manaValueOf, type Deck } from "./deck.ts";
 import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
@@ -367,6 +367,17 @@ test("readSavedDecks keeps the faces' oracle id", () => {
     const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
     assert.equal(oracleOf(read.deck.main[0].card), "prop-oracle")
     assert.equal(copiesIn(read.deck, "prop-oracle"), 1)
+})
+
+test("a reversible card keeps its mana value through slimCard and readSavedDecks", () => {
+    const withCmc = {
+        ...reversible,
+        card_faces: [0, 1].map(() => ({ ...propagandaFace, cmc: 3 })),
+    } as unknown as ScryfallCard
+    assert.equal(manaValueOf(slimCard(withCmc)), 3)
+    const saved = [{ id: "d1", name: "Blue", updated: 1, deck: { main: [{ card: withCmc, count: 1 }], side: [] } }]
+    const [read] = readSavedDecks(JSON.parse(JSON.stringify(saved)))
+    assert.equal(manaValueOf(read.deck.main[0].card), 3)
 })
 
 test("saveErrorMessage says storage is full for a quota error", () => {

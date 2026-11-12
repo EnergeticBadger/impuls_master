@@ -27,6 +27,11 @@ export function manaCostOf(card: ScryfallCard): string {
   return (card.card_faces ?? []).map((f) => f.mana_cost).filter(Boolean).join(" // ")
 }
 
+// Reversible cards have no top-level cmc in Scryfall's API; it sits on each face.
+export function manaValueOf(card: ScryfallCard): number {
+  return card.cmc ?? card.card_faces?.[0]?.cmc ?? 0
+}
+
 export const emptyDeck =(): Deck => ({ main: [], side: [] })
 
 // copies are told apart by name, so any printing of a card counts as the same card
@@ -163,7 +168,7 @@ export function typeGroupOf(card: ScryfallCard): TypeGroup | "Other" {
 // a new array of the entries by mana value (missing counts as 0), then by name; the input is not changed
 export function sortEntries(entries: readonly DeckEntry[]): DeckEntry[] {
     return [...entries].sort((a, b) =>
-        (a.card.cmc ?? 0) - (b.card.cmc ?? 0) || a.card.name.localeCompare(b.card.name))
+        manaValueOf(a.card) - manaValueOf(b.card) || a.card.name.localeCompare(b.card.name))
 }
 
 // the main deck's entries by type, in TYPE_GROUPS order; empty groups are left out, and anything
@@ -176,7 +181,7 @@ export function groupByType(deck: Deck): { group: TypeGroup | "Other"; entries: 
 }
 
 // a non-land card's place on the curve: its mana value, 0 up to 7 ("7 or more"), as manaCurve counts it
-const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)))
+const curveSlot = (card: ScryfallCard) => Math.min(7, Math.max(0, Math.floor(manaValueOf(card))))
 
 // the main deck (no commander) by mana value: non-land cards in "0" ... "6", "7+", then every land under "Lands";
 // empty groups are left out, and each group is sorted by sortEntries. Lands go by the front face, like manaCurve.
@@ -238,7 +243,7 @@ export function deckSummary(deck: Deck): { lands: number; spells: number; averag
             lands += count
         } else {
             spells += count
-            total += (card.cmc ?? 0) * count
+            total += manaValueOf(card) * count
         }
     }
     return { lands, spells, averageManaValue: spells === 0 ? 0 : Math.round((total / spells) * 100) / 100 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -590,6 +590,36 @@ test("groupByManaValue sorts each group like sortEntries", () => {
     const a = card("Abrade", "Instant", { cmc: 2 });
     const deck = addCard(addCard(empty, bear), a);
     assert.deepEqual(groupByManaValue(deck)[0].entries.map((e) => e.card.name), ["Abrade", "Grizzly Bears"]);
+});
+
+// a reversible card in Scryfall's real API shape: no top-level cmc, oracle_id, mana_cost or type_line
+const propFace = {
+    object: "card_face", name: "Propaganda", oracle_id: "prop-oracle", mana_cost: "{2}{U}", cmc: 3, type_line: "Enchantment",
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    colors: ["U"],
+};
+const reversibleSld = {
+    id: "prop-sld", name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1",
+    legalities: { modern: "legal" }, card_faces: [propFace, { ...propFace }],
+} as unknown as ScryfallCard;
+
+test("manaValueOf reads a reversible card's mana value from its faces", () => {
+    assert.equal(manaValueOf(reversibleSld), 3);
+    assert.equal(manaValueOf(bolt), 1);
+    assert.equal(manaValueOf({ name: "Bare" } as unknown as ScryfallCard), 0);
+});
+
+test("a reversible card counts at its faces' mana value in the curve, sort, groups and average", () => {
+    const one = card("Aura of One", "Enchantment", { cmc: 1 });
+    const four = card("Zone of Four", "Enchantment", { cmc: 4 });
+    const deck = addCard(addCard(addCard(empty, one), reversibleSld), four);
+    const curve = manaCurve(deck);
+    assert.equal(curve[0], 0);
+    assert.equal(curve[3], 1);
+    assert.deepEqual(sortEntries(deck.main).map((e) => e.card.name), ["Aura of One", "Propaganda // Propaganda", "Zone of Four"]);
+    assert.deepEqual(groupByManaValue(deck).map((g) => g.group), ["1", "3", "4"]);
+    assert.deepEqual(groupByManaValue(deck)[1].entries.map((e) => e.card.name), ["Propaganda // Propaganda"]);
+    assert.equal(deckSummary(deck).averageManaValue, 2.67);
 });
 
 test("groupByManaValue of an empty deck is empty", () => {

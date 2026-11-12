@@ -62,7 +62,7 @@ const slimImages = (v: unknown) => (typeof v === "object" && v !== null ? pick(v
 const CARD_KEYS = ["id", "oracle_id", "name", "layout", "mana_cost", "cmc", "type_line", "oracle_text", "colors",
     "color_identity", "legalities", "set", "collector_number", "rarity", "power", "toughness"] as const
 // reversible cards carry their oracle id only on the faces, and oracleOf reads it from there
-const FACE_KEYS = ["name", "oracle_id", "mana_cost", "type_line", "oracle_text", "colors", "power", "toughness"] as const
+const FACE_KEYS = ["name", "oracle_id", "mana_cost", "cmc", "type_line", "oracle_text", "colors", "power", "toughness"] as const
 
 // the card with only the fields the deck code uses, so saved decks stay small in localStorage
 export function slimCard(card: ScryfallCard): ScryfallCard {
