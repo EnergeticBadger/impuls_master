@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -348,6 +348,34 @@ test("setPartner moves one copy out of main and returns an old partner", () => {
 test("setPartner does nothing without a commander", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }], side: [] };
     assert.equal(setPartner(deck, legend), deck);
+});
+
+test("removeCommander promotes the partner and puts the old commander in the zone", () => {
+    const thrasios = partnerCard("Thrasios, Triton Hero", ["G", "U"]);
+    const tymna = partnerCard("Tymna the Weaver", ["W", "B"]);
+    const island = card("Island", "Basic Land — Island");
+    const deck: Deck = { main: [{ card: island, count: 98 }], side: [], commander: { card: thrasios, count: 1 }, partner: { card: tymna, count: 1 } };
+    const copy = structuredClone(deck);
+    const toMain = removeCommander(deck);
+    assert.equal(toMain.commander?.card.name, tymna.name);
+    assert.equal(toMain.partner, undefined);
+    assert.deepEqual(toMain.main.map(e => e.card.name), ["Island", thrasios.name]);
+    assert.deepEqual(toMain.side, []);
+    const toSide = removeCommander(deck, "side");
+    assert.equal(toSide.commander?.card.name, tymna.name);
+    assert.equal(toSide.partner, undefined);
+    assert.deepEqual(toSide.side.map(e => e.card.name), [thrasios.name]);
+    assert.equal(toSide.main.length, 1);
+    assert.deepEqual(deck, copy);
+});
+
+test("removeCommander without a partner just loses the commander; without a commander nothing changes", () => {
+    const solo: Deck = { main: [{ card: forest, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const out = removeCommander(solo);
+    assert.equal(out.commander, undefined);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [forest.name, legend.name]);
+    assert.equal(removeCommander(out), out);
 });
 
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
