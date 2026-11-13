@@ -7,7 +7,7 @@ import { buyEntries, deckPrice, formatPrice, type Deck } from "~/lib/deck";
 
 export function BuyDeck({ deck }: { deck: Deck }) {
   const [withSide, setWithSide] = useState(false)
-  const entries = buyEntries(deck, withSide)
+  const entries = buyEntries(deck, { side: withSide })
   const currency = useSnapshot(priceCurrency).currency
   const price = deckPrice(deck, { side: withSide, currency })
 

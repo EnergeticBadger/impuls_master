@@ -395,7 +395,7 @@ test("buyEntries includes the partner once, and deckPrice sums the same entries"
         partner: { card: tymna, count: 1 },
     };
     for (const withSide of [false, true]) {
-        const entries = buyEntries(deck, withSide);
+        const entries = buyEntries(deck, { side: withSide });
         assert.equal(entries.filter((e) => e.card.name === "Tymna the Weaver").length, 1);
         assert.deepEqual(entries.map((e) => e.card.name).slice(0, 3), ["Thrasios, Triton Hero", "Tymna the Weaver", "Island"]);
         assert.equal(entries.some((e) => e.card.name === "Side Card"), withSide);
@@ -408,6 +408,13 @@ test("deckPrice counts the commander; an empty deck is free", () => {
     const a = priced("A", { usd: "0.10" });
     assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
     assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
+});
+
+test("buyEntries lists commander, partner, main, then side only when asked", () => {
+    const entry = (name: string): DeckEntry => ({ card: card(name, "Creature"), count: 1 });
+    const deck: Deck = { commander: entry("Cmd"), partner: entry("Part"), main: [entry("Main")], side: [entry("Side")] };
+    assert.deepEqual(buyEntries(deck, { side: true }).map(e => e.card.name), ["Cmd", "Part", "Main", "Side"]);
+    assert.deepEqual(buyEntries(deck, { side: false }).map(e => e.card.name), ["Cmd", "Part", "Main"]);
 });
 
 test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
