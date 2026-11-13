@@ -21,7 +21,7 @@ import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { AddBasicLands } from "~/Components/Deck/AddBasicLands";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -30,7 +30,10 @@ export function meta() {
   ]
 }
 
-type Section = "main" | "side" | "commander"
+type Section = "main" | "side" | "commander" | "partner"
+
+const isBackground = (card: DeckEntry["card"]) =>
+  [card.type_line, ...(card.card_faces ?? []).map((f) => f.type_line)].some((t) => /\bBackground\b/.test(t ?? ""))
 
 const total = (entries: DeckEntry[]) => entries.reduce((n, e) => n + e.count, 0)
 
@@ -39,8 +42,14 @@ const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.c
 // out of one zone and into the other
 const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
-  const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
+  const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from as DeckZone, entry.count)
   return addCard(without, entry.card, to, entry.count)
+}
+
+// the partner goes back to the main deck
+const removeAsPartner = (deck: Deck): Deck => {
+  if (!deck.partner) return deck
+  return addCard({ ...deck, partner: undefined }, deck.partner.card, "main", deck.partner.count)
 }
 
 const removeAsCommander = (deck: Deck): Deck => {
@@ -133,7 +142,7 @@ export default function DeckPage() {
   const isCommander = format === "commander"
   const problems = format ? legalityProblems(deck, format) : []
   // a card's row is the first one it appears in (commander, then main, then sideboard)
-  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...deck.side]
+  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : []), ...deck.main, ...deck.side]
   const anchored = new Map<string, string>()
   for (const e of rowOrder) if (!anchored.has(e.card.name)) anchored.set(e.card.name, anchorOf(e.card.name))
   const cardNamed = (problem: string) =>
@@ -159,6 +168,7 @@ export default function DeckPage() {
     const pickerKey = `${section}:${entry.card.id}`
     const image = smallImage(entry)
     const cost = manaCostOf(entry.card)
+    const isCommanderSlot = section === "commander" || section === "partner"
     const rowId = rowSeen.has(entry.card.name) ? undefined : anchorOf(entry.card.name)
     rowSeen.add(entry.card.name)
     return (
@@ -187,17 +197,17 @@ export default function DeckPage() {
           <span className={styles.cost}>{cost && <ManaText text={cost} />}</span>
         </div>
         <div className={styles.buttons}>
-          {section !== "commander" && (
+          {!isCommanderSlot && (
             <>
               <button type="button" className={styles.step} aria-label={`Remove one ${entry.card.name}`}
-                onClick={() => change((d) => removeCard(d, entry.card, section))}>−</button>
+                onClick={() => change((d) => removeCard(d, entry.card, section as DeckZone))}>−</button>
               <button type="button" className={styles.step} aria-label={`Add one ${entry.card.name}`}
-                onClick={() => change((d) => addCard(d, entry.card, section))}>+</button>
+                onClick={() => change((d) => addCard(d, entry.card, section as DeckZone))}>+</button>
             </>
           )}
-          {section === "commander" ? (
+          {isCommanderSlot ? (
             <button type="button" className={styles.button}
-              onClick={() => change(removeAsCommander)}>Remove as commander</button>
+              onClick={() => change(section === "partner" ? removeAsPartner : removeAsCommander)}>Remove as commander</button>
           ) : (
             <button type="button" className={styles.button}
               onClick={() => change((d) => move(d, entry, section))}>
@@ -208,12 +218,17 @@ export default function DeckPage() {
             <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
               onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
           )}
+          {isCommander && section === "main" && deck.commander
+            && (canBeCommander(entry.card) || isBackground(entry.card)) && canPartner(deck.commander.card, entry.card) && (
+            <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the partner`}
+              onClick={() => change((d) => setPartner(d, entry.card))}>Make partner</button>
+          )}
           <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
             aria-expanded={printingsOf === pickerKey}
             onClick={() => setPrintingsOf((p) => (p === pickerKey ? undefined : pickerKey))}>Printing</button>
-          {section !== "commander" && (
+          {!isCommanderSlot && (
             <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
-              onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
+              onClick={() => change((d) => removeCard(d, entry.card, section as DeckZone, entry.count))}>Remove</button>
           )}
         </div>
         {printingsOf === pickerKey && (
@@ -234,8 +249,8 @@ export default function DeckPage() {
   // the main deck's sections, by type or by mana value (the toggle above them)
   const groups = grouping === "manaValue"
     ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
-    : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
-  const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
+    : groupByType({ ...deck, commander: undefined, partner: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
+  const mainCount = total(deck.main) + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
 
   return (
     <div>
@@ -336,8 +351,11 @@ export default function DeckPage() {
 
         {deck.commander && (
           <section>
-            <h2 className={styles.heading}>Commander</h2>
-            <ul className={styles.rows}>{row(deck.commander, "commander")}</ul>
+            <h2 className={styles.heading}>{deck.partner ? "Commanders" : "Commander"}</h2>
+            <ul className={styles.rows}>
+              {row(deck.commander, "commander")}
+              {deck.partner && row(deck.partner, "partner")}
+            </ul>
           </section>
         )}
 
