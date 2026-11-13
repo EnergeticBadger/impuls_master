@@ -588,6 +588,16 @@ test("replacePrinting swaps the commander", () => {
     assert.equal(next.main, deck.main);
 });
 
+test("replacePrinting swaps the partner and leaves the commander alone", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: boltM10, count: 1 }, partner: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "partner", bearPrint, other);
+    assert.equal(next.partner?.card.id, "bear-2");
+    assert.equal(next.commander, deck.commander);
+    assert.equal(replacePrinting(deck, "partner", boltM10, other), deck);
+    assert.equal(replacePrinting({ main: [], side: [] }, "partner", bearPrint, other).partner, undefined);
+});
+
 test("replacePrinting merges into a row that already holds the new printing", () => {
     const deck: Deck = { main: [{ card: boltA25, count: 1 }, { card: elfPrint, count: 2 }, { card: boltM10, count: 3 }], side: [] };
     const next = replacePrinting(deck, "main", boltM10, boltA25);

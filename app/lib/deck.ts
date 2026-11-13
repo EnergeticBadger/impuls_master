@@ -100,10 +100,11 @@ export function removeCommander(deck: Deck, to: DeckZone = "main"): Deck {
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
-export function replacePrinting(deck: Deck, zone: DeckZone | "commander", from: ScryfallCard, to: ScryfallCard): Deck {
-    if (zone === "commander") {
-        if (deck.commander?.card.id !== from.id) return deck
-        return { ...deck, commander: { ...deck.commander, card: to } }
+export function replacePrinting(deck: Deck, zone: DeckZone | "commander" | "partner", from: ScryfallCard, to: ScryfallCard): Deck {
+    if (zone === "commander" || zone === "partner") {
+        const slot = deck[zone]
+        if (!slot || slot.card.id !== from.id) return deck
+        return { ...deck, [zone]: { ...slot, card: to } }
     }
     const entries = deck[zone]
     const at = entries.findIndex(e => e.card.id === from.id)
@@ -128,7 +129,7 @@ const cardsOf = (deck: Deck): DeckEntry[] =>
     [...deck.main, ...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : [])]
 
 // the commander's and partner's color identities together, in WUBRG order
-export function commanderIdentity(deck: Deck): string[] {
+export function commanderIdentity(deck: { commander?: { card: { color_identity?: readonly string[] } }; partner?: { card: { color_identity?: readonly string[] } } }): string[] {
     const identity = [...(deck.commander?.card.color_identity ?? []), ...(deck.partner?.card.color_identity ?? [])]
     return COLORS.filter(c => identity.includes(c))
 }
