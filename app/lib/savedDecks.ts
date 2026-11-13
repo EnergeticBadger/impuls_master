@@ -1,6 +1,6 @@
 // ---- decks kept in the browser: the saved shape and reading it back safely; no state, no UI ----
 
-import type { Deck, DeckEntry } from "./deck.ts";
+import { addCard, type Deck, type DeckEntry } from "./deck.ts";
 import type { ScryfallCard } from "~/types";
 
 // notes: free text the deck page keeps with the deck (plan, sideboard guide, cards to buy)
@@ -110,7 +110,11 @@ export function readSavedDecks(json: unknown): SavedDeck[] {
         const deck = isRecord(item.deck) ? item.deck : {}
         const saved: Deck = { main: entriesOf(deck.main), side: entriesOf(deck.side) }
         if (isEntry(deck.commander)) saved.commander = deck.commander
-        if (isEntry(deck.partner)) saved.partner = deck.partner
+        if (isEntry(deck.partner)) {
+            // a partner needs a commander; without one the card goes back to the main deck
+            if (saved.commander) saved.partner = deck.partner
+            else saved.main = addCard(saved, deck.partner.card, "main", deck.partner.count).main
+        }
         const read: SavedDeck = {
             id: item.id,
             name: item.name,

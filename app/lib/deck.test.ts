@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -348,6 +348,51 @@ test("setPartner moves one copy out of main and returns an old partner", () => {
 test("setPartner does nothing without a commander", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }], side: [] };
     assert.equal(setPartner(deck, legend), deck);
+});
+
+test("removeCommander without a partner sends the commander back to main", () => {
+    const deck: Deck = { main: [{ card: bolt, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removeCommander(deck);
+    assert.equal(out.commander, undefined);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [bolt.name, legend.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removeCommander merges with copies in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    assert.deepEqual(removeCommander(deck).main, [{ card: legend, count: 2 }]);
+});
+
+test("removeCommander moves a partner up to the commander slot", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removeCommander(deck);
+    assert.equal(out.commander?.card.name, legend2.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removeCommander with no commander changes nothing", () => {
+    const deck: Deck = { main: [{ card: bolt, count: 1 }], side: [] };
+    assert.equal(removeCommander(deck), deck);
+});
+
+test("removePartner sends the partner back to main and keeps the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removePartner(deck);
+    assert.equal(out.commander?.card.name, legend.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend2.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removePartner with no partner changes nothing", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 } };
+    assert.equal(removePartner(deck), deck);
 });
 
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
