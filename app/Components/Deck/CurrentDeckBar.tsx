@@ -51,7 +51,7 @@ export function CurrentDeckBar() {
                 {decksByRecent(list).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
             <span className={styles.count}>{cards} {cards === 1 ? "card" : "cards"}</span>
-            <Link to={`/decks/${chosen.id}`} className={styles.open}>Open</Link>
+            <Link to={`/decks/${chosen.id}`} className={styles.open}>Open deck</Link>
             {commander && (
                 <button type="button" className={styles.identity} aria-pressed={pressed} onClick={toggle}>
                     In {commander.card.name}{partner ? ` and ${partner.card.name}` : ""}'s colors
