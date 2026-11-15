@@ -41,6 +41,11 @@
   --row: 2.4rem; /* button height, used by the shared .turn style */
 }
 
+.inDecks {
+  margin: 0;
+  overflow-wrap: anywhere; /* long deck names wrap instead of scrolling sideways */
+}
+
 .details {
   display: flex;
   flex-direction: column;
