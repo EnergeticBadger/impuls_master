@@ -97,6 +97,13 @@ export function removeCommander(deck: Deck, to: DeckZone = "main"): Deck {
     }
 }
 
+// the partner goes back to the main deck; the commander stays. No partner: unchanged.
+export function removePartner(deck: Deck): Deck {
+    if (!deck.partner) return deck
+    const { partner, ...rest } = deck
+    return { ...rest, main: addTo(deck.main, partner.card, partner.count) }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
@@ -123,6 +130,11 @@ export function replacePrinting(deck: Deck, zone: DeckZone | "commander" | "part
 export function copiesIn(deck: Deck, oracleId: string | undefined): number {
     if (!oracleId) return 0
     return deck.main.reduce((n, e) => (oracleOf(e.card) === oracleId ? n + e.count : n), 0)
+}
+
+// the format an imported deck most likely is: a deck with a commander is a Commander deck, anything else is unknown
+export function guessFormat(deck: Deck): string | undefined {
+    return deck.commander ? "commander" : undefined
 }
 
 const cardsOf = (deck: Deck): DeckEntry[] =>
@@ -427,12 +439,13 @@ export function legalityProblems(deck: Deck, format: string): string[] {
         }
         const size = mainCount + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
         if (size !== 100) problems.push(`A Commander deck has exactly 100 cards (this has ${size}).`)
-        if (deck.commander && !canBeCommander(deck.commander.card)) {
-            problems.push(`${deck.commander.card.name} can't be your commander.`)
-        }
-        if (deck.partner && !canBeCommander(deck.partner.card)
-            && !typeLines(deck.partner.card).some(t => /\bBackground\b/.test(t))) {
-            problems.push(`${deck.partner.card.name} can't be your commander.`)
+        // File order decides the slots, so with a pair a Background is fine in either one.
+        const isBackground = (c: ScryfallCard) => typeLines(c).some(t => /\bBackground\b/.test(t))
+        const paired = !!(deck.commander && deck.partner)
+        for (const entry of [deck.commander, deck.partner]) {
+            if (entry && !canBeCommander(entry.card) && !(paired && isBackground(entry.card))) {
+                problems.push(`${entry.card.name} can't be your commander.`)
+            }
         }
         if (deck.commander && deck.partner && !canPartner(deck.commander.card, deck.partner.card)) {
             problems.push(`${deck.commander.card.name} and ${deck.partner.card.name} can't both be commanders.`)

@@ -21,8 +21,9 @@ export function createDeck(name: string): SavedDeck {
 }
 
 // a new deck holding `deck` (an import), made current
-export function createDeckWith(name: string, deck: Deck): SavedDeck {
-    const made = { ...newDeck(name, Date.now(), crypto.randomUUID()), deck }
+export function createDeckWith(name: string, deck: Deck, format?: string): SavedDeck {
+    const made: SavedDeck = { ...newDeck(name, Date.now(), crypto.randomUUID()), deck }
+    if (format) made.format = format
     decks.list.push(ref(made))
     decks.current = made.id
     return made
