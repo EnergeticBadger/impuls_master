@@ -328,6 +328,23 @@ test("a commander or partner that can't be a commander is flagged", () => {
     assert.deepEqual(legalityProblems({ main: [], side: [], commander: { card: bolt, count: 1 } }, "modern").filter(p => p.includes("be your commander")), []);
 });
 
+test("a Background is accepted in either commander slot when paired", () => {
+    const wilson = card("Wilson, Refined Grizzly", "Legendary Creature — Bear Warrior", {
+        oracle_text: "Vigilance, reach, trample\nChoose a Background",
+    });
+    const giants = card("Raised by Giants", "Legendary Enchantment — Background", {
+        oracle_text: "Commander creatures you own have base power and toughness 10/10 and have trample.",
+    });
+    const shock = card("Shock", "Instant", { oracle_text: "Shock deals 2 damage to any target." });
+    const bad = (deck: Deck) => legalityProblems(deck, "commander")
+        .filter(p => p.includes("be your commander") || p.includes("can't both be commanders"));
+    assert.deepEqual(bad(pairDeck(giants, wilson)), []);
+    assert.deepEqual(bad(pairDeck(wilson, giants)), []);
+    assert.deepEqual(bad({ main: [], side: [], commander: { card: giants, count: 1 } }), ["Raised by Giants can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(giants, shock)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(shock, giants)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+});
+
 test("setPartner moves one copy out of main and returns an old partner", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
     const first = setPartner(deck, legend);
