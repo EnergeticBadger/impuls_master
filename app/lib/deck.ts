@@ -85,6 +85,18 @@ export function setPartner(deck: Deck, card: ScryfallCard): Deck {
     return { ...taken, main, partner: { card: entry.card, count: 1 } }
 }
 
+// takes the commander out into `to`; a partner, if any, becomes the commander. No commander gives the deck back
+// unchanged; the input is never changed.
+export function removeCommander(deck: Deck, to: DeckZone = "main"): Deck {
+    if (!deck.commander) return deck
+    const { partner, ...rest } = deck
+    return {
+        ...rest,
+        [to]: addTo(deck[to], deck.commander.card, deck.commander.count),
+        commander: partner,
+    }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
