@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -328,6 +328,23 @@ test("a commander or partner that can't be a commander is flagged", () => {
     assert.deepEqual(legalityProblems({ main: [], side: [], commander: { card: bolt, count: 1 } }, "modern").filter(p => p.includes("be your commander")), []);
 });
 
+test("a Background is accepted in either commander slot when paired", () => {
+    const wilson = card("Wilson, Refined Grizzly", "Legendary Creature — Bear Warrior", {
+        oracle_text: "Vigilance, reach, trample\nChoose a Background",
+    });
+    const giants = card("Raised by Giants", "Legendary Enchantment — Background", {
+        oracle_text: "Commander creatures you own have base power and toughness 10/10 and have trample.",
+    });
+    const shock = card("Shock", "Instant", { oracle_text: "Shock deals 2 damage to any target." });
+    const bad = (deck: Deck) => legalityProblems(deck, "commander")
+        .filter(p => p.includes("be your commander") || p.includes("can't both be commanders"));
+    assert.deepEqual(bad(pairDeck(giants, wilson)), []);
+    assert.deepEqual(bad(pairDeck(wilson, giants)), []);
+    assert.deepEqual(bad({ main: [], side: [], commander: { card: giants, count: 1 } }), ["Raised by Giants can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(giants, shock)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(shock, giants)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+});
+
 test("setPartner moves one copy out of main and returns an old partner", () => {
     const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
     const first = setPartner(deck, legend);
@@ -376,6 +393,41 @@ test("removeCommander without a partner just loses the commander; without a comm
     assert.equal(out.partner, undefined);
     assert.deepEqual(out.main.map(e => e.card.name), [forest.name, legend.name]);
     assert.equal(removeCommander(out), out);
+});
+
+test("removeCommander merges with copies in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    assert.deepEqual(removeCommander(deck).main, [{ card: legend, count: 2 }]);
+});
+
+test("removeCommander moves a partner up to the commander slot", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removeCommander(deck);
+    assert.equal(out.commander?.card.name, legend2.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removeCommander with no commander changes nothing", () => {
+    const deck: Deck = { main: [{ card: bolt, count: 1 }], side: [] };
+    assert.equal(removeCommander(deck), deck);
+});
+
+test("removePartner sends the partner back to main and keeps the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removePartner(deck);
+    assert.equal(out.commander?.card.name, legend.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend2.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removePartner with no partner changes nothing", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 } };
+    assert.equal(removePartner(deck), deck);
 });
 
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
@@ -513,6 +565,11 @@ test("canBeCommander: legendary creatures and 'can be your commander' cards", ()
     assert.equal(canBeCommander(legendDfc), true);
     assert.equal(canBeCommander(bear), false);
     assert.equal(canBeCommander(card("Jace Beleren", "Legendary Planeswalker — Jace")), false);
+});
+
+test("guessFormat says commander for a deck with a commander, else nothing", () => {
+    assert.equal(guessFormat({ main: [{ card: bear, count: 1 }], side: [], commander: { card: legend, count: 1 } }), "commander");
+    assert.equal(guessFormat({ main: [{ card: bear, count: 60 }], side: [] }), undefined);
 });
 
 test("setCommander takes one copy from main and does not mutate", () => {
