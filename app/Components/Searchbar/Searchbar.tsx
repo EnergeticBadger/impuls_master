@@ -2,7 +2,7 @@ import { hasData, hasStatus, isScryfallCard, type CardProps, type ImageUris, typ
 import styles from './Searchbar.module.css'
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react' // Use FormEvent for form submissions
 import { useSnapshot } from 'valtio';
-import { useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { cardsearch, getPage, hidePages, pageKey, showPage } from '../Context/cards';
 import { searchCards } from '~/lib/scryfall';
 import { setCurrentAlternate } from '../Card/components/alternate_arts';
@@ -434,10 +434,13 @@ export function Searchbar() {
                     <img src="/logo.svg" alt="" width={40} height={40} />
                     <span>Impulse Caster</span>
                 </a>
-                <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
-                    onClick={() => settingsRef.current?.showModal()}>
-                    <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
-                </button>
+                <div className={styles.headerActions}>
+                    <Link to="/decks" className={styles.decksLink}>Decks</Link>
+                    <button type="button" className={styles.settingsButton} aria-label="Layout settings" aria-haspopup="dialog"
+                        onClick={() => settingsRef.current?.showModal()}>
+                        <svg viewBox="0 -960 960 960" aria-hidden><path d={SETTINGS_ICON} /></svg>
+                    </button>
+                </div>
                 <div className={styles.searchArea}>
                     <QueryInput searched={query} skipped={skippedBy.get(query)} />
                 </div>
