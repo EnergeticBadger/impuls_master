@@ -2,6 +2,7 @@
 
 import type { Deck, DeckEntry } from "./deck.ts";
 import type { ScryfallCard } from "~/types";
+import { oracleOf } from "./carddata.ts";
 
 // notes: free text the deck page keeps with the deck (plan, sideboard guide, cards to buy)
 export type SavedDeck = { id: string; name: string; updated: number; deck: Deck; format?: string; notes?: string }
@@ -31,6 +32,19 @@ export const decksByRecent = <T extends { updated: number }>(list: readonly T[])
 // by name, ignoring case and accents, with numbers in order ("Deck 2" before "Deck 10"); a new array
 export const decksByName = <T extends { name: string }>(list: readonly T[]): T[] =>
     [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+
+// the decks that hold a card, with its copies in main, sideboard, commander and partner together; matched by
+// oracle id, so any printing counts; decks without it are left out, the list's order is kept
+export function decksWithCard(list: readonly SavedDeck[], oracleId: string | undefined): { id: string; name: string; count: number }[] {
+    if (!oracleId) return []
+    const found: { id: string; name: string; count: number }[] = []
+    for (const { id, name, deck } of list) {
+        const entries = [...deck.main, ...deck.side, ...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : [])]
+        const count = entries.reduce((n, e) => (oracleOf(e.card) === oracleId ? n + e.count : n), 0)
+        if (count > 0) found.push({ id, name, count })
+    }
+    return found
+}
 
 // lower case without accents, so "Éowyn" matches "eowyn"
 const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()

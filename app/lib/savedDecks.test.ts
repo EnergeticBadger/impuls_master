@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf } from "./carddata.ts";
 import { addCard, canBeCommander, copiesIn, deckPrice, colorCounts, legalityProblems, manaCurve, manaValueOf, type Deck } from "./deck.ts";
-import { backupJson, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
+import { backupJson, decksWithCard, filterDecks, mergeDecks, readBackup, copyDeck, deckToBuild, decksByRecent, decksByName, newDeck, readSavedDecks, reloadFromStorage, saveErrorMessage, slimCard, slimDeck, writeGate, type SavedDeck } from "./savedDecks.ts";
 
 const card = (id: string, name: string) => ({ id, name }) as unknown as ScryfallCard;
 
@@ -435,6 +435,42 @@ test("readSavedDecks keeps notes that are a string and drops anything else", () 
 test("notes survive a backup and restore", () => {
     const deck: SavedDeck = { id: "d1", name: "Burn", updated: 1, deck: { main: [], side: [] }, notes: "Mulligan hands without a 1-drop." }
     assert.equal(readBackup(backupJson([deck])).decks[0].notes, "Mulligan hands without a 1-drop.")
+})
+
+const oc = (id: string, oracle: string) => ({ id, name: oracle, oracle_id: oracle }) as unknown as ScryfallCard
+const saved = (id: string, deck: Partial<Deck>): SavedDeck => ({ id, name: `Deck ${id}`, updated: 1, deck: { main: [], side: [], ...deck } })
+
+test("decksWithCard counts main and sideboard across decks, in list order", () => {
+    const list = [
+        saved("a", { main: [{ card: oc("p1", "bolt"), count: 3 }] }),
+        saved("b", { side: [{ card: oc("p2", "bolt"), count: 2 }] }),
+    ]
+    assert.deepEqual(decksWithCard(list, "bolt"), [{ id: "a", name: "Deck a", count: 3 }, { id: "b", name: "Deck b", count: 2 }])
+})
+
+test("decksWithCard finds a commander and a partner", () => {
+    const list = [
+        saved("c", { commander: { card: oc("p1", "boss"), count: 1 } }),
+        saved("d", { partner: { card: oc("p2", "boss"), count: 1 } }),
+    ]
+    assert.deepEqual(decksWithCard(list, "boss"), [{ id: "c", name: "Deck c", count: 1 }, { id: "d", name: "Deck d", count: 1 }])
+})
+
+test("decksWithCard adds up printings and leaves out decks without the card", () => {
+    const list = [
+        saved("a", { main: [{ card: oc("p1", "bolt"), count: 2 }, { card: oc("p2", "bolt"), count: 1 }] }),
+        saved("b", { main: [{ card: oc("p3", "other"), count: 4 }] }),
+    ]
+    assert.deepEqual(decksWithCard(list, "bolt"), [{ id: "a", name: "Deck a", count: 3 }])
+})
+
+test("decksWithCard gives nothing for an undefined oracle id", () => {
+    assert.deepEqual(decksWithCard([saved("a", { main: [{ card: oc("p1", "bolt"), count: 1 }] })], undefined), [])
+})
+
+test("decksWithCard finds a reversible printing by its faces' oracle id", () => {
+    const reversible = { id: "r1", name: "Rev", card_faces: [{ name: "Front", oracle_id: "rev" }, { name: "Back", oracle_id: "rev" }] } as unknown as ScryfallCard
+    assert.deepEqual(decksWithCard([saved("a", { main: [{ card: reversible, count: 2 }] })], "rev"), [{ id: "a", name: "Deck a", count: 2 }])
 })
 
 const falcon = {
