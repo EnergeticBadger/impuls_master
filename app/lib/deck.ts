@@ -97,6 +97,13 @@ export function removeCommander(deck: Deck, to: DeckZone = "main"): Deck {
     }
 }
 
+// the partner goes back to the main deck; the commander stays. No partner: unchanged.
+export function removePartner(deck: Deck): Deck {
+    if (!deck.partner) return deck
+    const { partner, ...rest } = deck
+    return { ...rest, main: addTo(deck.main, partner.card, partner.count) }
+}
+
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
