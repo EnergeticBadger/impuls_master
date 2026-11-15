@@ -20,8 +20,9 @@ export async function lookUpDeckList(
     lines = zoneLines(parsed)
   }
   onProgress?.(0, lines.length)
-  const { found, missing } = await cardsByName(lines, onProgress)
+  const { found, missing, failed } = await cardsByName(lines, onProgress)
   const deck = deckFromLines([...reused, ...found])
-  const notes = [...problems, ...missing.map((l) => `Card not found: ${l.count} ${l.name}`)]
+  const notes = [...problems, ...missing.map((l) => `Card not found: ${l.count} ${l.name}`),
+    ...failed.map((l) => `Couldn't look up ${l.count} ${l.name} (Scryfall was busy), try again`)]
   return { deck, notes }
 }

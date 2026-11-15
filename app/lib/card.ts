@@ -91,21 +91,32 @@ function cardFromBucket(bytes: Uint8Array | undefined, line: NameLine): Scryfall
     return record ? printingCard(record, pickPrinting(record, line.set, line.number)) : undefined
 }
 
-async function cardFromScryfall(line: NameLine): Promise<ScryfallCard | undefined> {
-    try {
-        const query = `exact=${encodeURIComponent(line.name)}${line.set ? `&set=${encodeURIComponent(line.set)}` : ""}`
-        const card = await scryfallGet(`cards/named?${query}`)
-        return card?.object === "card" ? card as ScryfallCard : undefined
-    } catch (err) {
-        console.error(`Failed to look up ${line.name}: `, err)
-        return undefined
+const RETRY_WAITS_MS = [1500, 4000, 10000]
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// "failed" means Scryfall (or our proxy) couldn't answer, which isn't the same as "no such card": a busy
+// answer is retried a few times, then reported as failed so the import can say so
+async function cardFromScryfall(line: NameLine): Promise<ScryfallCard | undefined | "failed"> {
+    const query = `exact=${encodeURIComponent(line.name)}${line.set ? `&set=${encodeURIComponent(line.set)}` : ""}`
+    for (let attempt = 0; ; attempt++) {
+        try {
+            const card = await scryfallGet(`cards/named?${query}`)
+            if (card?.object === "card") return card as ScryfallCard
+            if (card?.object === "error" && card.status === 404) return undefined
+            if (card?.object === "error" && card.status !== 429 && card.status !== 503) return undefined
+        } catch (err) {
+            console.error(`Failed to look up ${line.name}: `, err)
+        }
+        if (attempt >= RETRY_WAITS_MS.length) return "failed"
+        await wait(RETRY_WAITS_MS[attempt])
     }
 }
 
 // a card by name (and set and collector number) for deck import: the site's card data first, Scryfall when
 // the data files aren't there (local dev); undefined when no such card
 export async function cardByName(line: NameLine): Promise<ScryfallCard | undefined> {
-    return cardFromBucket(await dataFile(paths.bucket(bucketOfName(line.name))), line) ?? cardFromScryfall(line)
+    const card = cardFromBucket(await dataFile(paths.bucket(bucketOfName(line.name))), line) ?? await cardFromScryfall(line)
+    return card === "failed" ? undefined : card
 }
 
 // how many bucket files are fetched at once
@@ -115,8 +126,8 @@ const BUCKET_FETCHES = 8
 // cards are spread over hundreds of buckets, so fetching one by one was most of the wait). Only the lines the
 // card data can't answer go to Scryfall, one after another, so they stay within the proxy's spacing.
 export async function cardsByName<L extends NameLine>(lines: L[], onProgress?: (done: number, total: number) => void):
-    Promise<{ found: { line: L; card: ScryfallCard }[]; missing: L[] }> {
-    const cards = new Array<ScryfallCard | undefined>(lines.length)
+    Promise<{ found: { line: L; card: ScryfallCard }[]; missing: L[]; failed: L[] }> {
+    const cards = new Array<ScryfallCard | undefined | "failed">(lines.length)
     const byBucket = new Map<number, number[]>()
     lines.forEach((line, i) => {
         const b = bucketOfName(line.name)
@@ -140,12 +151,14 @@ export async function cardsByName<L extends NameLine>(lines: L[], onProgress?: (
     }
     const found: { line: L; card: ScryfallCard }[] = []
     const missing: L[] = []
+    const failed: L[] = []
     lines.forEach((line, i) => {
         const card = cards[i]
-        if (card) found.push({ line, card })
+        if (card === "failed") failed.push(line)
+        else if (card) found.push({ line, card })
         else missing.push(line)
     })
-    return { found, missing }
+    return { found, missing, failed }
 }
 
 async function loadRulings(card: Pick<ScryfallCard, "name" | "oracle_id" | "rulings_uri" | "card_faces">, signal: AbortSignal): Promise<Ruling[]> {
