@@ -309,3 +309,153 @@
   border-color: var(--accent-line);
   background-color: var(--accent-tint);
 }
+
+/* ---- Layout: one column on a phone, list + side pane on a wide screen ---- */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.top,
+.listPane,
+.sidePane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.listPane section + section,
+.sidePane > * {
+  margin: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+}
+
+.counts {
+  display: inline-flex;
+  gap: var(--space-3);
+  margin-right: auto;
+}
+
+.formatPick {
+  display: inline-flex;
+}
+
+.status {
+  min-height: 0;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.status:empty {
+  display: none;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* a card row: count, name, cost, then -, + and a ... that opens the rest */
+.rowTools {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.step {
+  min-height: 36px;
+}
+
+.row > .buttons {
+  flex-basis: 100%;
+  padding-left: calc(1.5rem + var(--space-3));
+}
+
+.previewPane {
+  display: none;
+}
+
+.tool {
+  border-top: 1px solid var(--border-faint);
+  padding-top: var(--space-2);
+}
+
+.tool > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tool > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* the tools carry their own headings; the summary already names them */
+.tool > section > h2:first-child {
+  display: none;
+}
+
+@media screen and (min-width: 1000px) {
+  .page {
+    max-width: 1180px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-areas:
+      "top  top"
+      "list side";
+    gap: var(--space-5) var(--space-6);
+    align-items: start;
+  }
+
+  .top { grid-area: top; }
+  .listPane { grid-area: list; }
+
+  .sidePane {
+    grid-area: side;
+    position: sticky;
+    top: calc(var(--space-4) + 72px); /* below the sticky site header */
+    max-height: calc(100dvh - 72px - var(--space-6));
+    overflow-y: auto;
+  }
+
+  .previewPane {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 340px;
+  }
+
+  .previewPane img {
+    width: 244px;
+    height: auto;
+    border-radius: var(--radius-card);
+  }
+
+  /* the pane shows the card, so the in-row image would be a second copy */
+  .row .preview,
+  .peek {
+    display: none;
+  }
+
+  .rows {
+    gap: var(--space-1);
+  }
+}
