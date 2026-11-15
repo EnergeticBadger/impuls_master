@@ -1,0 +1,82 @@
+/* The list of a card's printings under a deck row */
+
+.picker {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.close,
+.option {
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.close:hover,
+.option:hover {
+  background-color: var(--raised-hover);
+}
+
+.status {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.status:empty {
+  display: none;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.option[aria-current="true"] {
+  border-color: var(--accent-line);
+  background-color: var(--accent-tint);
+}
+
+.set {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.price {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}

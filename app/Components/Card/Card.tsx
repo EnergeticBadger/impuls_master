@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import styles from './Card.module.css'
 import { type CardProps } from "~/types";
 import { useSnapshot } from 'valtio';
@@ -6,7 +6,10 @@ import { Image } from '@unpic/react';
 import { useCardLayout } from '../Hooks/useCardLayout';
 import { view } from '../Context/view';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
-import { COMPARE_ICON, OPEN_ICON, TURN_ICON, QuickView, openQuickView } from './QuickView';
+import { decks, addToCurrentDeck, currentDeckOf } from '../Context/decks';
+import { copiesIn, type Deck } from '~/lib/deck';
+import { oracleOf } from '~/lib/carddata';
+import { ADD_ICON, COMPARE_ICON, OPEN_ICON, TURN_ICON, QuickView, openQuickView } from './QuickView';
 
 // at this many per row or fewer, cards are wide enough that the normal image would look soft
 const LARGE_IMAGE_PER_ROW = 3
@@ -18,12 +21,18 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
     const { cards: comparing } = useSnapshot(compare)
     const compared = inCompare(comparing, card.id)
     const handleCompare = () => toggleCompare({ name, image_uri, card_uri, card })
+    const { list, current } = useSnapshot(decks)
+    const currentDeck = currentDeckOf(list, current)
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
+    const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
     const layout = useCardLayout(card)
     const { currentFace, canFlip, flip, canRotate, rotate, rotation } = layout
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
 
     // the search results' quick view is keyed by the card's name
-    const openOverlay = () => openQuickView(name, card, currentFace.large_uri)
+    // focus goes back to the card's open button when it closes, even when the image was what was clicked
+    const openRef = useRef<HTMLButtonElement>(null)
+    const openOverlay = () => openQuickView(name, card, currentFace.large_uri, openRef.current)
 
     async function handleCopy() {
         try {
@@ -53,13 +62,19 @@ export function Card({ name, image_uri, card_uri, card }: CardProps) {
                 </button>
 
                 {/* open */}
-                <button onClick={openOverlay} style={{ height: '24px' }}>
+                <button ref={openRef} onClick={openOverlay} style={{ height: '24px' }}>
                     <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={OPEN_ICON} /></svg>
                 </button>
 
                 {/* compare */}
                 <button onClick={handleCompare} aria-pressed={compared} title={compared ? 'Remove from compare' : 'Compare'} style={{ height: '24px' }}>
                     <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={COMPARE_ICON} /></svg>
+                </button>
+
+                {/* add to deck */}
+                <button onClick={() => addToCurrentDeck(card)} title={addLabel} aria-label={addLabel} style={{ height: '24px' }}>
+                    <svg height="24px" viewBox="0 -960 960 960" width="24px" style={{ fill: 'var(--text)' }}><path d={ADD_ICON} /></svg>
+                    {copies > 0 ? <span className={styles.badge}>{copies}</span> : null}
                 </button>
 
                 {/* rotate */}

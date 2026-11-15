@@ -1,0 +1,518 @@
+/* One deck (/decks/:id) */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-7);
+}
+
+.title {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.nameInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.quickAdd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.quickInput {
+  box-sizing: border-box;
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.quickZone {
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.basics {
+  margin-bottom: var(--space-3);
+}
+
+.basicsForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.basicsInput {
+  box-sizing: border-box;
+  width: 5rem;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.basicsSplit {
+  min-width: 0;
+}
+
+.quickMessage {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  color: var(--text-muted);
+}
+
+.format {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.select {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+}
+
+.legal {
+  color: var(--text-muted);
+}
+
+.problems {
+  padding-left: var(--space-5);
+  list-style: disc;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  color: var(--text-muted);
+}
+
+.link {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.heading {
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 1.1rem;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.count {
+  min-width: 1.5rem;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.cardName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cost {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.button,
+.step,
+.peek {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-1);
+  color: var(--text);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.step {
+  min-width: 2rem;
+  text-align: center;
+}
+
+.peek {
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.button:hover,
+.step:hover,
+.peek:hover {
+  background-color: var(--raised-hover);
+}
+
+.fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fallbackText {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+  font-family: monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.editText {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+  font-family: monospace;
+  resize: vertical;
+}
+
+.preview {
+  flex-basis: 100%;
+  max-width: 146px;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.checkbox {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+.checkbox:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media screen and (max-width: 760px) {
+  .page {
+    padding-top: var(--space-5);
+  }
+
+  .nameInput {
+    font-size: 1.3rem;
+  }
+}
+
+/* "Group by: Type | Mana value" above the main deck */
+.grouping {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.grouping [aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background-color: var(--accent-tint);
+}
+
+/* ---- Layout: one column on a phone, list + side pane on a wide screen ---- */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.top,
+.listPane,
+.sidePane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.listPane section + section,
+.sidePane > * {
+  margin: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+}
+
+.counts {
+  display: inline-flex;
+  gap: var(--space-3);
+  margin-right: auto;
+}
+
+.formatPick {
+  display: inline-flex;
+}
+
+.status {
+  min-height: 0;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.status:empty {
+  display: none;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* a card row: count, name, cost, then -, + and a ... that opens the rest */
+.rowTools {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.step {
+  min-height: 36px;
+}
+
+.row > .buttons {
+  flex-basis: 100%;
+  padding-left: calc(1.5rem + var(--space-3));
+}
+
+.previewPane {
+  display: none;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.tab {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--accent-line);
+  color: var(--text);
+}
+
+.toolPanel[hidden] {
+  display: none;
+}
+
+/* the tools carry their own headings; the tab already names them */
+.toolPanel > section > h2:first-child {
+  display: none;
+}
+
+.columns {
+  display: block;
+}
+
+.group {
+  break-inside: avoid;
+  margin-bottom: var(--space-4);
+}
+
+@media screen and (min-width: 1000px) {
+  .page {
+    max-width: none;
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 520px);
+    grid-template-areas:
+      "top  top"
+      "list side";
+    gap: var(--space-5) var(--space-6);
+    align-items: start;
+  }
+
+  .top { grid-area: top; }
+  .listPane { grid-area: list; }
+
+  .columns {
+    column-width: 24rem;
+    column-gap: var(--space-6);
+  }
+
+  .sidePane {
+    grid-area: side;
+    position: sticky;
+    top: calc(var(--space-4) + 72px); /* below the sticky site header */
+    max-height: calc(100dvh - 72px - var(--space-6));
+    overflow-y: auto;
+  }
+
+  .previewPane {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+  }
+
+  .previewPane img {
+    width: min(300px, 100%);
+    height: auto;
+    border-radius: var(--radius-card);
+  }
+
+  .row .preview,
+  .peek {
+    display: none;
+  }
+
+  .rows {
+    gap: var(--space-1);
+  }
+}
+
+/* live card results under the add box */
+.results {
+  flex-basis: 100%;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-2);
+  max-height: 60vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.result {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.result img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-card);
+}
+
+.result:hover,
+.result:focus-visible {
+  outline: 2px solid var(--accent-line);
+}

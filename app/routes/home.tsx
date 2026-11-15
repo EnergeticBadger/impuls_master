@@ -1,6 +1,7 @@
 import { Searchbar } from "~/Components/Searchbar/Searchbar";
 import styles from './Home.module.css'
 import { CardGrid } from "~/Components/CardGrid/CardGrid";
+import { CurrentDeckBar } from "~/Components/Deck/CurrentDeckBar";
 import { CompareDrawer } from "~/Components/Compare/CompareDrawer";
 import { useSnapshot } from "valtio";
 import { compare } from "~/Components/Context/compare";
@@ -66,6 +67,7 @@ export default function Home() {
     <div>
       <Searchbar/>
       <div className={styles.main_content} data-card-area data-compare={cards.length ? (collapsed ? 'collapsed' : 'open') : undefined}>
+        <CurrentDeckBar />
         <CardGrid />
       </div>
       <CompareDrawer />

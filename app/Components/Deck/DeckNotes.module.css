@@ -1,0 +1,26 @@
+/* Notes on the deck page */
+
+.notes {
+  display: flex;
+  flex-direction: column;
+}
+
+.heading {
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 1.1rem;
+}
+
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 8rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised-0);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}

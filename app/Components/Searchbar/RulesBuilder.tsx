@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import styles from './QueryInput.module.css'
 import type { Draft } from './filters'
 import { blockSentence, blockToken, EFFECTS, emptyBlock, findPieces, findTags, loadTags, ROLES, roleLabel, TARGETS, TRIGGERS, type Piece, type RuleBlock } from './rules'
@@ -75,6 +75,9 @@ function TagSearch({ picked, onPick, onDone }: { picked: readonly string[], onPi
     const listId = useId()
     useEffect(() => { loadTags().then(setTags, () => setTags([])) }, [])
     const hits = findTags(q, tags ?? [], 8)
+    const listRef = useRef<HTMLUListElement>(null)
+    // keep the arrowed-to suggestion in view
+    useEffect(() => { listRef.current?.querySelector(`[id="${listId}-${hi}"]`)?.scrollIntoView({ block: 'nearest' }) }, [hi, listId, hits.length])
 
     function choose(v: string) {
         if (!picked.includes(v)) onPick(v)
@@ -101,7 +104,7 @@ function TagSearch({ picked, onPick, onDone }: { picked: readonly string[], onPi
                 onChange={(e) => { setQ(e.target.value); setHi(0) }} onKeyDown={onKeyDown} />
             {q.trim() ? (
                 hits.length ? (
-                    <ul className={styles.suggest} id={listId} role="listbox">
+                    <ul ref={listRef} className={styles.suggest} id={listId} role="listbox">
                         {hits.map((t, i) => (
                             <li key={t} id={`${listId}-${i}`} role="option" aria-selected={i === hi} className={styles.option}
                                 onPointerDown={(e) => e.preventDefault()} onPointerEnter={() => setHi(i)} onClick={() => choose(t)}>
@@ -128,6 +131,11 @@ function PiecePicker({ part, label, pieces, value, empty, placeholder, free, onC
     const labelId = useId()
     const open = q !== null
     const chosen = pieces.find((p) => p.value === value)
+    const listRef = useRef<HTMLUListElement>(null)
+    // a list opened near the bottom of the panel would otherwise sit below the fold
+    useEffect(() => { if (open) listRef.current?.scrollIntoView({ block: 'nearest' }) }, [open])
+    // keep the arrowed-to option in view
+    useEffect(() => { if (open) listRef.current?.querySelector(`[id="${listId}-${hi}"]`)?.scrollIntoView({ block: 'nearest' }) }, [open, hi, listId])
     const hits = open ? findPieces(typed ? q : '', pieces) : []
     // the "any" choice leads the list, so a pick can be undone
     const items: (Piece | null)[] = [null, ...hits]
@@ -183,7 +191,7 @@ function PiecePicker({ part, label, pieces, value, empty, placeholder, free, onC
                 onChange={(e) => { setQ(e.target.value); setTyped(true); setHi(free || !e.target.value.trim() ? 0 : 1) }}
                 onKeyDown={onKeyDown} />
             {open ? (
-                <ul className={styles.pieceList} id={listId} role="listbox" aria-label={label}>
+                <ul ref={listRef} className={styles.pieceList} id={listId} role="listbox" aria-label={label}>
                     <li id={`${listId}-0`} role="option" aria-selected={hi === 0} className={styles.option}
                         onPointerDown={(e) => e.preventDefault()} onPointerEnter={() => setHi(0)}
                         onClick={() => own ? (onChange(own), setQ(null)) : choose(null)}>

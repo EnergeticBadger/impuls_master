@@ -1,0 +1,12 @@
+/* "Your decks could not be saved" box at the top of the deck pages */
+
+.warning {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid #c0392b;
+  border-radius: var(--radius-sm);
+  background: rgba(192, 57, 43, 0.12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}

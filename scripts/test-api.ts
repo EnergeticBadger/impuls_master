@@ -168,7 +168,7 @@ class CardStore {
                 const c = JSON.parse(line);
                 if (c.oracle_id ?? c.card_faces?.[0]?.oracle_id) { at.push(offset); size.push(bytes - 1); }
             }
-            if (!outStream.write(`${line}\n`)) await new Promise((res) => outStream.once("drain", res));
+            if (!outStream.write(`${line}\n`)) await new Promise<void>((res) => outStream.once("drain", () => res()));
             offset += bytes;
         }
         await new Promise((res) => outStream.end(res));

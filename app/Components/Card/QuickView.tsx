@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSnapshot } from 'valtio';
 import { Link } from 'react-router';
@@ -8,9 +8,14 @@ import type { CardProps, ScryfallCard } from '~/types';
 import { all_alt_art, alternate, loadPrints, setCurrentAlternate } from './components/alternate_arts';
 import { AlternateArts } from './components/AlternateArts';
 import { PlayFormats } from './components/PlayFormats';
-import { useCardLayout } from '../Hooks/useCardLayout';
+import { resolveFaces, useCardLayout } from '../Hooks/useCardLayout';
+import { cardsearch } from '../Context/cards';
+import { quickViewAction } from './quickViewKeys';
 import { compare, inCompare, toggleCompare } from '../Context/compare';
-import { cardPath, useRulings } from '~/lib/card';
+import { decks, addToCurrentDeck, removeFromCurrentDeck, currentDeckOf } from '../Context/decks';
+import { copiesIn, type Deck } from '~/lib/deck';
+import { oracleOf } from '~/lib/carddata';
+import { cardPath,useRulings } from '~/lib/card';
 import { CardText } from '../CardDetails/CardText';
 import { Rulings } from '../CardDetails/Rulings';
 import { ShareButton } from '../CardDetails/ShareButton';
@@ -18,11 +23,18 @@ import { ShareButton } from '../CardDetails/ShareButton';
 export const COMPARE_ICON = "M320-160 160-320l160-160 56 57-63 63h287v80H313l63 63-56 57Zm320-320-56-57 63-63H360v-80h287l-63-63 56-57 160 160-160 160Z"
 export const TURN_ICON = "M627-210q17-33 26-69.5t9-75.5q0-80-35-146.5T532-612l-92 92v-320h320l-92 92q52 47 83 112t31 141q0 91-42.5 165T627-210Zm-427 90 92-92q-53-47-83.5-112T178-465q0-91 42.5-165T334-750q-17 33-26.5 69.5T298-605q0 80 35.5 146.5T428-348l92-92v320H200Z"
 export const OPEN_ICON = "M200-200v-240h80v160h160v80H200Zm480-320v-160H520v-80h240v240h-80Z"
+export const ADD_ICON = "M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"
+const REMOVE_ICON = "M200-440v-80h560v80H200Z"
 const COPY_ICON = "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"
 
 // Which quick view is open is kept in `alternate.name` (with the big image in `alternate.uri`), so only one is
 // open at a time. Each place that can open one gives it its own key: the search results use the card's name.
-export function openQuickView(key: string, card: ScryfallCard, largeUri: string) {
+// `opener` is what focus goes back to on close (else whatever has focus now). Moving to another card while it's
+// open keeps the first opener.
+let opener: HTMLElement | null = null
+
+export function openQuickView(key: string, card: ScryfallCard, largeUri: string, from?: HTMLElement | null) {
+    if (alternate.name === 'none') opener = from ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
     // always load on open: cached cards return instantly, and this supersedes any in-flight request
     loadPrints(card)
     // lock page scroll while the overlay is open; closing hands it back to the stylesheet
@@ -35,6 +47,8 @@ export function closeQuickView() {
     const elm = document.getElementById("app")
     if (elm) elm.style.overflow = ""
     setCurrentAlternate('none', 'none')
+    if (opener?.isConnected) opener.focus()
+    opener = null
 }
 
 type Layout = ReturnType<typeof useCardLayout>
@@ -45,17 +59,47 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     const version = useSnapshot(alternate)
     const allPrints = useSnapshot(all_alt_art)
     const { cards: comparing } = useSnapshot(compare)
+    const { list: deckList, current: currentId } = useSnapshot(decks)
     const [copied, setCopied] = useState(false)
     const open = version.name === openKey
     // rulings are only fetched once the quick view opens
     const rulings = useRulings(card, open)
     // whatever opened it going away (a card taken out of compare from in here) closes it and unlocks the page
     useEffect(() => () => { if (alternate.name === openKey) closeQuickView() }, [openKey])
+
+    // focus moves into the panel when it opens (closeQuickView hands it back)
+    const panelRef = useRef<HTMLDivElement>(null)
+    useEffect(() => { if (open) panelRef.current?.focus() }, [open])
+
+    // Esc closes; the arrows go to the previous / next card of the results on screen. Only the open quick view
+    // listens, and the results are read when the key is pressed.
+    useEffect(() => {
+        if (!open) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.altKey || e.ctrlKey || e.metaKey) return
+            const t = e.target
+            const inInput = t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+            const cards = cardsearch.pages.find((p) => p.key === cardsearch.active)?.cards ?? []
+            const action = quickViewAction(e.key, cards.findIndex((c) => c.name === openKey), cards.length, inInput)
+            if (!action) return
+            e.preventDefault()
+            if (action === 'close') return closeQuickView()
+            const next = cards[action.go]
+            openQuickView(next.name, next.card, resolveFaces(next.card)[0].large_uri)
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+    }, [open, openKey])
+
     if (!open) return null
 
     const { faces, faceIndex, canFlip, flip, canRotate, rotate, rotation } = layout
     const rotationClass = rotation === 180 ? styles.rotate_180 : rotation === 90 ? styles.rotate_90 : rotation === -90 ? styles.rotate_neg_90 : undefined
     const compared = inCompare(comparing, card.id)
+    const currentDeck = currentDeckOf(deckList, currentId)
+    const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
+    const addLabel = `Add to ${currentDeck?.name ?? 'Untitled deck'}`
+    const removeLabel = `Remove from ${currentDeck?.name ?? 'Untitled deck'}`
 
     // flipping also swaps the big image to the other face
     function turn() {
@@ -89,7 +133,7 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
     // (opacity) can't make the backdrop see-through or push it under the header.
     return createPortal(
         <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) closeQuickView() }}>
-            <div className={styles.overlay_details}>
+            <div className={styles.overlay_details} ref={panelRef} tabIndex={-1}>
                 <div className={styles.tools}>
                     {canFlip || canRotate ? (
                         <button className={styles.turn} onClick={turn} title={canFlip ? 'Flip' : 'Rotate'}>
@@ -101,6 +145,16 @@ export function QuickView({ openKey, card: { name, image_uri, card_uri, card }, 
                         <svg viewBox="0 -960 960 960"><path d={COMPARE_ICON} /></svg>
                         {compared ? 'Comparing ✓' : 'Compare'}
                     </button>
+                    <button className={styles.turn} onClick={() => addToCurrentDeck(card)} title={addLabel} aria-label={addLabel}>
+                        <svg viewBox="0 -960 960 960"><path d={ADD_ICON} /></svg>
+                        Add to deck{copies > 0 ? ` (${copies})` : ''}
+                    </button>
+                    {copies > 0 ? (
+                        <button className={styles.turn} onClick={() => removeFromCurrentDeck(card)} title={removeLabel} aria-label={removeLabel}>
+                            <svg viewBox="0 -960 960 960"><path d={REMOVE_ICON} /></svg>
+                            Remove
+                        </button>
+                    ) : null}
                     <ShareButton path={cardPath(card)} name={card.name} className={styles.turn} />
                     <Link className={styles.turn} to={cardPath(card)} onClick={handleFullPage} title="Open the card's own page">
                         <svg viewBox="0 -960 960 960"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z" /></svg>

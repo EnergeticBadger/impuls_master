@@ -31,15 +31,18 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
         if (!problem && dialog.open) dialog.close()
     }, [problem])
 
+    // a search that failed (busy, no connection) has nothing to analyse, and shouldn't ask Scryfall for more
+    const failure = problem?.message
+
     useEffect(() => {
-        if (!problem) return
+        if (!problem || failure) return
         loadTypeCatalogs().then(() => setTypesReady(true))
     }, [problem])
 
     // try the search without each part, one at a time so Scryfall isn't flooded
     useEffect(() => {
         setWithout([])
-        if (!problem || parts.length < 2) return
+        if (!problem || failure || parts.length < 2) return
         let live = true
         ;(async () => {
             const tries = parts.slice(0, MAX_TRIES)
@@ -67,7 +70,17 @@ export function NoResults({ count, research }: { count: (q: string) => Promise<n
     return (
         <dialog ref={ref} className={styles.dialog} onClose={close} aria-labelledby="no-results-title"
             onClick={(e) => { if (e.target === e.currentTarget) close() }}>
-            {problem ? (
+            {problem && failure ? (
+                <div className={styles.body}>
+                    <h2 id="no-results-title">Search didn't run</h2>
+                    <code className={styles.query}>{problem.query}</code>
+                    <p>{failure}</p>
+                    <div className={styles.foot}>
+                        <button type="button" className={styles.primary} onClick={() => apply(() => { })}>Try again</button>
+                        <button type="button" className={styles.secondary} onClick={close}>Close</button>
+                    </div>
+                </div>
+            ) : problem ? (
                 <div className={styles.body}>
                     <h2 id="no-results-title">No cards found</h2>
                     <code className={styles.query}>{problem.query}</code>

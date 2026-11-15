@@ -1,0 +1,809 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { ScryfallCard } from "~/types";
+import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+
+const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
+    ({
+        name, type_line, cmc: 0, colors: [], color_identity: [], oracle_text: "",
+        legalities: { standard: "legal", modern: "legal", commander: "legal" },
+        ...extra,
+    }) as unknown as ScryfallCard;
+
+const bolt = card("Lightning Bolt", "Instant", { cmc: 1, colors: ["R"], color_identity: ["R"], legalities: { modern: "legal", standard: "not_legal", commander: "legal" } });
+const bear = card("Grizzly Bears", "Creature — Bear", { cmc: 2, colors: ["G"], color_identity: ["G"] });
+const golem = card("Myr Golem", "Artifact Creature — Golem", { cmc: 9 });
+const forest = card("Forest", "Basic Land — Forest", { color_identity: ["G"] });
+const relentless = card("Relentless Rats", "Creature — Rat", { cmc: 2, colors: ["B"], color_identity: ["B"], oracle_text: "A deck can have any number of cards named Relentless Rats." });
+const mdfc = card("Valakut Awakening // Valakut Stoneforge", "Instant // Land", {
+    cmc: 4, colors: undefined, color_identity: ["R"], layout: "modal_dfc",
+    card_faces: [
+        { name: "Valakut Awakening", mana_cost: "{2}{R}{R}", type_line: "Instant", colors: ["R"] },
+        { name: "Valakut Stoneforge", mana_cost: "", type_line: "Land" },
+    ],
+});
+const delverApi = card("Delver of Secrets // Insectile Aberration", "Creature — Human Wizard // Creature — Human Insect", {
+    cmc: 1, colors: undefined, color_identity: ["U"], layout: "transform",
+    card_faces: [
+        { name: "Delver of Secrets", mana_cost: "{U}", type_line: "Creature — Human Wizard", colors: ["U"] },
+        { name: "Insectile Aberration", mana_cost: "", type_line: "Creature — Human Insect", colors: ["U"] },
+    ],
+});
+const delverCompact = card("Delver of Secrets // Insectile Aberration", "Creature — Human Wizard // Creature — Human Insect", {
+    cmc: 1, colors: [], color_identity: ["U"], layout: "transform",
+    card_faces: [
+        { name: "Delver of Secrets", mana_cost: "{U}", type_line: "Creature — Human Wizard" },
+        { name: "Insectile Aberration", mana_cost: "", type_line: "Creature — Human Insect" },
+    ],
+});
+const nazgul = card("Nazgûl", "Creature — Wraith", { color_identity: ["B"], oracle_text: "A deck can have up to nine cards named Nazgûl." });
+const dwarves = card("Seven Dwarves", "Creature — Dwarf", { color_identity: ["R"], oracle_text: "A deck can have up to seven cards named Seven Dwarves." });
+
+const empty: Deck = { main: [], side: [] };
+
+test("addCard merges by name and does not mutate", () => {
+    const one = addCard(empty, bolt);
+    const two = addCard(one, bolt, "main", 2);
+    assert.equal(empty.main.length, 0);
+    assert.equal(one.main[0].count, 1);
+    assert.equal(two.main.length, 1);
+    assert.equal(two.main[0].count, 3);
+    assert.equal(addCard(two, bear, "side").side[0].card.name, "Grizzly Bears");
+});
+
+test("removeCard matches by oracle id across printings, by name without one", () => {
+    const a = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle" });
+    const b = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle", id: "other-printing" });
+    const other = card("Other Bolt", "Instant", { oracle_id: "other-oracle" });
+    assert.equal(removeCard(addCard(empty, a), b).main.length, 0);
+    assert.equal(removeCard(addCard(empty, a), other).main.length, 1);
+    assert.equal(removeCard(addCard(empty, bolt), bolt).main.length, 0);
+});
+
+test("copiesIn counts main deck copies by oracle id across printings", () => {
+    const a = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle" });
+    const b = card("Lightning Bolt", "Instant", { oracle_id: "bolt-oracle", id: "other-printing" });
+    const other = card("Grizzly Bears", "Creature — Bear", { oracle_id: "bear-oracle" });
+    let deck = addCard(empty, a, "main", 2);
+    deck = { ...deck, main: [...deck.main, { card: b, count: 1 }] };
+    deck = addCard(addCard(deck, other), a, "side", 3);
+    assert.equal(copiesIn(deck, "bolt-oracle"), 3);
+    assert.equal(copiesIn(deck, "bear-oracle"), 1);
+    assert.equal(copiesIn(deck, "missing"), 0);
+    assert.equal(copiesIn(deck, undefined), 0);
+});
+
+const regularProp = card("Propaganda", "Enchantment", { oracle_id: "prop-oracle" });
+const reversibleProp = card("Propaganda // Propaganda", "Enchantment // Enchantment", {
+    layout: "reversible_card",
+    card_faces: [
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+        { name: "Propaganda", oracle_id: "prop-oracle", type_line: "Enchantment" },
+    ] as unknown as ScryfallCard["card_faces"],
+});
+
+test("reversible cards (oracle id only on their faces) are counted and removed", () => {
+    let deck = empty;
+    for (let i = 0; i < 3; i++) deck = addCard(deck, reversibleProp);
+    assert.equal(copiesIn(deck, oracleOf(reversibleProp)), 3);
+
+    const mixed: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 1 }], side: [] };
+    assert.equal(copiesIn(mixed, oracleOf(reversibleProp)), 3);
+    assert.equal(copiesIn(mixed, oracleOf(regularProp)), 3);
+
+    // copies come out of the entry with the card's own name; the other entry is left alone
+    const less = removeCard(mixed, reversibleProp);
+    assert.deepEqual(less.main.map(e => e.count), [2]);
+    assert.equal(copiesIn(less, oracleOf(reversibleProp)), 2);
+    assert.deepEqual(removeCard(mixed, regularProp).main.map(e => e.count), [1, 1]);
+
+    const lessRegular = removeCard({ main: [{ card: reversibleProp, count: 2 }, { card: regularProp, count: 2 }], side: [] }, regularProp);
+    assert.deepEqual(lessRegular.main.map(e => e.count), [2, 1]);
+
+    const three: Deck = { main: [{ card: regularProp, count: 2 }, { card: reversibleProp, count: 3 }], side: [] };
+    const moved = removeCard(three, reversibleProp, "main", 3);
+    assert.deepEqual(moved.main.map(e => [e.card.name, e.count]), [["Propaganda", 2]]);
+});
+
+test("removeCard falls back to the oracle id when no entry has the card's name", () => {
+    const deck: Deck = { main: [{ card: regularProp, count: 2 }], side: [] };
+    const less = removeCard(deck, reversibleProp);
+    assert.deepEqual(less.main.map(e => e.count), [1]);
+});
+
+test("removeCard lowers the count and drops an entry at zero", () => {
+    const deck = addCard(empty, bolt, "main", 2);
+    const less = removeCard(deck, bolt);
+    assert.equal(less.main[0].count, 1);
+    assert.equal(deck.main[0].count, 2);
+    assert.equal(removeCard(less, bolt).main.length, 0);
+    assert.equal(removeCard(less, bear).main.length, 1);
+});
+
+test("groupByType uses the front face and puts creatures first", () => {
+    let deck = empty;
+    for (const c of [bolt, bear, golem, forest, mdfc]) deck = addCard(deck, c);
+    const groups = Object.fromEntries(groupByType(deck).map(g => [g.group, g.entries.map(e => e.card.name)]));
+    assert.deepEqual(groups, {
+        Creature: ["Grizzly Bears", "Myr Golem"],
+        Instant: ["Lightning Bolt", "Valakut Awakening // Valakut Stoneforge"],
+        Land: ["Forest"],
+    });
+});
+
+test("sortEntries orders by mana value, then by name", () => {
+    const entries: DeckEntry[] = [
+        { card: golem, count: 1 },
+        { card: bear, count: 2 },
+        { card: bolt, count: 1 },
+    ];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Lightning Bolt", "Grizzly Bears", "Myr Golem"]);
+});
+
+test("sortEntries breaks equal mana value ties by name", () => {
+    const zed = card("Zombie", "Creature — Zombie", { cmc: 2 });
+    const ant = card("Ant", "Creature — Insect", { cmc: 2 });
+    const entries: DeckEntry[] = [{ card: zed, count: 1 }, { card: bear, count: 1 }, { card: ant, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Ant", "Grizzly Bears", "Zombie"]);
+});
+
+test("sortEntries treats a card with no cmc as 0", () => {
+    const nocmc = card("Nameless Token", "Creature — Token", { cmc: undefined });
+    const entries: DeckEntry[] = [{ card: bolt, count: 1 }, { card: nocmc, count: 1 }];
+    assert.deepEqual(sortEntries(entries).map(e => e.card.name), ["Nameless Token", "Lightning Bolt"]);
+});
+
+test("sortEntries returns a new array and leaves the input alone", () => {
+    const entries: DeckEntry[] = [{ card: golem, count: 1 }, { card: bolt, count: 1 }];
+    const before = [...entries];
+    const sorted = sortEntries(entries);
+    assert.notEqual(sorted, entries);
+    assert.deepEqual(entries, before);
+    assert.equal(entries[0].card.name, "Myr Golem");
+    assert.equal(sorted[0].card.name, "Lightning Bolt");
+});
+
+test("groupByType sorts entries inside each group", () => {
+    let deck = empty;
+    for (const c of [golem, bear, card("Elf", "Creature — Elf", { cmc: 2 }), bolt]) deck = addCard(deck, c);
+    const creatures = groupByType(deck).find(g => g.group === "Creature")!;
+    assert.deepEqual(creatures.entries.map(e => e.card.name), ["Elf", "Grizzly Bears", "Myr Golem"]);
+});
+
+test("manaCurve skips lands and folds 7+", () => {
+    let deck = addCard(empty, bear, "main", 3);
+    deck = addCard(addCard(addCard(deck, bolt), golem, "main", 2), forest, "main", 10);
+    assert.deepEqual(manaCurve(deck), [0, 1, 3, 0, 0, 0, 0, 2]);
+});
+
+test("colorCounts counts cards per color and colorless spells", () => {
+    let deck = addCard(empty, bear, "main", 2);
+    deck = addCard(addCard(addCard(deck, bolt), golem), forest, "main", 5);
+    assert.deepEqual(colorCounts(deck), { W: 0, U: 0, B: 0, R: 1, G: 2, C: 1 });
+});
+
+test("colorCounts reads a double-faced card's front face", () => {
+    const none = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+    assert.deepEqual(colorCounts(addCard(empty, delverApi, "main", 4)), { ...none, U: 4, C: 0 });
+    assert.deepEqual(colorCounts(addCard(empty, delverCompact, "main", 4)), { ...none, U: 4, C: 0 });
+    assert.deepEqual(colorCounts(addCard(empty, mdfc)), { ...none, R: 1, C: 0 });
+    const hybrid = card("Hybrid", "Creature", { colors: [], card_faces: [{ name: "Hybrid", mana_cost: "{W/U}{1}", type_line: "Creature" }, { name: "Back", type_line: "Creature" }] });
+    assert.deepEqual(colorCounts(addCard(empty, hybrid)), { ...none, W: 1, U: 1, C: 0 });
+    const ornithopter = card("Ornithopter", "Artifact Creature — Thopter");
+    assert.deepEqual(colorCounts(addCard(empty, ornithopter)), { ...none, C: 1 });
+});
+
+test("commander: 'up to N cards named' cards use their own limit", () => {
+    const general: Deck["commander"] = { card: card("Ghave", "Legendary Creature", { color_identity: ["B", "R"] }), count: 1 };
+    const withCards = (...adds: [ScryfallCard, number][]): string[] => {
+        let deck: Deck = { main: [], side: [], commander: general };
+        for (const [c, n] of adds) deck = addCard(deck, c, "main", n);
+        return legalityProblems(deck, "commander").filter(p => !p.includes("exactly 100"));
+    };
+    assert.deepEqual(withCards([nazgul, 9]), []);
+    assert.ok(withCards([nazgul, 10]).some(p => p.includes("Nazgûl appears 10 times") && p.includes("the limit is 9")));
+    assert.deepEqual(withCards([dwarves, 7]), []);
+    assert.ok(withCards([bear, 2]).some(p => p.includes("Commander decks are singleton")));
+    assert.ok(!withCards([relentless, 30]).some(p => p.includes("Relentless Rats appears")));
+});
+
+const sixty = (extra: Deck = empty): Deck => addCard({ main: [...extra.main], side: extra.side }, forest, "main", 60);
+
+test("a 60-card deck of legal cards has no problems", () => {
+    assert.deepEqual(legalityProblems(sixty(), "modern"), []);
+});
+
+test("legality: not legal in the format, copies, deck size and sideboard", () => {
+    const deck = addCard(addCard(sixty(), bolt, "main", 5), relentless, "main", 20);
+    const problems = legalityProblems(deck, "standard");
+    assert.ok(problems.some(p => p.includes("Lightning Bolt is not legal")));
+    assert.ok(problems.some(p => p.includes("Lightning Bolt appears 5 times")));
+    assert.ok(!problems.some(p => p.includes("Forest")));
+    assert.ok(!problems.some(p => p.includes("Relentless Rats appears")));
+
+    assert.ok(legalityProblems(addCard(empty, bear, "main", 4), "modern").some(p => p.includes("at least 60")));
+    assert.ok(legalityProblems(addCard(sixty(), bear, "side", 16), "modern").some(p => p.includes("sideboard")));
+    // copies add up across main and side
+    assert.ok(legalityProblems(addCard(addCard(sixty(), bear, "main", 3), bear, "side", 2), "modern").some(p => p.includes("Grizzly Bears appears 5")));
+});
+
+test("commander: singleton, size and color identity", () => {
+    const general: Deck["commander"] = { card: card("Ghave", "Legendary Creature", { color_identity: ["G"] }), count: 1 };
+    let deck: Deck = { main: [], side: [], commander: general };
+    deck = addCard(deck, forest, "main", 90);
+    for (let i = 0; i < 9; i++) deck = addCard(deck, card(`Filler ${i}`, "Creature", { color_identity: ["G"] }));
+    assert.deepEqual(legalityProblems(deck, "commander"), []);
+
+    const bad = addCard(addCard(deck, bear, "main", 2), bolt);
+    const problems = legalityProblems(bad, "commander");
+    assert.ok(problems.some(p => p.includes("Grizzly Bears appears 2 times")));
+    assert.ok(problems.some(p => p.includes("Lightning Bolt has color identity outside")));
+    assert.ok(problems.some(p => p.includes("exactly 100")));
+
+    assert.ok(legalityProblems({ main: deck.main, side: [] }, "commander").some(p => p.includes("no commander")));
+});
+
+const partnerCard = (name: string, identity: string[], text = "Partner", type = "Legendary Creature — Human") =>
+    card(name, type, { color_identity: identity, oracle_text: text });
+
+// a 100-card commander deck: filler lands plus the given commanders
+function pairDeck(commander: ScryfallCard, partner: ScryfallCard, fill = 98): Deck {
+    let deck: Deck = addCard({ main: [], side: [], commander: { card: commander, count: 1 }, partner: { card: partner, count: 1 } }, forest, "main", fill);
+    deck = { ...deck, main: deck.main.map(e => ({ ...e, card: { ...e.card, color_identity: [] } })) };
+    return deck;
+}
+
+test("two Partner cards: legal, identity is the union, size counts both", () => {
+    const a = partnerCard("Pako", ["R"], "Partner (You can have two commanders if both have partner.)");
+    const b = partnerCard("Ishai", ["W", "U"]);
+    const deck = pairDeck(a, b);
+    assert.deepEqual(commanderIdentity(deck), ["W", "U", "R"]);
+    assert.deepEqual(deckColors(deck), ["W", "U", "R"]);
+    assert.deepEqual(legalityProblems(deck, "commander"), []);
+    assert.ok(legalityProblems(pairDeck(a, b, 97), "commander").some(p => p.includes("this has 99")));
+    assert.equal(deckSummary(pairDeck(a, b)).spells, 2);
+});
+
+test("a partner's colors count for the identity check", () => {
+    const a = partnerCard("Pako", ["R"]);
+    const b = partnerCard("Ishai", ["W"]);
+    const deck = addCard(pairDeck(a, b, 97), bear);
+    assert.ok(legalityProblems(deck, "commander").some(p => p.includes("Grizzly Bears has color identity outside")));
+    const ok = addCard(pairDeck(a, b, 97), card("Wrath", "Sorcery", { color_identity: ["W"] }));
+    assert.deepEqual(legalityProblems(ok, "commander"), []);
+});
+
+test("'Partner with' pairs only with the named card", () => {
+    const a = partnerCard("Toothy", ["U"], "Partner with Pir, Imaginative Rascal (When this creature enters, target player may put Pir into their hand.)");
+    const b = partnerCard("Pir, Imaginative Rascal", ["G"], "Partner with Toothy, Imaginative Friend");
+    assert.equal(canPartner(a, b), true);
+    assert.equal(canPartner(b, a), true);
+    assert.deepEqual(legalityProblems(pairDeck(a, b), "commander"), []);
+    const plain = partnerCard("Pako", ["R"]);
+    assert.equal(canPartner(a, plain), false);
+    assert.equal(canPartner(plain, a), false);
+});
+
+test("Friends forever, Background and Doctor's companion pairs", () => {
+    const f1 = partnerCard("Jolene", ["R"], "Friends forever");
+    const f2 = partnerCard("Rick", ["G"], "Friends forever");
+    assert.equal(canPartner(f1, f2), true);
+    const hero = partnerCard("Wilson", ["G"], "Choose a Background");
+    const bg = partnerCard("Raised by Giants", ["G"], "Gifts", "Legendary Enchantment — Background");
+    assert.equal(canPartner(hero, bg), true);
+    assert.equal(canPartner(bg, hero), true);
+    assert.equal(canPartner(hero, f1), false);
+    assert.deepEqual(legalityProblems(pairDeck(hero, bg), "commander"), []);
+    const rose = partnerCard("Rose Tyler", ["W"], "Doctor's companion");
+    const doctor = partnerCard("The Tenth Doctor", ["U"], "", "Legendary Creature — Time Lord Doctor");
+    assert.equal(canPartner(rose, doctor), true);
+    assert.equal(canPartner(doctor, rose), true);
+    assert.equal(canPartner(rose, f1), false);
+    // text on the back face counts
+    const dfc = card("Front // Back", "Legendary Creature — Human // Legendary Creature — Human", {
+        card_faces: [{ name: "Front", type_line: "Legendary Creature — Human", oracle_text: "" }, { name: "Back", type_line: "Legendary Creature — Human", oracle_text: "Partner" }],
+    } as unknown as Partial<ScryfallCard>);
+    assert.equal(canPartner(dfc, f1), false);
+    assert.equal(canPartner(dfc, partnerCard("Pako", ["R"])), true);
+});
+
+test("a pair that can't partner gives one problem", () => {
+    const a = partnerCard("Pako", ["R"]);
+    const b = partnerCard("Ghave", ["G"], "");
+    const problems = legalityProblems(pairDeck(a, b), "commander");
+    assert.deepEqual(problems, ["Pako and Ghave can't both be commanders."]);
+});
+
+test("a commander or partner that can't be a commander is flagged", () => {
+    const cant = (deck: Deck) => legalityProblems(deck, "commander").filter(p => p.includes("be your commander"));
+    const withBolt: Deck = { main: [], side: [], commander: { card: bolt, count: 1 } };
+    assert.deepEqual(cant(withBolt), [`${bolt.name} can't be your commander.`]);
+    assert.deepEqual(cant(pairDeck(partnerCard("Pako", ["R"]), partnerCard("Ishai", ["W"]))), []);
+    const hero = partnerCard("Wilson", ["G"], "Choose a Background");
+    const bg = partnerCard("Raised by Giants", ["G"], "Gifts", "Legendary Enchantment — Background");
+    assert.deepEqual(cant(pairDeck(hero, bg)), []);
+    const instant = card("Shock", "Instant", { oracle_text: "Deal 2 damage." });
+    assert.deepEqual(cant(pairDeck(hero, instant)), ["Shock can't be your commander."]);
+    assert.deepEqual(legalityProblems({ main: [], side: [], commander: { card: bolt, count: 1 } }, "modern").filter(p => p.includes("be your commander")), []);
+});
+
+test("a Background is accepted in either commander slot when paired", () => {
+    const wilson = card("Wilson, Refined Grizzly", "Legendary Creature — Bear Warrior", {
+        oracle_text: "Vigilance, reach, trample\nChoose a Background",
+    });
+    const giants = card("Raised by Giants", "Legendary Enchantment — Background", {
+        oracle_text: "Commander creatures you own have base power and toughness 10/10 and have trample.",
+    });
+    const shock = card("Shock", "Instant", { oracle_text: "Shock deals 2 damage to any target." });
+    const bad = (deck: Deck) => legalityProblems(deck, "commander")
+        .filter(p => p.includes("be your commander") || p.includes("can't both be commanders"));
+    assert.deepEqual(bad(pairDeck(giants, wilson)), []);
+    assert.deepEqual(bad(pairDeck(wilson, giants)), []);
+    assert.deepEqual(bad({ main: [], side: [], commander: { card: giants, count: 1 } }), ["Raised by Giants can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(giants, shock)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+    assert.deepEqual(bad(pairDeck(shock, giants)).filter(p => p.includes("be your commander")), ["Shock can't be your commander."]);
+});
+
+test("setPartner moves one copy out of main and returns an old partner", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }, { card: legend2, count: 1 }], side: [], commander: { card: bear, count: 1 } };
+    const first = setPartner(deck, legend);
+    assert.equal(first.partner?.card.name, legend.name);
+    assert.deepEqual(first.main.map(e => e.card.name), [legend2.name]);
+    assert.equal(first.commander?.card.name, bear.name);
+    const second = setPartner(first, legend2);
+    assert.equal(second.partner?.card.name, legend2.name);
+    assert.deepEqual(second.main.map(e => e.card.name), [legend.name]);
+    // setCommander keeps the partner; the input isn't changed
+    const swapped = setCommander(first, legend2);
+    assert.equal(swapped.partner?.card.name, legend.name);
+    assert.equal(deck.partner, undefined);
+    assert.equal(deck.main.length, 2);
+    assert.equal(setPartner(deck, golem), deck);
+});
+
+test("setPartner does nothing without a commander", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [] };
+    assert.equal(setPartner(deck, legend), deck);
+});
+
+test("removeCommander promotes the partner and puts the old commander in the zone", () => {
+    const thrasios = partnerCard("Thrasios, Triton Hero", ["G", "U"]);
+    const tymna = partnerCard("Tymna the Weaver", ["W", "B"]);
+    const island = card("Island", "Basic Land — Island");
+    const deck: Deck = { main: [{ card: island, count: 98 }], side: [], commander: { card: thrasios, count: 1 }, partner: { card: tymna, count: 1 } };
+    const copy = structuredClone(deck);
+    const toMain = removeCommander(deck);
+    assert.equal(toMain.commander?.card.name, tymna.name);
+    assert.equal(toMain.partner, undefined);
+    assert.deepEqual(toMain.main.map(e => e.card.name), ["Island", thrasios.name]);
+    assert.deepEqual(toMain.side, []);
+    const toSide = removeCommander(deck, "side");
+    assert.equal(toSide.commander?.card.name, tymna.name);
+    assert.equal(toSide.partner, undefined);
+    assert.deepEqual(toSide.side.map(e => e.card.name), [thrasios.name]);
+    assert.equal(toSide.main.length, 1);
+    assert.deepEqual(deck, copy);
+});
+
+test("removeCommander without a partner just loses the commander; without a commander nothing changes", () => {
+    const solo: Deck = { main: [{ card: forest, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const out = removeCommander(solo);
+    assert.equal(out.commander, undefined);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [forest.name, legend.name]);
+    assert.equal(removeCommander(out), out);
+});
+
+test("removeCommander merges with copies in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    assert.deepEqual(removeCommander(deck).main, [{ card: legend, count: 2 }]);
+});
+
+test("removeCommander moves a partner up to the commander slot", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removeCommander(deck);
+    assert.equal(out.commander?.card.name, legend2.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removeCommander with no commander changes nothing", () => {
+    const deck: Deck = { main: [{ card: bolt, count: 1 }], side: [] };
+    assert.equal(removeCommander(deck), deck);
+});
+
+test("removePartner sends the partner back to main and keeps the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 }, partner: { card: legend2, count: 1 } };
+    const before = JSON.stringify(deck);
+    const out = removePartner(deck);
+    assert.equal(out.commander?.card.name, legend.name);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [legend2.name]);
+    assert.equal(JSON.stringify(deck), before);
+});
+
+test("removePartner with no partner changes nothing", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: legend, count: 1 } };
+    assert.equal(removePartner(deck), deck);
+});
+
+const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
+
+test("deckPrice multiplies by count, falls back to foil, lists unpriced cards once", () => {
+    const a = priced("A", { usd: "1.10", usd_foil: null });
+    const b = priced("B", { usd: null, usd_foil: "2.50" });
+    const c = priced("C", { usd: null, usd_foil: null });
+    let deck: Deck = addCard(addCard(addCard({ main: [], side: [] }, a, "main", 3), b), c);
+    deck = addCard(deck, c, "side", 2);
+    deck = addCard(deck, a, "side", 1);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 5.8, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: true, currency: "usd" }), { total: 6.9, missing: ["C"] });
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }).missing, ["A", "B", "C"]);
+});
+
+test("deckPrice falls back to the etched price; a card with every price null is missing", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const etched = priced("Etched", { ...nulls, usd_etched: "12.34" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, etched, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "usd" }), { total: 24.68, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, etched, "main", 2), { side: false, currency: "usd" }), { total: 24.68, missing: [] });
+});
+
+test("deckPrice falls back to the euro foil price; all-null stays missing in euros", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    const foil = priced("Foil Only", { ...nulls, usd_foil: "8.00", eur_foil: "7.50" });
+    const none = priced("None", nulls);
+    const deck = addCard(addCard({ main: [], side: [] }, foil, "main", 2), none);
+    assert.deepEqual(deckPrice(deck, { side: false, currency: "eur" }), { total: 15, missing: ["None"] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "eur" }), { total: 15, missing: [] });
+    assert.deepEqual(deckPrice(addCard({ main: [], side: [] }, foil, "main", 2), { side: false, currency: "usd" }), { total: 16, missing: [] });
+});
+
+test("buyEntries includes the partner once, and deckPrice sums the same entries", () => {
+    const thrasios = priced("Thrasios, Triton Hero", { usd: "1.00" });
+    const tymna = priced("Tymna the Weaver", { usd: "2.00" });
+    const island = priced("Island", { usd: "0.25" });
+    const side = priced("Side Card", { usd: "0.50" });
+    const deck: Deck = {
+        main: [{ card: island, count: 98 }],
+        side: [{ card: side, count: 2 }],
+        commander: { card: thrasios, count: 1 },
+        partner: { card: tymna, count: 1 },
+    };
+    for (const withSide of [false, true]) {
+        const entries = buyEntries(deck, { side: withSide });
+        assert.equal(entries.filter((e) => e.card.name === "Tymna the Weaver").length, 1);
+        assert.deepEqual(entries.map((e) => e.card.name).slice(0, 3), ["Thrasios, Triton Hero", "Tymna the Weaver", "Island"]);
+        assert.equal(entries.some((e) => e.card.name === "Side Card"), withSide);
+        const sum = entries.reduce((t, e) => t + parseFloat((e.card.prices as { usd: string }).usd) * e.count, 0);
+        assert.equal(deckPrice(deck, { side: withSide, currency: "usd" }).total, Math.round(sum * 100) / 100);
+    }
+});
+
+test("deckPrice counts the commander; an empty deck is free", () => {
+    const a = priced("A", { usd: "0.10" });
+    assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
+    assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
+});
+
+test("buyEntries lists commander, partner, main, then side only when asked", () => {
+    const entry = (name: string): DeckEntry => ({ card: card(name, "Creature"), count: 1 });
+    const deck: Deck = { commander: entry("Cmd"), partner: entry("Part"), main: [entry("Main")], side: [entry("Side")] };
+    assert.deepEqual(buyEntries(deck, { side: true }).map(e => e.card.name), ["Cmd", "Part", "Main", "Side"]);
+    assert.deepEqual(buyEntries(deck, { side: false }).map(e => e.card.name), ["Cmd", "Part", "Main"]);
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
+    assert.equal(canBeCommander(card("Ghave", "Legendary Creature — Fungus")), true);
+    assert.equal(canBeCommander(card("Bear", "Creature — Bear")), false);
+    assert.equal(canBeCommander(card("Crown", "Legendary Artifact")), false);
+    assert.equal(canBeCommander(card("Teferi", "Legendary Planeswalker — Teferi", { oracle_text: "Teferi can be your commander." })), true);
+    const faces = [{ name: "Front", type_line: "Legendary Creature — Human" }, { name: "Back", type_line: "Legendary Enchantment" }];
+    assert.equal(canBeCommander(card("Front // Back", "", { card_faces: faces } as Partial<ScryfallCard>)), true);
+});
+
+test("canBeCommander: Grist, powered legendary Vehicles, not Backgrounds", () => {
+    const grist = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", {
+        loyalty: "3",
+        oracle_text: "As long as Grist, the Hunger Tide isn't on the battlefield, it's a 1/1 Insect creature in addition to its other types.\n+1: Create a 1/1 black and green Insect creature token.",
+    } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(grist), true);
+    const falcon = card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle", { power: "4", toughness: "4" } as Partial<ScryfallCard>);
+    assert.equal(canBeCommander(falcon), true);
+    assert.equal(canBeCommander(card("The Falcon, Airship Restored", "Legendary Artifact — Vehicle")), false);
+    assert.equal(canBeCommander(card("Bg", "Legendary Enchantment — Background")), false);
+});
+
+// ---- manaCostOf, on cards built the way the site builds them from its card data ----
+
+const printing: Printing = { id: "p1", set: "tst", set_name: "Test", number: "1", rarity: "common", released: "2020-01-01" };
+const fromData = (name: string, layout: string, extra: Partial<CardRecord> = {}): ScryfallCard =>
+    printingCard({
+        oracle_id: `oracle-${name}`, name, slug: name.toLowerCase(), layout, cmc: 0, type_line: "Card",
+        color_identity: [], keywords: [], legalities: {}, rulings: [], prints: [printing], main: 0,
+        ...extra,
+    }, printing);
+
+test("manaCostOf reads the faces of double-faced cards from card data", () => {
+    const delver = fromData("Delver of Secrets // Insectile Aberration", "transform", {
+        faces: [{ name: "Delver of Secrets", mana_cost: "{U}" }, { name: "Insectile Aberration", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(delver), "{U}");
+    const valakut = fromData("Valakut Awakening // Valakut Stoneforge", "modal_dfc", {
+        faces: [{ name: "Valakut Awakening", mana_cost: "{2}{R}{R}" }, { name: "Valakut Stoneforge", mana_cost: "" }],
+    });
+    assert.equal(manaCostOf(valakut), "{2}{R}{R}");
+});
+
+test("manaCostOf keeps a split card's own cost, and is empty for lands", () => {
+    const fire = fromData("Fire // Ice", "split", { mana_cost: "{1}{R} // {1}{U}" });
+    assert.equal(manaCostOf(fire), "{1}{R} // {1}{U}");
+    assert.equal(manaCostOf(fromData("Forest", "normal")), "");
+});
+
+test("manaCostOf reads Scryfall's API shape, with no top-level cost", () => {
+    assert.equal(manaCostOf(delverApi), "{U}");
+});
+
+const legend =card("Isamaru, Hound of Konda", "Legendary Creature — Dog", { cmc: 1 });
+const legend2 = card("Kenrith, the Returned King", "Legendary Creature — Human Noble", { cmc: 5 });
+const walker = card("Grist, the Hunger Tide", "Legendary Planeswalker — Grist", { oracle_text: "Grist, the Hunger Tide can be your commander." });
+const legendDfc = card("Jace, Vryn's Prodigy // Jace, Telepath Unbound", "Legendary Creature — Human Wizard // Legendary Planeswalker — Jace", {
+    card_faces: [
+        { name: "Jace, Vryn's Prodigy", mana_cost: "{1}{U}", type_line: "Legendary Creature — Human Wizard" },
+        { name: "Jace, Telepath Unbound", mana_cost: "", type_line: "Legendary Planeswalker — Jace" },
+    ],
+});
+
+test("canBeCommander: legendary creatures and 'can be your commander' cards", () => {
+    assert.equal(canBeCommander(legend), true);
+    assert.equal(canBeCommander(walker), true);
+    assert.equal(canBeCommander(legendDfc), true);
+    assert.equal(canBeCommander(bear), false);
+    assert.equal(canBeCommander(card("Jace Beleren", "Legendary Planeswalker — Jace")), false);
+});
+
+test("guessFormat says commander for a deck with a commander, else nothing", () => {
+    assert.equal(guessFormat({ main: [{ card: bear, count: 1 }], side: [], commander: { card: legend, count: 1 } }), "commander");
+    assert.equal(guessFormat({ main: [{ card: bear, count: 60 }], side: [] }), undefined);
+});
+
+test("setCommander takes one copy from main and does not mutate", () => {
+    const deck: Deck = { main: [{ card: legend, count: 1 }, { card: bear, count: 1 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
+    assert.deepEqual(next.main.map(e => e.card.name), ["Grizzly Bears"]);
+    assert.equal(deck.main.length, 2);
+    assert.equal(deck.commander, undefined);
+});
+
+test("setCommander sends the old commander back to main", () => {
+    const deck: Deck = { main: [{ card: legend2, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const next = setCommander(deck, legend2);
+    assert.equal(next.commander?.card.name, legend2.name);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+});
+
+test("setCommander from a 2-of leaves one copy in main", () => {
+    const deck: Deck = { main: [{ card: legend, count: 2 }], side: [] };
+    const next = setCommander(deck, legend);
+    assert.deepEqual(next.main, [{ card: legend, count: 1 }]);
+    assert.deepEqual(next.commander, { card: legend, count: 1 });
+});
+
+test("deckSummary counts lands and spells and averages the spells' mana value", () => {
+    let deck = addCard(empty, forest, "main", 24)
+    deck = addCard(deck, bolt, "main", 20)
+    deck = addCard(deck, bear, "main", 16)
+    // (20 * 1 + 16 * 2) / 36 = 1.444...
+    assert.deepEqual(deckSummary(deck), { lands: 24, spells: 36, averageManaValue: 1.44 })
+});
+
+test("deckSummary weights the average by count", () => {
+    const deck = addCard(addCard(empty, bolt, "main", 3), golem)
+    // (3 * 1 + 9) / 4 = 3
+    assert.deepEqual(deckSummary(deck), { lands: 0, spells: 4, averageManaValue: 3 })
+});
+
+test("deckSummary counts the commander but not the sideboard", () => {
+    const deck: Deck = { ...addCard(addCard(empty, forest), bear, "side", 5), commander: { card: golem, count: 1 } }
+    assert.deepEqual(deckSummary(deck), { lands: 1, spells: 1, averageManaValue: 9 })
+});
+
+test("deckSummary counts a modal DFC by its front face", () => {
+    // Valakut Awakening is an instant on the front, so a spell
+    assert.equal(deckSummary(addCard(empty, mdfc)).spells, 1)
+});
+
+test("deckSummary of an empty deck is all zeros", () => {
+    assert.deepEqual(deckSummary(empty), { lands: 0, spells: 0, averageManaValue: 0 })
+});
+
+const boltM10 = card("Lightning Bolt", "Instant", { id: "bolt-m10", cmc: 1 });
+const boltA25 = card("Lightning Bolt", "Instant", { id: "bolt-a25", cmc: 1 });
+const bearPrint = card("Grizzly Bears", "Creature — Bear", { id: "bear-1", cmc: 2 });
+const elfPrint = card("Llanowar Elves", "Creature — Elf", { id: "elf-1", cmc: 1 });
+
+test("replacePrinting swaps a main-deck row's card, keeping its count and place", () => {
+    const deck: Deck = { main: [{ card: bearPrint, count: 2 }, { card: boltM10, count: 4 }, { card: elfPrint, count: 1 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bear-1", 2], ["bolt-a25", 4], ["elf-1", 1]]);
+    assert.equal(deck.main[1].card.id, "bolt-m10", "the input is not changed");
+});
+
+test("replacePrinting in the sideboard leaves the main deck alone", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [{ card: boltM10, count: 1 }] };
+    const next = replacePrinting(deck, "side", boltM10, boltA25);
+    assert.equal(next.side[0].card.id, "bolt-a25");
+    assert.equal(next.main[0].card.id, "bolt-m10");
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting swaps the commander", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 1 }], side: [], commander: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "commander", bearPrint, other);
+    assert.equal(next.commander?.card.id, "bear-2");
+    assert.equal(next.commander?.count, 1);
+    assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting swaps the partner and leaves the commander alone", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: boltM10, count: 1 }, partner: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "partner", bearPrint, other);
+    assert.equal(next.partner?.card.id, "bear-2");
+    assert.equal(next.commander, deck.commander);
+    assert.equal(replacePrinting(deck, "partner", boltM10, other), deck);
+    assert.equal(replacePrinting({ main: [], side: [] }, "partner", bearPrint, other).partner, undefined);
+});
+
+test("replacePrinting merges into a row that already holds the new printing", () => {
+    const deck: Deck = { main: [{ card: boltA25, count: 1 }, { card: elfPrint, count: 2 }, { card: boltM10, count: 3 }], side: [] };
+    const next = replacePrinting(deck, "main", boltM10, boltA25);
+    assert.deepEqual(next.main.map((e) => [e.card.id, e.count]), [["bolt-a25", 4], ["elf-1", 2]]);
+    const back = replacePrinting(deck, "main", boltA25, boltM10);
+    assert.deepEqual(back.main.map((e) => [e.card.id, e.count]), [["bolt-m10", 4], ["elf-1", 2]]);
+});
+
+test("replacePrinting of a card not in the zone changes nothing", () => {
+    const deck: Deck = { main: [{ card: boltM10, count: 4 }], side: [] };
+    assert.equal(replacePrinting(deck, "main", elfPrint, boltA25), deck);
+    assert.equal(replacePrinting(deck, "side", boltM10, boltA25), deck);
+    assert.equal(replacePrinting(deck, "commander", boltM10, boltA25), deck);
+});
+
+test("deckColors of a commander deck is the commander's color identity", () => {
+    const atraxa = card("Atraxa, Praetors' Voice", "Legendary Creature — Phyrexian Angel Horror", { color_identity: ["G", "W", "U", "B"] });
+    const deck: Deck = { ...addCard(empty, bolt), commander: { card: atraxa, count: 1 } };
+    assert.deepEqual(deckColors(deck), ["W", "U", "B", "G"]);
+});
+
+test("deckColors of a 60-card deck is the colors its spells use, in WUBRG order", () => {
+    const deck = addCard(addCard(addCard(empty, bear, "main", 20), bolt, "main", 16), forest, "main", 24);
+    assert.deepEqual(deckColors(deck), ["R", "G"]);
+});
+
+test("deckColors of an empty or colorless deck is empty", () => {
+    assert.deepEqual(deckColors(empty), []);
+    assert.deepEqual(deckColors(addCard(addCard(empty, golem, "main", 4), forest)), []);
+});
+
+test("groupByManaValue puts spells in ascending mana value groups and lands last", () => {
+    const deck = addCard(addCard(addCard(addCard(empty, forest, "main", 24), bear, "main", 4), bolt, "main", 4), golem, "main", 2);
+    const groups = groupByManaValue(deck);
+    assert.deepEqual(groups.map((g) => g.group), ["1", "2", "7+", "Lands"]);
+    assert.deepEqual(groups.map((g) => g.entries.reduce((n, e) => n + e.count, 0)), [4, 4, 2, 24]);
+});
+
+test("groupByManaValue puts an 8-drop under 7+ and leaves out the commander and sideboard", () => {
+    const eight = card("Eight-and-a-Half-Tails", "Creature", { cmc: 8 });
+    const deck: Deck = { ...addCard(addCard(empty, eight), bolt, "side", 3), commander: { card: bear, count: 1 } };
+    assert.deepEqual(groupByManaValue(deck).map((g) => [g.group, g.entries.map((e) => e.card.name)]), [["7+", ["Eight-and-a-Half-Tails"]]]);
+});
+
+test("groupByManaValue goes by a modal DFC's front face", () => {
+    // Valakut Awakening // Valakut Stoneforge: an instant (mana value 4) on the front, a land on the back
+    assert.deepEqual(groupByManaValue(addCard(empty, mdfc)).map((g) => g.group), ["4"]);
+});
+
+test("groupByManaValue sorts each group like sortEntries", () => {
+    const a = card("Abrade", "Instant", { cmc: 2 });
+    const deck = addCard(addCard(empty, bear), a);
+    assert.deepEqual(groupByManaValue(deck)[0].entries.map((e) => e.card.name), ["Abrade", "Grizzly Bears"]);
+});
+
+// a reversible card in Scryfall's real API shape: no top-level cmc, oracle_id, mana_cost or type_line
+const propFace = {
+    object: "card_face", name: "Propaganda", oracle_id: "prop-oracle", mana_cost: "{2}{U}", cmc: 3, type_line: "Enchantment",
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    colors: ["U"],
+};
+const reversibleSld = {
+    id: "prop-sld", name: "Propaganda // Propaganda", layout: "reversible_card", set: "sld", collector_number: "1",
+    legalities: { modern: "legal" }, card_faces: [propFace, { ...propFace }],
+} as unknown as ScryfallCard;
+
+test("manaValueOf reads a reversible card's mana value from its faces", () => {
+    assert.equal(manaValueOf(reversibleSld), 3);
+    assert.equal(manaValueOf(bolt), 1);
+    assert.equal(manaValueOf({ name: "Bare" } as unknown as ScryfallCard), 0);
+});
+
+test("a reversible card counts at its faces' mana value in the curve, sort, groups and average", () => {
+    const one = card("Aura of One", "Enchantment", { cmc: 1 });
+    const four = card("Zone of Four", "Enchantment", { cmc: 4 });
+    const deck = addCard(addCard(addCard(empty, one), reversibleSld), four);
+    const curve = manaCurve(deck);
+    assert.equal(curve[0], 0);
+    assert.equal(curve[3], 1);
+    assert.deepEqual(sortEntries(deck.main).map((e) => e.card.name), ["Aura of One", "Propaganda // Propaganda", "Zone of Four"]);
+    assert.deepEqual(groupByManaValue(deck).map((g) => g.group), ["1", "3", "4"]);
+    assert.deepEqual(groupByManaValue(deck)[1].entries.map((e) => e.card.name), ["Propaganda // Propaganda"]);
+    assert.equal(deckSummary(deck).averageManaValue, 2.67);
+});
+
+test("groupByManaValue of an empty deck is empty", () => {
+    assert.deepEqual(groupByManaValue(empty), []);
+});
+
+const spell = (name: string, mana_cost: string) => card(name, "Creature — Test", { mana_cost });
+const deckOf = (...entries: [ScryfallCard, number][]): Deck => ({ main: entries.map(([c, count]) => ({ card: c, count })), side: [] });
+
+test("basicLandSplit: mono-red gives all Mountains", () => {
+    const deck = deckOf([spell("Red Guy", "{2}{R}{R}"), 4], [spell("Red Two", "{R}"), 4]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "R", count: 17 }]);
+});
+
+test("basicLandSplit: a tie goes to the earlier color in WUBRG order", () => {
+    const deck = deckOf([spell("Red Ten", "{R}"), 10], [spell("Blue Ten", "{U}"), 10]);
+    assert.deepEqual(basicLandSplit(deck, 17), [{ color: "U", count: 9 }, { color: "R", count: 8 }]);
+});
+
+test("basicLandSplit: hybrid counts half for each color", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}{W/U}"), 1]), 10), [{ color: "W", count: 5 }, { color: "U", count: 5 }]);
+    // {W/U} is half W, half U; plus one {W} makes W 1.5 : U 0.5
+    assert.deepEqual(basicLandSplit(deckOf([spell("Hybrid", "{W/U}"), 1], [spell("Plain", "{W}"), 1]), 8), [{ color: "W", count: 6 }, { color: "U", count: 2 }]);
+});
+
+test("basicLandSplit: card counts weight the symbols; generic and X don't count", () => {
+    const deck = deckOf([spell("Three Green", "{X}{2}{G}"), 3], [spell("One Black", "{1}{B}"), 1]);
+    assert.deepEqual(basicLandSplit(deck, 8), [{ color: "B", count: 2 }, { color: "G", count: 6 }]);
+});
+
+test("basicLandSplit counts the commander", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: spell("Boss", "{W}{W}"), count: 1 } };
+    assert.deepEqual(basicLandSplit(deck, 5), [{ color: "W", count: 5 }]);
+});
+
+test("basicLandSplit: a colorless deck gives []", () => {
+    assert.deepEqual(basicLandSplit(deckOf([spell("Golem", "{6}"), 4], [spell("X", "{X}"), 2]), 17), []);
+    assert.deepEqual(basicLandSplit({ main: [], side: [] }, 17), []);
+});
+
+test("basicLandSplit: the parts always sum to count", () => {
+    const deck = deckOf([spell("A", "{W}{U}{B}"), 3], [spell("B", "{R}{G/W}"), 7], [spell("C", "{B}{B}{U}"), 5]);
+    for (let n = 0; n <= 60; n++) {
+        const parts = basicLandSplit(deck, n);
+        assert.equal(parts.reduce((s, p) => s + p.count, 0), n);
+        assert.ok(parts.every(p => p.count > 0));
+    }
+});
+
+test("identityTerm writes colors in WUBRG order, lower case", () => {
+    assert.equal(identityTerm(["U", "B"]), "id<=ub");
+    assert.equal(identityTerm(["G", "W"]), "id<=wg");
+    assert.equal(identityTerm(["G", "R", "B", "U", "W"]), "id<=wubrg");
+    assert.equal(identityTerm([]), "id<=c");
+});
+
+test("formatPrice uses the currency's symbol and always two decimals", () => {
+    assert.equal(formatPrice(12.34, "usd"), "$12.34");
+    assert.equal(formatPrice(12.3, "eur"), "€12.30");
+    assert.equal(formatPrice(0, "tix"), "0.00 tix");
+    assert.equal(formatPrice(5, "tix"), "5.00 tix");
+});

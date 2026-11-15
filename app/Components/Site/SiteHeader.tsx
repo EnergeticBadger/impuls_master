@@ -10,7 +10,10 @@ export function SiteHeader({ children }: { children?: ReactNode }) {
         <img src="/logo.svg" alt="" width={40} height={40} />
         <span>Impulse Caster</span>
       </Link>
-      {children ?? <Link to="/" className={styles.back}>Search cards</Link>}
+      <nav className={styles.nav}>
+        <Link to="/decks" className={styles.back}>Decks</Link>
+        {children ?? <Link to="/" className={styles.back}>Search cards</Link>}
+      </nav>
     </header>
   )
 }

@@ -175,6 +175,44 @@ export function bucketHeader(bytes: Uint8Array): { entries: BucketEntry[]; body:
     return { entries: JSON.parse(decoder.decode(bytes.subarray(0, newline))), body: newline + 1 };
 }
 
+// the entry for a card's full name ("Fire // Ice"); front-face-only names don't match, callers fall back
+export function findEntryByName(entries: BucketEntry[], name: string): BucketEntry | undefined {
+    const wanted = slug(name);
+    return entries.find((e) => e[0] === wanted);
+}
+
+// the words scripts/card-data.ts (NOT_CARDS) puts after a renamed non-card's slug
+const NOT_CARD_WORDS = ["token", "emblem", "art-card", "vanguard", "scheme", "plane"];
+const notCardWords = NOT_CARD_WORDS.join("|");
+
+// the card a deck line means. Cards sharing a name sit in one bucket (the first gets the plain slug, the others
+// "<slug>-2", "<slug>-token", "<slug>-token-2", "<slug>-emblem"...), so this looks at all of them: the one with the line's set and collector
+// number, else one with a printing in the set, else the plain-slug card
+export function pickByName(
+    bytes: Uint8Array, header: { entries: BucketEntry[]; body: number }, name: string, set?: string, number?: string,
+): CardRecord | undefined {
+    const wanted = slug(name);
+    const sibling = new RegExp(`^${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(?:\\d+|(?:${notCardWords})(?:-\\d+)?)$`);
+    const candidates = header.entries
+        .filter((e) => e[0] === wanted || sibling.test(e[0]))
+        .map((e) => readRecord(bytes, header, e))
+        .filter((r) => slug(r.name) === wanted);
+    const plain = candidates.find((r) => r.slug === wanted) ?? candidates[0];
+    const s = set?.toLowerCase();
+    if (s && candidates.length > 1) {
+        const n = number?.toLowerCase();
+        const inSet = (r: CardRecord) => r.prints.some((p) => p.set.toLowerCase() === s);
+        const exact = n && candidates.find((r) => r.prints.some((p) => p.set.toLowerCase() === s && p.number.toLowerCase() === n));
+        return exact || candidates.find(inSet) || plain;
+    }
+    return plain;
+}
+
+// the bucket a card's full name lives in
+export function bucketOfName(name: string) {
+    return bucketOf(slug(name));
+}
+
 // parses one record out of a bucket file, leaving the rest of the file alone
 export function readRecord(bytes: Uint8Array, header: { body: number }, entry: BucketEntry): CardRecord {
     const start = header.body + entry[2];
@@ -241,6 +279,18 @@ export const printKey = (p: { set: string; number: string }) => `${p.set}-${p.nu
 export function findPrinting(record: Pick<CardRecord, "prints">, key: string) {
     const k = key.toLowerCase();
     return record.prints.findIndex((p) => printKey(p).toLowerCase() === k);
+}
+
+// the printing a deck list line means: the set and number, else the set's first printing, else the page's own
+export function pickPrinting(record: CardRecord, set?: string, number?: string): Printing {
+    const s = set?.toLowerCase();
+    if (s) {
+        const inSet = record.prints.filter((p) => p.set.toLowerCase() === s);
+        const n = number?.toLowerCase();
+        const exact = n ? inSet.find((p) => p.number.toLowerCase() === n) : undefined;
+        if (exact ?? inSet[0]) return (exact ?? inSet[0])!;
+    }
+    return record.prints[record.main];
 }
 
 // the card as the app's components expect it (Scryfall's shape), for one of its printings

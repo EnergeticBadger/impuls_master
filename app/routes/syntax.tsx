@@ -10,7 +10,8 @@ const TITLE = "Impulse Caster";
 const PAGE_TITLE = `MTG Card Search Syntax Guide | ${TITLE}`;
 const DESCRIPTION = "How to search for Magic: The Gathering cards by color, type, rules text, mana cost, power, rarity, set, format, price and more, with an example search for every keyword.";
 
-// The search runs on Scryfall's engine, so this is the syntax it understands. Every example is a link that runs it.
+// The search runs on our own engine (workers/search.ts), which follows Scryfall's syntax and hands what it doesn't
+// support to Scryfall, so this is the syntax it understands. Every example is a link that runs it.
 type Section = { id: string, title: string, intro: ReactNode, examples: [string, string][] }
 
 const SECTIONS: Section[] = [

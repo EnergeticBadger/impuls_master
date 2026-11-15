@@ -3,6 +3,7 @@ import { useSnapshot } from 'valtio';
 import styles from './Compare.module.css'
 import cardStyles from '../Card/Card.module.css'
 import { clearCompare, compare, loadCompare, removeCompare } from '../Context/compare';
+import { loadDecks } from '../Context/decks';
 import type { CardProps, ScryfallCard } from '~/types';
 import { useCardLayout } from '../Hooks/useCardLayout';
 import { OPEN_ICON, QuickView, openQuickView } from '../Card/QuickView';
@@ -116,7 +117,7 @@ function CardPicture({ props }: { props: CardProps }) {
 // a drawer along the bottom (open, it fills the screen under the header) with the picked cards side by side, one column each
 export function CompareDrawer() {
     const snap = useSnapshot(compare)
-    useEffect(loadCompare, [])
+    useEffect(() => { loadCompare(); loadDecks() }, [])
 
     if (snap.cards.length === 0) return null
     const count = snap.cards.length
