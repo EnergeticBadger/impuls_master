@@ -395,6 +395,34 @@ test("removePartner with no partner changes nothing", () => {
     assert.equal(removePartner(deck), deck);
 });
 
+test("removeCommander promotes the partner and puts the old commander in the zone", () => {
+    const thrasios = partnerCard("Thrasios, Triton Hero", ["G", "U"]);
+    const tymna = partnerCard("Tymna the Weaver", ["W", "B"]);
+    const island = card("Island", "Basic Land — Island");
+    const deck: Deck = { main: [{ card: island, count: 98 }], side: [], commander: { card: thrasios, count: 1 }, partner: { card: tymna, count: 1 } };
+    const copy = structuredClone(deck);
+    const toMain = removeCommander(deck);
+    assert.equal(toMain.commander?.card.name, tymna.name);
+    assert.equal(toMain.partner, undefined);
+    assert.deepEqual(toMain.main.map(e => e.card.name), ["Island", thrasios.name]);
+    assert.deepEqual(toMain.side, []);
+    const toSide = removeCommander(deck, "side");
+    assert.equal(toSide.commander?.card.name, tymna.name);
+    assert.equal(toSide.partner, undefined);
+    assert.deepEqual(toSide.side.map(e => e.card.name), [thrasios.name]);
+    assert.equal(toSide.main.length, 1);
+    assert.deepEqual(deck, copy);
+});
+
+test("removeCommander without a partner just loses the commander; without a commander nothing changes", () => {
+    const solo: Deck = { main: [{ card: forest, count: 1 }], side: [], commander: { card: legend, count: 1 } };
+    const out = removeCommander(solo);
+    assert.equal(out.commander, undefined);
+    assert.equal(out.partner, undefined);
+    assert.deepEqual(out.main.map(e => e.card.name), [forest.name, legend.name]);
+    assert.equal(removeCommander(out), out);
+});
+
 const priced = (name: string, prices: Record<string, string | null>) => card(name, "Instant", { prices } as unknown as Partial<ScryfallCard>);
 
 test("deckPrice multiplies by count, falls back to foil, lists unpriced cards once", () => {
@@ -440,7 +468,7 @@ test("buyEntries includes the partner once, and deckPrice sums the same entries"
         partner: { card: tymna, count: 1 },
     };
     for (const withSide of [false, true]) {
-        const entries = buyEntries(deck, withSide);
+        const entries = buyEntries(deck, { side: withSide });
         assert.equal(entries.filter((e) => e.card.name === "Tymna the Weaver").length, 1);
         assert.deepEqual(entries.map((e) => e.card.name).slice(0, 3), ["Thrasios, Triton Hero", "Tymna the Weaver", "Island"]);
         assert.equal(entries.some((e) => e.card.name === "Side Card"), withSide);
@@ -453,6 +481,13 @@ test("deckPrice counts the commander; an empty deck is free", () => {
     const a = priced("A", { usd: "0.10" });
     assert.equal(deckPrice({ main: [{ card: a, count: 3 }], side: [], commander: { card: a, count: 1 } }, { side: false, currency: "usd" }).total, 0.4);
     assert.deepEqual(deckPrice({ main: [], side: [] }, { side: true, currency: "usd" }), { total: 0, missing: [] });
+});
+
+test("buyEntries lists commander, partner, main, then side only when asked", () => {
+    const entry = (name: string): DeckEntry => ({ card: card(name, "Creature"), count: 1 });
+    const deck: Deck = { commander: entry("Cmd"), partner: entry("Part"), main: [entry("Main")], side: [entry("Side")] };
+    assert.deepEqual(buyEntries(deck, { side: true }).map(e => e.card.name), ["Cmd", "Part", "Main", "Side"]);
+    assert.deepEqual(buyEntries(deck, { side: false }).map(e => e.card.name), ["Cmd", "Part", "Main"]);
 });
 
 test("canBeCommander: legendary creatures and 'can be your commander' text", () => {
@@ -603,6 +638,16 @@ test("replacePrinting swaps the commander", () => {
     assert.equal(next.commander?.card.id, "bear-2");
     assert.equal(next.commander?.count, 1);
     assert.equal(next.main, deck.main);
+});
+
+test("replacePrinting swaps the partner and leaves the commander alone", () => {
+    const deck: Deck = { main: [], side: [], commander: { card: boltM10, count: 1 }, partner: { card: bearPrint, count: 1 } };
+    const other = card("Grizzly Bears", "Creature — Bear", { id: "bear-2", cmc: 2 });
+    const next = replacePrinting(deck, "partner", bearPrint, other);
+    assert.equal(next.partner?.card.id, "bear-2");
+    assert.equal(next.commander, deck.commander);
+    assert.equal(replacePrinting(deck, "partner", boltM10, other), deck);
+    assert.equal(replacePrinting({ main: [], side: [] }, "partner", bearPrint, other).partner, undefined);
 });
 
 test("replacePrinting merges into a row that already holds the new printing", () => {

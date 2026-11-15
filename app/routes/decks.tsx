@@ -206,7 +206,7 @@ export default function Decks() {
         {shown.length > 0 && (
           <ul className={styles.list}>
             {shown.map((d) => {
-              const cards = d.deck.main.reduce((n, e) => n + e.count, 0) + (d.deck.commander?.count ?? 0)
+              const cards = d.deck.main.reduce((n, e) => n + e.count, 0) + (d.deck.commander?.count ?? 0) + (d.deck.partner?.count ?? 0)
               const colors = deckColors(d.deck)
               return (
                 <li key={d.id} className={styles.deck}>

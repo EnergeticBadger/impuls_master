@@ -21,7 +21,7 @@ import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { AddBasicLands } from "~/Components/Deck/AddBasicLands";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, replacePrinting, setCommander, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, removeCommander, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -30,7 +30,10 @@ export function meta() {
   ]
 }
 
-type Section = "main" | "side" | "commander"
+type Section = "main" | "side" | "commander" | "partner"
+
+const isBackground = (card: DeckEntry["card"]) =>
+  [card.type_line, ...(card.card_faces ?? []).map((f) => f.type_line)].some((t) => /\bBackground\b/.test(t ?? ""))
 
 const total = (entries: DeckEntry[]) => entries.reduce((n, e) => n + e.count, 0)
 
@@ -39,17 +42,23 @@ const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.c
 // out of one zone and into the other
 const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
-  const without = from === "commander" ? { ...deck, commander: undefined } : removeCard(deck, entry.card, from, entry.count)
-  return addCard(without, entry.card, to, entry.count)
+  if (from === "commander") return removeCommander(deck, to)
+  return addCard(removeCard(deck, entry.card, from as DeckZone, entry.count), entry.card, to, entry.count)
 }
 
-const removeAsCommander = (deck: Deck): Deck => {
-  if (!deck.commander) return deck
-  return addCard({ ...deck, commander: undefined }, deck.commander.card, "main", deck.commander.count)
+// the partner goes back to the main deck
+const removeAsPartner = (deck: Deck): Deck => {
+  if (!deck.partner) return deck
+  return addCard({ ...deck, partner: undefined }, deck.partner.card, "main", deck.partner.count)
 }
+
+const removeAsCommander = (deck: Deck): Deck => removeCommander(deck, "main")
 
 const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
 const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
+
+const TOOLS = [["hand", "Sample hand"], ["odds", "Draw odds"], ["notes", "Notes"], ["export", "Export"], ["buy", "Buy"]] as const
+type Tool = (typeof TOOLS)[number][0]
 
 const anchorOf = (name: string) => `card-${name.replace(/[^a-z0-9]+/gi, "-")}`
 
@@ -61,6 +70,11 @@ export default function DeckPage() {
   const [preview, setPreview] = useState<string>()
   // the row whose printing list is open: "<section>:<card id>"
   const [printingsOf, setPrintingsOf] = useState<string>()
+  // the row whose extra actions are open (one at a time, so the list stays calm)
+  const [tool, setTool] = useState<Tool>("hand")
+  const [menuOf, setMenuOf] = useState<string>()
+  // the card shown in the side pane on wide screens: the last one pointed at, so the pane doesn't jump
+  const [shown, setShown] = useState<DeckEntry["card"]>()
   const [past, setPast] = useState<{ id: string; past: Deck[] }>({ id, past: [] })
   const [status, setStatus] = useState("")
   const [editing, setEditing] = useState<{ text: string; notes?: string[]; next?: Deck }>()
@@ -133,7 +147,7 @@ export default function DeckPage() {
   const isCommander = format === "commander"
   const problems = format ? legalityProblems(deck, format) : []
   // a card's row is the first one it appears in (commander, then main, then sideboard)
-  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...deck.main, ...deck.side]
+  const rowOrder = [...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : []), ...deck.main, ...deck.side]
   const anchored = new Map<string, string>()
   for (const e of rowOrder) if (!anchored.has(e.card.name)) anchored.set(e.card.name, anchorOf(e.card.name))
   const cardNamed = (problem: string) =>
@@ -159,6 +173,7 @@ export default function DeckPage() {
     const pickerKey = `${section}:${entry.card.id}`
     const image = smallImage(entry)
     const cost = manaCostOf(entry.card)
+    const isCommanderSlot = section === "commander" || section === "partner"
     const rowId = rowSeen.has(entry.card.name) ? undefined : anchorOf(entry.card.name)
     rowSeen.add(entry.card.name)
     return (
@@ -169,9 +184,9 @@ export default function DeckPage() {
             <Link
               to={cardPath(entry.card)}
               className={styles.link}
-              onMouseEnter={() => setPreview(key)}
+              onMouseEnter={() => { setPreview(key); setShown(entry.card) }}
               onMouseLeave={() => setPreview((p) => (p === key ? undefined : p))}
-              onFocus={() => setPreview(key)}
+              onFocus={() => { setPreview(key); setShown(entry.card) }}
               onBlur={() => setPreview((p) => (p === key ? undefined : p))}
             >{entry.card.name}</Link>
             {image && (
@@ -186,18 +201,24 @@ export default function DeckPage() {
           </span>
           <span className={styles.cost}>{cost && <ManaText text={cost} />}</span>
         </div>
-        <div className={styles.buttons}>
-          {section !== "commander" && (
+        <div className={styles.rowTools}>
+          {!isCommanderSlot && (
             <>
               <button type="button" className={styles.step} aria-label={`Remove one ${entry.card.name}`}
-                onClick={() => change((d) => removeCard(d, entry.card, section))}>−</button>
+                onClick={() => change((d) => removeCard(d, entry.card, section as DeckZone))}>−</button>
               <button type="button" className={styles.step} aria-label={`Add one ${entry.card.name}`}
-                onClick={() => change((d) => addCard(d, entry.card, section))}>+</button>
+                onClick={() => change((d) => addCard(d, entry.card, section as DeckZone))}>+</button>
             </>
           )}
-          {section === "commander" ? (
+          <button type="button" className={styles.step} aria-label={`More actions for ${entry.card.name}`}
+            aria-expanded={menuOf === pickerKey}
+            onClick={() => setMenuOf((p) => (p === pickerKey ? undefined : pickerKey))}>⋯</button>
+        </div>
+        {menuOf === pickerKey && (
+        <div className={styles.buttons}>
+          {isCommanderSlot ? (
             <button type="button" className={styles.button}
-              onClick={() => change(removeAsCommander)}>Remove as commander</button>
+              onClick={() => change(section === "partner" ? removeAsPartner : removeAsCommander)}>Remove as commander</button>
           ) : (
             <button type="button" className={styles.button}
               onClick={() => change((d) => move(d, entry, section))}>
@@ -208,14 +229,20 @@ export default function DeckPage() {
             <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the commander`}
               onClick={() => change((d) => setCommander(d, entry.card))}>Make commander</button>
           )}
+          {isCommander && section === "main" && deck.commander
+            && (canBeCommander(entry.card) || isBackground(entry.card)) && canPartner(deck.commander.card, entry.card) && (
+            <button type="button" className={styles.button} aria-label={`Make ${entry.card.name} the partner`}
+              onClick={() => change((d) => setPartner(d, entry.card))}>Make partner</button>
+          )}
           <button type="button" className={styles.button} aria-label={`Change printing of ${entry.card.name}`}
             aria-expanded={printingsOf === pickerKey}
             onClick={() => setPrintingsOf((p) => (p === pickerKey ? undefined : pickerKey))}>Printing</button>
-          {section !== "commander" && (
+          {!isCommanderSlot && (
             <button type="button" className={styles.button} aria-label={`Remove all ${entry.card.name}`}
-              onClick={() => change((d) => removeCard(d, entry.card, section, entry.count))}>Remove</button>
+              onClick={() => change((d) => removeCard(d, entry.card, section as DeckZone, entry.count))}>Remove</button>
           )}
         </div>
+        )}
         {printingsOf === pickerKey && (
           <PrintingPicker
             card={entry.card}
@@ -234,40 +261,60 @@ export default function DeckPage() {
   // the main deck's sections, by type or by mana value (the toggle above them)
   const groups = grouping === "manaValue"
     ? groupByManaValue(deck).map((g) => ({ key: g.group, heading: g.group === "Lands" ? "Lands" : `Mana value ${g.group}`, entries: g.entries }))
-    : groupByType({ ...deck, commander: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
-  const mainCount = total(deck.main) + (deck.commander?.count ?? 0)
+    : groupByType({ ...deck, commander: undefined, partner: undefined }).map((g) => ({ key: g.group, heading: g.group, entries: g.entries }))
+  const mainCount = total(deck.main) + (deck.commander?.count ?? 0) + (deck.partner?.count ?? 0)
+
+  const previewImage = shown && (shown.image_uris?.normal ?? shown.card_faces?.[0]?.image_uris?.normal)
 
   return (
     <div>
       <SiteHeader />
       <main className={styles.page}>
         <SaveWarning />
-        <input
-          className={styles.nameInput}
-          value={name ?? saved.name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
-          aria-label="Deck name"
-        />
-        <QuickAdd onAdd={(card, zone, count) => change((d) => addCard(d, card, zone, count))} />
-        <AddBasicLands
-          deck={deck}
-          isCommander={isCommander}
-          onAdd={(found) => change((d) => found.reduce((acc, f) => addCard(acc, f.card, "main", f.count), d))}
-        />
-        <p className={styles.totals}>
-          <span>Main deck: {mainCount}</span>
-          <span>Sideboard: {total(deck.side)}</span>
-          <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
-          {!editing && (
-            <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
-          )}
-          <Link to="/decks" className={styles.link}>All decks</Link>
-        </p>
-        <p role="status" className={styles.empty}>{status}</p>
+        <div className={styles.layout}>
+          <div className={styles.top}>
+            <input
+              className={styles.nameInput}
+              value={name ?? saved.name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
+              aria-label="Deck name"
+            />
+            <QuickAdd onAdd={(card, zone, count) => change((d) => addCard(d, card, zone, count))} />
+            <AddBasicLands
+              deck={deck}
+              isCommander={isCommander}
+              onAdd={(found) => change((d) => found.reduce((acc, f) => addCard(acc, f.card, "main", f.count), d))}
+            />
+            <div className={styles.toolbar}>
+              <span className={styles.counts}>
+                <span>Main {mainCount}</span>
+                <span>Side {total(deck.side)}</span>
+              </span>
+              <label className={styles.formatPick}>
+                <span className={styles.srOnly}>Format</span>
+                <select
+                  className={styles.select}
+                  value={format ?? ""}
+                  onChange={(e) => setDeckFormat(id, e.target.value)}
+                >
+                  <option value="">No format</option>
+                  {FORMATS.map((f) => <option key={f} value={f}>{formatLabel(f)}</option>)}
+                </select>
+              </label>
+              <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
+              {!editing && (
+                <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
+              )}
+              <Link to="/" className={styles.button}>Search cards</Link>
+              <Link to="/decks" className={styles.link}>All decks</Link>
+            </div>
+            <p role="status" className={styles.status}>{status}</p>
+          </div>
 
-        {editing ? (
+          {editing ? (
+            <div className={styles.listPane}>
           <section className={styles.editor}>
             {editing.notes ? (
               <>
@@ -300,23 +347,12 @@ export default function DeckPage() {
               </>
             )}
           </section>
-        ) : (
-        <>
-        <DeckStats deck={deck} />
-
-        <div className={styles.format}>
-          <label>
-            Format{" "}
-            <select
-              className={styles.select}
-              value={format ?? ""}
-              onChange={(e) => setDeckFormat(id, e.target.value)}
-            >
-              <option value="">No format</option>
-              {FORMATS.map((f) => <option key={f} value={f}>{formatLabel(f)}</option>)}
-            </select>
-          </label>
-          {format && (problems.length === 0
+            </div>
+          ) : (
+          <>
+          <div className={styles.listPane}>
+            <div className={styles.format}>
+            {format && (problems.length === 0
             ? <p className={styles.legal}>Legal in {formatLabel(format)}</p>
             : (
               <ul className={styles.problems} aria-label={`Problems for ${formatLabel(format)}`}>
@@ -332,12 +368,15 @@ export default function DeckPage() {
                 })}
               </ul>
             ))}
-        </div>
+            </div>
 
         {deck.commander && (
           <section>
-            <h2 className={styles.heading}>Commander</h2>
-            <ul className={styles.rows}>{row(deck.commander, "commander")}</ul>
+            <h2 className={styles.heading}>{deck.partner ? "Commanders" : "Commander"}</h2>
+            <ul className={styles.rows}>
+              {row(deck.commander, "commander")}
+              {deck.partner && row(deck.partner, "partner")}
+            </ul>
           </section>
         )}
 
@@ -355,30 +394,45 @@ export default function DeckPage() {
               onClick={() => { deckGrouping.by = "manaValue" }}>Mana value</button>
           </div>
         )}
+        <div className={styles.columns}>
         {groups.map((g) => (
-          <section key={g.key}>
+          <section key={g.key} className={styles.group}>
             <h2 className={styles.heading}>{g.heading} ({total(g.entries)})</h2>
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}
 
-        <SampleHand deck={deck} />
-        <DrawOdds deck={deck} />
-
         {deck.side.length > 0 && (
-          <section>
+          <section className={styles.group}>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
             <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
+        </div>
+          </div>
 
-        <DeckNotes key={saved.id} id={saved.id} notes={saved.notes} />
-
-        <ExportSection deck={deck} name={saved.name} />
-
-        <BuyDeck deck={deck} />
-        </>
-        )}
+          <aside className={styles.sidePane}>
+            <div className={styles.previewPane} aria-hidden={!previewImage}>
+              {previewImage
+                ? <img src={previewImage} alt={shown?.name ?? ""} width={244} height={340} />
+                : <p className={styles.empty}>Point at a card to see it here.</p>}
+            </div>
+            <DeckStats deck={deck} />
+            <div className={styles.tabs} role="tablist" aria-label="Deck tools">
+              {TOOLS.map(([k, label]) => (
+                <button key={k} type="button" role="tab" id={`tool-${k}`} aria-selected={tool === k} aria-controls={`panel-${k}`}
+                  className={styles.tab} onClick={() => setTool(k)}>{label}</button>
+              ))}
+            </div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-hand" aria-labelledby="tool-hand" hidden={tool !== "hand"}><SampleHand deck={deck} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-odds" aria-labelledby="tool-odds" hidden={tool !== "odds"}><DrawOdds deck={deck} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-notes" aria-labelledby="tool-notes" hidden={tool !== "notes"}><DeckNotes key={saved.id} id={saved.id} notes={saved.notes} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-export" aria-labelledby="tool-export" hidden={tool !== "export"}><ExportSection deck={deck} name={saved.name} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-buy" aria-labelledby="tool-buy" hidden={tool !== "buy"}><BuyDeck deck={deck} /></div>
+          </aside>
+          </>
+          )}
+        </div>
       </main>
     </div>
   )

@@ -85,14 +85,16 @@ export function setPartner(deck: Deck, card: ScryfallCard): Deck {
     return { ...taken, main, partner: { card: entry.card, count: 1 } }
 }
 
-// the commander goes back to the main deck (merging with copies there) and a partner, if any, moves up to the
-// commander slot. No commander: the deck comes back unchanged. The input is never changed.
-export function removeCommander(deck: Deck): Deck {
+// takes the commander out into `to`; a partner, if any, becomes the commander. No commander gives the deck back
+// unchanged; the input is never changed.
+export function removeCommander(deck: Deck, to: DeckZone = "main"): Deck {
     if (!deck.commander) return deck
-    const { commander, partner, ...rest } = deck
-    const next: Deck = { ...rest, main: addTo(deck.main, commander.card, commander.count) }
-    if (partner) next.commander = partner
-    return next
+    const { partner, ...rest } = deck
+    return {
+        ...rest,
+        [to]: addTo(deck[to], deck.commander.card, deck.commander.count),
+        commander: partner,
+    }
 }
 
 // the partner goes back to the main deck; the commander stays. No partner: unchanged.
@@ -105,10 +107,11 @@ export function removePartner(deck: Deck): Deck {
 // the deck with `from`'s entry in `zone` holding the `to` printing instead, same count and place. When another
 // entry in the zone already holds `to`, the two merge into one at whichever comes first. An unknown `from`
 // gives the deck back unchanged; the input is never changed.
-export function replacePrinting(deck: Deck, zone: DeckZone | "commander", from: ScryfallCard, to: ScryfallCard): Deck {
-    if (zone === "commander") {
-        if (deck.commander?.card.id !== from.id) return deck
-        return { ...deck, commander: { ...deck.commander, card: to } }
+export function replacePrinting(deck: Deck, zone: DeckZone | "commander" | "partner", from: ScryfallCard, to: ScryfallCard): Deck {
+    if (zone === "commander" || zone === "partner") {
+        const slot = deck[zone]
+        if (!slot || slot.card.id !== from.id) return deck
+        return { ...deck, [zone]: { ...slot, card: to } }
     }
     const entries = deck[zone]
     const at = entries.findIndex(e => e.card.id === from.id)
@@ -133,7 +136,7 @@ const cardsOf = (deck: Deck): DeckEntry[] =>
     [...deck.main, ...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : [])]
 
 // the commander's and partner's color identities together, in WUBRG order
-export function commanderIdentity(deck: Deck): string[] {
+export function commanderIdentity(deck: { commander?: { card: { color_identity?: readonly string[] } }; partner?: { card: { color_identity?: readonly string[] } } }): string[] {
     const identity = [...(deck.commander?.card.color_identity ?? []), ...(deck.partner?.card.color_identity ?? [])]
     return COLORS.filter(c => identity.includes(c))
 }
@@ -305,18 +308,20 @@ export function basicLandSplit(deck: Deck, count: number): { color: "W" | "U" | 
     return parts.filter(p => p.count > 0).map(p => ({ color: p.color, count: p.count }))
 }
 
-// the cards to buy: commander, partner, main, then the sideboard when asked. the buy link and the price both use this
-export const buyEntries = (deck: Deck, side: boolean): DeckEntry[] => [
-    ...(deck.commander ? [deck.commander] : []),
-    ...(deck.partner ? [deck.partner] : []),
-    ...deck.main,
-    ...(side ? deck.side : []),
-]
+// the cards to buy, in order: commander, partner, main, then the sideboard when asked. the buy link and the price both use this
+export function buyEntries(deck: Deck, opts: { side: boolean }): DeckEntry[] {
+    return [
+        ...(deck.commander ? [deck.commander] : []),
+        ...(deck.partner ? [deck.partner] : []),
+        ...deck.main,
+        ...(opts.side ? deck.side : []),
+    ]
+}
 
 // a rough total from the prices on the cards' printings. usd falls back to the foil, then etched price; eur falls
 // back to the foil price; cards with no price are listed by name (once) and add nothing
 export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }): { total: number; missing: string[] } {
-    const entries = buyEntries(deck, opts.side)
+    const entries = buyEntries(deck, opts)
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
