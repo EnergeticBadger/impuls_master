@@ -195,6 +195,7 @@
   background-color: var(--raised-1);
   color: var(--text);
   white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
   transition: background-color var(--ease);
 }

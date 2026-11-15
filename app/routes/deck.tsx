@@ -307,6 +307,7 @@ export default function DeckPage() {
               {!editing && (
                 <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
               )}
+              <Link to="/" className={styles.button}>Search cards</Link>
               <Link to="/decks" className={styles.link}>All decks</Link>
             </div>
             <p role="status" className={styles.status}>{status}</p>
