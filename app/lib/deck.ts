@@ -318,19 +318,38 @@ export function deckPrice(deck: Deck, opts: { side: boolean; currency: "usd" | "
     let cents = 0
     const missing: string[] = []
     for (const { card, count } of entries) {
-        const prices = card.prices as Partial<Record<string, string | null>> | undefined
-        const raw = prices?.[opts.currency] ?? (
-            opts.currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched
-                : opts.currency === "eur" ? prices?.eur_foil
-                    : undefined)
-        const price = raw == null ? NaN : parseFloat(raw)
-        if (Number.isNaN(price)) {
+        const price = cardPrice(card, opts.currency)
+        if (price === undefined) {
             if (!missing.includes(card.name)) missing.push(card.name)
             continue
         }
         cents += Math.round(price * 100) * count
     }
     return { total: cents / 100, missing }
+}
+
+// one card's price in a currency, or undefined when it has none. usd falls back to the foil, then etched price;
+// eur falls back to the foil price
+export function cardPrice(card: ScryfallCard, currency: "usd" | "eur" | "tix"): number | undefined {
+    const prices = card.prices as Partial<Record<string, string | null>> | undefined
+    const raw = prices?.[currency] ?? (
+        currency === "usd" ? prices?.usd_foil ?? prices?.usd_etched
+            : currency === "eur" ? prices?.eur_foil
+                : undefined)
+    const price = raw == null ? NaN : parseFloat(raw)
+    return Number.isNaN(price) ? undefined : price
+}
+
+// the n entries that cost the most (price each × count), highest first, ties by name; unpriced cards are left out
+export function priciestCards(deck: Deck, opts: { side: boolean; currency: "usd" | "eur" | "tix" }, n = 5): { name: string; count: number; each: number; total: number }[] {
+    const out: { name: string; count: number; each: number; total: number }[] = []
+    for (const { card, count } of buyEntries(deck, opts)) {
+        const each = cardPrice(card, opts.currency)
+        if (each === undefined) continue
+        out.push({ name: card.name, count, each, total: Math.round(each * 100) * count / 100 })
+    }
+    out.sort((a, b) => b.total - a.total || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return out.slice(0, n)
 }
 
 // "$12.34", "€12.34" or "12.34 tix": always two decimals
