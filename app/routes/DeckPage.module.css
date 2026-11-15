@@ -387,37 +387,55 @@
   display: none;
 }
 
-.tool {
-  border-top: 1px solid var(--border-faint);
-  padding-top: var(--space-2);
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border-faint);
 }
 
-.tool > summary {
+.tab {
   min-height: 44px;
-  display: flex;
-  align-items: center;
+  padding: 0 var(--space-3);
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
   font-weight: 700;
   cursor: pointer;
 }
 
-.tool > summary:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--accent-line);
+  color: var(--text);
 }
 
-/* the tools carry their own headings; the summary already names them */
-.tool > section > h2:first-child {
+.toolPanel[hidden] {
   display: none;
+}
+
+/* the tools carry their own headings; the tab already names them */
+.toolPanel > section > h2:first-child {
+  display: none;
+}
+
+.columns {
+  display: block;
+}
+
+.group {
+  break-inside: avoid;
+  margin-bottom: var(--space-4);
 }
 
 @media screen and (min-width: 1000px) {
   .page {
-    max-width: 1180px;
+    max-width: none;
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
   }
 
   .layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 520px);
     grid-template-areas:
       "top  top"
       "list side";
@@ -427,6 +445,11 @@
 
   .top { grid-area: top; }
   .listPane { grid-area: list; }
+
+  .columns {
+    column-width: 24rem;
+    column-gap: var(--space-6);
+  }
 
   .sidePane {
     grid-area: side;
@@ -440,16 +463,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 340px;
+    min-height: 300px;
   }
 
   .previewPane img {
-    width: 244px;
+    width: min(300px, 100%);
     height: auto;
     border-radius: var(--radius-card);
   }
 
-  /* the pane shows the card, so the in-row image would be a second copy */
   .row .preview,
   .peek {
     display: none;
@@ -458,4 +480,38 @@
   .rows {
     gap: var(--space-1);
   }
+}
+
+/* live card results under the add box */
+.results {
+  flex-basis: 100%;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-2);
+  max-height: 60vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.result {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.result img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-card);
+}
+
+.result:hover,
+.result:focus-visible {
+  outline: 2px solid var(--accent-line);
 }

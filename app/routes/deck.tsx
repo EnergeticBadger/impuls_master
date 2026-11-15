@@ -57,6 +57,9 @@ const removeAsCommander = (deck: Deck): Deck => removeCommander(deck, "main")
 const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
 const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
 
+const TOOLS = [["hand", "Sample hand"], ["odds", "Draw odds"], ["notes", "Notes"], ["export", "Export"], ["buy", "Buy"]] as const
+type Tool = (typeof TOOLS)[number][0]
+
 const anchorOf = (name: string) => `card-${name.replace(/[^a-z0-9]+/gi, "-")}`
 
 export default function DeckPage() {
@@ -68,6 +71,7 @@ export default function DeckPage() {
   // the row whose printing list is open: "<section>:<card id>"
   const [printingsOf, setPrintingsOf] = useState<string>()
   // the row whose extra actions are open (one at a time, so the list stays calm)
+  const [tool, setTool] = useState<Tool>("hand")
   const [menuOf, setMenuOf] = useState<string>()
   // the card shown in the side pane on wide screens: the last one pointed at, so the pane doesn't jump
   const [shown, setShown] = useState<DeckEntry["card"]>()
@@ -389,20 +393,21 @@ export default function DeckPage() {
               onClick={() => { deckGrouping.by = "manaValue" }}>Mana value</button>
           </div>
         )}
+        <div className={styles.columns}>
         {groups.map((g) => (
-          <section key={g.key}>
+          <section key={g.key} className={styles.group}>
             <h2 className={styles.heading}>{g.heading} ({total(g.entries)})</h2>
             <ul className={styles.rows}>{g.entries.map((e) => row(e, "main"))}</ul>
           </section>
         ))}
 
         {deck.side.length > 0 && (
-          <section>
+          <section className={styles.group}>
             <h2 className={styles.heading}>Sideboard ({total(deck.side)})</h2>
             <ul className={styles.rows}>{sortEntries(deck.side).map((e) => row(e, "side"))}</ul>
           </section>
         )}
-
+        </div>
           </div>
 
           <aside className={styles.sidePane}>
@@ -412,26 +417,17 @@ export default function DeckPage() {
                 : <p className={styles.empty}>Point at a card to see it here.</p>}
             </div>
             <DeckStats deck={deck} />
-            <details className={styles.tool}>
-              <summary>Sample hand</summary>
-              <SampleHand deck={deck} />
-            </details>
-            <details className={styles.tool}>
-              <summary>Draw odds</summary>
-              <DrawOdds deck={deck} />
-            </details>
-            <details className={styles.tool}>
-              <summary>Notes</summary>
-              <DeckNotes key={saved.id} id={saved.id} notes={saved.notes} />
-            </details>
-            <details className={styles.tool}>
-              <summary>Export</summary>
-              <ExportSection deck={deck} name={saved.name} />
-            </details>
-            <details className={styles.tool}>
-              <summary>Buy</summary>
-              <BuyDeck deck={deck} />
-            </details>
+            <div className={styles.tabs} role="tablist" aria-label="Deck tools">
+              {TOOLS.map(([k, label]) => (
+                <button key={k} type="button" role="tab" id={`tool-${k}`} aria-selected={tool === k} aria-controls={`panel-${k}`}
+                  className={styles.tab} onClick={() => setTool(k)}>{label}</button>
+              ))}
+            </div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-hand" aria-labelledby="tool-hand" hidden={tool !== "hand"}><SampleHand deck={deck} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-odds" aria-labelledby="tool-odds" hidden={tool !== "odds"}><DrawOdds deck={deck} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-notes" aria-labelledby="tool-notes" hidden={tool !== "notes"}><DeckNotes key={saved.id} id={saved.id} notes={saved.notes} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-export" aria-labelledby="tool-export" hidden={tool !== "export"}><ExportSection deck={deck} name={saved.name} /></div>
+            <div className={styles.toolPanel} role="tabpanel" id="panel-buy" aria-labelledby="tool-buy" hidden={tool !== "buy"}><BuyDeck deck={deck} /></div>
           </aside>
           </>
           )}
