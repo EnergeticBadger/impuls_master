@@ -22,14 +22,7 @@ export function CurrentDeckBar() {
     useEffect(() => { loadDecks(); setReady(true) }, [])
 
     const chosen = currentDeckOf(list, current)
-    if (!ready) return null
-    if (!chosen) {
-        return (
-            <div className={styles.bar}>
-                <Link to="/decks" className={styles.open}>My decks</Link>
-            </div>
-        )
-    }
+    if (!ready || !chosen) return null
 
     const cards = chosen.deck.main.reduce((n, e) => n + e.count, 0)
     const commander = chosen.deck.commander
@@ -59,7 +52,6 @@ export function CurrentDeckBar() {
             </select>
             <span className={styles.count}>{cards} {cards === 1 ? "card" : "cards"}</span>
             <Link to={`/decks/${chosen.id}`} className={styles.open}>Open deck</Link>
-            <Link to="/decks" className={styles.open}>All decks</Link>
             {commander && (
                 <button type="button" className={styles.identity} aria-pressed={pressed} onClick={toggle}>
                     In {commander.card.name}{partner ? ` and ${partner.card.name}` : ""}'s colors
