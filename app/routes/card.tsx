@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSnapshot } from "valtio";
 import { decks, addToCurrentDeck, removeFromCurrentDeck, currentDeckOf, loadDecks } from "~/Components/Context/decks";
 import { copiesIn, type Deck } from "~/lib/deck";
+import { decksWithCard, type SavedDeck } from "~/lib/savedDecks";
 import { ADD_ICON } from "~/Components/Card/QuickView";
 import { data, Link, redirect, useNavigate } from "react-router";
 import { Image } from "@unpic/react";
@@ -271,22 +272,36 @@ function DeckButtons({ card }: { card: ScryfallCard }) {
   const currentDeck = ready ? currentDeckOf(list, current) : undefined
   const copies = currentDeck ? copiesIn(currentDeck.deck as Deck, oracleOf(card)) : 0
   const deckName = currentDeck?.name ?? "Untitled deck"
+  const holding = ready ? decksWithCard(list as SavedDeck[], oracleOf(card)) : []
   return (
-    <div className={styles.actions}>
-      <button type="button" className={cardStyles.turn} onClick={() => addToCurrentDeck(card)}>
-        <svg viewBox="0 -960 960 960"><path d={ADD_ICON} /></svg>
-        Add to {deckName}
-      </button>
-      {copies > 0 ? (
-        <>
-          <span aria-live="polite">In deck: {copies}</span>
-          <button type="button" className={cardStyles.turn} onClick={() => removeFromCurrentDeck(card)}>
-            <svg viewBox="0 -960 960 960"><path d="M200-440v-80h560v80H200Z" /></svg>
-            Remove one
-          </button>
-        </>
+    <>
+      <div className={styles.actions}>
+        <button type="button" className={cardStyles.turn} onClick={() => addToCurrentDeck(card)}>
+          <svg viewBox="0 -960 960 960"><path d={ADD_ICON} /></svg>
+          Add to {deckName}
+        </button>
+        {copies > 0 ? (
+          <>
+            <span aria-live="polite">In deck: {copies}</span>
+            <button type="button" className={cardStyles.turn} onClick={() => removeFromCurrentDeck(card)}>
+              <svg viewBox="0 -960 960 960"><path d="M200-440v-80h560v80H200Z" /></svg>
+              Remove one
+            </button>
+          </>
+        ) : null}
+      </div>
+      {holding.length > 0 ? (
+        <p className={styles.inDecks}>
+          In your decks:{" "}
+          {holding.map((d, i) => (
+            <span key={d.id}>
+              {i > 0 ? ", " : null}
+              <Link to={`/decks/${d.id}`}>{d.name} ({d.count})</Link>
+            </span>
+          ))}
+        </p>
       ) : null}
-    </div>
+    </>
   )
 }
 
