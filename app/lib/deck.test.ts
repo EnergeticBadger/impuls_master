@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, cardPrice, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, priciestCards, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -495,6 +495,37 @@ test("buyEntries lists commander, partner, main, then side only when asked", () 
     const deck: Deck = { commander: entry("Cmd"), partner: entry("Part"), main: [entry("Main")], side: [entry("Side")] };
     assert.deepEqual(buyEntries(deck, { side: true }).map(e => e.card.name), ["Cmd", "Part", "Main", "Side"]);
     assert.deepEqual(buyEntries(deck, { side: false }).map(e => e.card.name), ["Cmd", "Part", "Main"]);
+});
+
+test("cardPrice falls back as deckPrice does", () => {
+    const nulls = { usd: null, usd_foil: null, usd_etched: null, eur: null, eur_foil: null, tix: null };
+    assert.equal(cardPrice(priced("A", { ...nulls, usd: "1.50", usd_foil: "9" }), "usd"), 1.5);
+    assert.equal(cardPrice(priced("A", { ...nulls, usd_foil: "9", usd_etched: "7" }), "usd"), 9);
+    assert.equal(cardPrice(priced("A", { ...nulls, usd_etched: "7" }), "usd"), 7);
+    assert.equal(cardPrice(priced("A", { ...nulls, eur_foil: "3" }), "eur"), 3);
+    assert.equal(cardPrice(priced("A", { ...nulls, usd: "1", eur_foil: "3" }), "tix"), undefined);
+    assert.equal(cardPrice(priced("A", nulls), "usd"), undefined);
+});
+
+test("priciestCards orders by total, ties by name, skips unpriced, respects n and the sideboard", () => {
+    const one = priced("Big", { usd: "30.00" });
+    const four = priced("Cheap Four", { usd: "10.00" });
+    const tieB = priced("Bravo", { usd: "5.00" });
+    const tieA = priced("Alpha", { usd: "5.00" });
+    const none = priced("None", { usd: null });
+    const sideCard = priced("Side", { usd: "100.00" });
+    let deck: Deck = { main: [], side: [] };
+    deck = addCard(deck, one);
+    deck = addCard(deck, four, "main", 4);
+    deck = addCard(deck, tieB);
+    deck = addCard(deck, tieA);
+    deck = addCard(deck, none);
+    deck = addCard(deck, sideCard, "side");
+    const names = (side: boolean, n?: number) => priciestCards(deck, { side, currency: "usd" }, n).map((c) => c.name);
+    assert.deepEqual(names(false), ["Cheap Four", "Big", "Alpha", "Bravo"]);
+    assert.deepEqual(priciestCards(deck, { side: false, currency: "usd" })[0], { name: "Cheap Four", count: 4, each: 10, total: 40 });
+    assert.deepEqual(names(false, 2), ["Cheap Four", "Big"]);
+    assert.deepEqual(names(true), ["Side", "Cheap Four", "Big", "Alpha", "Bravo"]);
 });
 
 test("canBeCommander: legendary creatures and 'can be your commander' text", () => {

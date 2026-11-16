@@ -3,13 +3,14 @@ import styles from "~/routes/DeckPage.module.css";
 import { tcgplayerDeckLink } from "~/lib/affiliate";
 import { useSnapshot } from "valtio";
 import { priceCurrency, type PriceCurrency } from "~/Components/Context/priceCurrency";
-import { buyEntries, deckPrice, formatPrice, type Deck } from "~/lib/deck";
+import { buyEntries, deckPrice, formatPrice, priciestCards, type Deck } from "~/lib/deck";
 
 export function BuyDeck({ deck }: { deck: Deck }) {
   const [withSide, setWithSide] = useState(false)
   const entries = buyEntries(deck, { side: withSide })
   const currency = useSnapshot(priceCurrency).currency
   const price = deckPrice(deck, { side: withSide, currency })
+  const priciest = priciestCards(deck, { side: withSide, currency })
 
   if (entries.length === 0) return null
 
@@ -45,6 +46,16 @@ export function BuyDeck({ deck }: { deck: Deck }) {
           <>{" "}<span title={price.missing.join(", ")}>({price.missing.length} {price.missing.length === 1 ? "card has" : "cards have"} no price)</span></>
         )}
       </p>
+      {priciest.length > 0 && (
+        <div>
+          <p>Most expensive</p>
+          <ul>
+            {priciest.map((c) => (
+              <li key={c.name} style={{ overflowWrap: "anywhere" }}>{c.count} × {c.name} — {formatPrice(c.total, currency)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className={styles.empty}>An estimate from the prices of the printings in your deck.</p>
       <p className={styles.empty}>We may earn a commission if you buy through this link. It costs you nothing extra.</p>
     </section>
