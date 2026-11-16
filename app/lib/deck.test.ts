@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScryfallCard } from "~/types";
 import { oracleOf, printingCard, type CardRecord, type Printing } from "./carddata.ts";
-import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, cardPrice, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, priciestCards, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
+import { addCard, basicLandSplit, buyEntries, canBeCommander, canPartner, cardNamed, cardPrice, colorCounts, commanderIdentity, copiesIn, deckColors, deckPrice, deckSummary, formatPrice, groupByManaValue, groupByType, guessFormat, identityTerm, legalityProblems, manaCostOf, manaCurve, manaValueOf, priciestCards, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry } from "./deck.ts";
 
 const card = (name: string, type_line: string, extra: Partial<ScryfallCard> = {}): ScryfallCard =>
     ({
@@ -837,4 +837,12 @@ test("formatPrice uses the currency's symbol and always two decimals", () => {
     assert.equal(formatPrice(12.3, "eur"), "€12.30");
     assert.equal(formatPrice(0, "tix"), "0.00 tix");
     assert.equal(formatPrice(5, "tix"), "5.00 tix");
+});
+
+test("cardNamed finds the card a problem starts with, longest name first", () => {
+    const names = ["Sol", "Sol Ring", "Bolt"];
+    assert.equal(cardNamed("Sol Ring appears 2 times", names), "Sol Ring");
+    assert.equal(cardNamed("Sol appears 2 times", names), "Sol");
+    assert.equal(cardNamed("Solemn appears 2 times", names), undefined);
+    assert.equal(cardNamed("Needs at least 60 cards", new Set(names)), undefined);
 });
