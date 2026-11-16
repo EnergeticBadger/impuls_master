@@ -21,7 +21,7 @@ import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { AddBasicLands } from "~/Components/Deck/AddBasicLands";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, removeCommander, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -42,17 +42,8 @@ const smallImage = (entry: DeckEntry) => entry.card.image_uris?.small ?? entry.c
 // out of one zone and into the other
 const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   const to: DeckZone = from === "main" ? "side" : "main"
-  if (from === "commander") return removeCommander(deck, to)
   return addCard(removeCard(deck, entry.card, from as DeckZone, entry.count), entry.card, to, entry.count)
 }
-
-// the partner goes back to the main deck
-const removeAsPartner = (deck: Deck): Deck => {
-  if (!deck.partner) return deck
-  return addCard({ ...deck, partner: undefined }, deck.partner.card, "main", deck.partner.count)
-}
-
-const removeAsCommander = (deck: Deck): Deck => removeCommander(deck, "main")
 
 const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
 const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
@@ -218,7 +209,7 @@ export default function DeckPage() {
         <div className={styles.buttons}>
           {isCommanderSlot ? (
             <button type="button" className={styles.button}
-              onClick={() => change(section === "partner" ? removeAsPartner : removeAsCommander)}>Remove as commander</button>
+              onClick={() => change(section === "partner" ? removePartner : removeCommander)}>Remove as commander</button>
           ) : (
             <button type="button" className={styles.button}
               onClick={() => change((d) => move(d, entry, section))}>
