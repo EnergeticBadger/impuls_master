@@ -6,7 +6,7 @@ import { SiteHeader } from "~/Components/Site/SiteHeader";
 import { SaveWarning } from "~/Components/Deck/SaveWarning";
 import { ManaText } from "~/Components/CardDetails/ManaText";
 import { DeckStats } from "~/Components/Deck/DeckStats";
-import { decks, loadDecks, renameDeck, setCurrentDeck, setDeckFormat, updateDeck } from "~/Components/Context/decks";
+import { decks, loadDecks, renameDeck, setCurrentDeck, updateDeck } from "~/Components/Context/decks";
 import { SampleHand } from "~/Components/Deck/SampleHand";
 import { DrawOdds } from "~/Components/Deck/DrawOdds";
 import { DeckNotes } from "~/Components/Deck/DeckNotes";
@@ -17,11 +17,12 @@ import { cardPath } from "~/lib/card";
 import { lookUpDeckList } from "~/Components/Deck/lookUpDeckList";
 import { formatDeckList } from "~/lib/decklist";
 import { ExportSection } from "~/Components/Deck/ExportSection";
+import { FormatPicker, FormatSection } from "~/Components/Deck/FormatSection";
 import { BuyDeck } from "~/Components/Deck/BuyDeck";
 import { QuickAdd } from "~/Components/Deck/QuickAdd";
 import { AddBasicLands } from "~/Components/Deck/AddBasicLands";
 import { canUndo, record, undo, type History } from "~/lib/history";
-import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, legalityProblems, manaCostOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
+import { addCard, canBeCommander, canPartner, groupByManaValue, groupByType, manaCostOf, removeCard, removeCommander, removePartner, replacePrinting, setCommander, setPartner, sortEntries, type Deck, type DeckEntry, type DeckZone } from "~/lib/deck";
 
 export function meta() {
   return [
@@ -45,8 +46,6 @@ const move = (deck: Deck, entry: DeckEntry, from: Section): Deck => {
   return addCard(removeCard(deck, entry.card, from as DeckZone, entry.count), entry.card, to, entry.count)
 }
 
-const FORMATS = ["standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander"] as const
-const formatLabel = (f: string) => f.charAt(0).toUpperCase() + f.slice(1)
 
 const TOOLS = [["hand", "Sample hand"], ["odds", "Draw odds"], ["notes", "Notes"], ["export", "Export"], ["buy", "Buy"]] as const
 type Tool = (typeof TOOLS)[number][0]
@@ -136,13 +135,10 @@ export default function DeckPage() {
 
   const format = saved.format
   const isCommander = format === "commander"
-  const problems = format ? legalityProblems(deck, format) : []
   // a card's row is the first one it appears in (commander, then main, then sideboard)
   const rowOrder = [...(deck.commander ? [deck.commander] : []), ...(deck.partner ? [deck.partner] : []), ...deck.main, ...deck.side]
   const anchored = new Map<string, string>()
   for (const e of rowOrder) if (!anchored.has(e.card.name)) anchored.set(e.card.name, anchorOf(e.card.name))
-  const cardNamed = (problem: string) =>
-    [...anchored.keys()].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
   const rowSeen = new Set<string>()
 
   const saveText = async () => {
@@ -283,17 +279,7 @@ export default function DeckPage() {
                 <span>Main {mainCount}</span>
                 <span>Side {total(deck.side)}</span>
               </span>
-              <label className={styles.formatPick}>
-                <span className={styles.srOnly}>Format</span>
-                <select
-                  className={styles.select}
-                  value={format ?? ""}
-                  onChange={(e) => setDeckFormat(id, e.target.value)}
-                >
-                  <option value="">No format</option>
-                  {FORMATS.map((f) => <option key={f} value={f}>{formatLabel(f)}</option>)}
-                </select>
-              </label>
+              <FormatPicker id={id} format={format} />
               <button type="button" className={styles.button} disabled={!canUndo(history)} onClick={undoChange}>Undo</button>
               {!editing && (
                 <button type="button" className={styles.button} onClick={() => setEditing({ text: formatDeckList(deck, "text") })}>Edit as text</button>
@@ -342,24 +328,7 @@ export default function DeckPage() {
           ) : (
           <>
           <div className={styles.listPane}>
-            <div className={styles.format}>
-            {format && (problems.length === 0
-            ? <p className={styles.legal}>Legal in {formatLabel(format)}</p>
-            : (
-              <ul className={styles.problems} aria-label={`Problems for ${formatLabel(format)}`}>
-                {problems.map((p) => {
-                  const name = cardNamed(p)
-                  return (
-                    <li key={p}>
-                      {name
-                        ? <><a href={`#${anchored.get(name)}`} className={styles.link}>{name}</a>{p.slice(name.length)}</>
-                        : p}
-                    </li>
-                  )
-                })}
-              </ul>
-            ))}
-            </div>
+            <FormatSection id={id} deck={deck} format={format} anchorOf={(n) => anchored.get(n)} />
 
         {deck.commander && (
           <section>

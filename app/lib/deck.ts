@@ -397,6 +397,11 @@ export function canBeCommander(card: ScryfallCard): boolean {
     return /\bLegendary\b/.test(type) && /\b(Vehicle|Spacecraft)\b/.test(type) && power != null && power !== ""
 }
 
+// the card a problem sentence starts with ("<name> has ..."): the longest matching name wins
+export function cardNamed(problem: string, names: Iterable<string>): string | undefined {
+    return [...names].filter((n) => problem.startsWith(`${n} `)).sort((a, b) => b.length - a.length)[0]
+}
+
 const SIDEBOARD_MAX = 15
 const MIN_MAIN = 60
 
