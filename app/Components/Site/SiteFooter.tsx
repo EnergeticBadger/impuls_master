@@ -40,6 +40,9 @@ export function SiteFooter({ browse }: { browse: Browse | null }) {
         permitted under the Wizards of the Coast Fan Content Policy. Magic: The Gathering and its card text and images
         are © Wizards of the Coast, which doesn't produce or endorse this site.
       </p>
+      <p className={styles.credit}>
+        by <a href="https://github.com/EnergeticBadger" target="_blank" rel="noopener noreferrer">EnergeticBadger</a>
+      </p>
     </footer>
   )
 }
