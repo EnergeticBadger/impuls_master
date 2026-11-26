@@ -41,7 +41,7 @@ export function SiteFooter({ browse }: { browse: Browse | null }) {
         are © Wizards of the Coast, which doesn't produce or endorse this site.
       </p>
       <p className={styles.credit}>
-        by <a href="https://github.com/EnergeticBadger" target="_blank" rel="noopener noreferrer">EnergeticBadger</a>
+        by <a href="https://github.com/EnergeticBadger" target="_blank" rel="noopener noreferrer">EnergeticBadger</a> · <a href="https://www.linkedin.com/in/mikel-varvaro/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
       </p>
     </footer>
   )
