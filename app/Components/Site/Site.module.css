@@ -152,6 +152,24 @@
   color: var(--text-muted);
 }
 
+.credit {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.credit a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.credit a:hover {
+  text-decoration: underline;
+}
+
 @media screen and (max-width: 760px) {
   .columns {
     grid-template-columns: 1fr 1fr;
